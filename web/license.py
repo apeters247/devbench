@@ -162,9 +162,13 @@ class LicenseManager:
             if not hmac.compare_digest(expected_sig, actual_sig):
                 return False
 
-            # Check expiry
+            # Check expiry. A stored expiry of 0 means "never expires"; any
+            # non-zero value is compared against the clock. Negative values are
+            # always in the past, so they correctly read as expired (rather
+            # than slipping through a `> 0` guard and being treated as eternal).
             meta = json.loads(metadata)
-            if meta.get("x") and meta["x"] > 0 and time.time() > meta["x"]:
+            expiry = meta.get("x", 0)
+            if expiry and time.time() > expiry:
                 return False
 
             # Check activation limit

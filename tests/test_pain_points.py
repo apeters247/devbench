@@ -359,6 +359,68 @@ def test_null_yaml_to_json_normalization():
     assert data["value"] is None
 
 
+def test_folded_and_literal_scalars_survive_round_trip():
+    """Folded (``>``) and literal (``|``) multiline scalars must survive a
+    YAML -> JSON -> YAML round-trip with their resolved values intact.
+
+    Guards against yq #439 ("folded multiline scalars should stay in original
+    format"), where ``>`` scalars lose their content/line breaks after
+    processing. ConfigForge isn't required to re-emit the exact ``>``/``|``
+    block style, but the scalar *value* (including folding/newline semantics)
+    must round-trip losslessly.
+    """
+    import yaml as pyyaml
+
+    src = (
+        "folded: >\n"
+        "  This is a folded\n"
+        "  scalar that spans\n"
+        "  multiple lines\n"
+        "literal: |\n"
+        "  line one\n"
+        "  line two\n"
+    )
+    out = round_trip(src, via="json")
+    assert out["success"], f"folded/literal round-trip failed: {out.get('error')}"
+    before = pyyaml.safe_load(src)
+    after = pyyaml.safe_load(out["output"])
+    assert after == before, (
+        f"multiline scalar values changed across round-trip:\n"
+        f"  before={before!r}\n  after={after!r}"
+    )
+    # Folding semantics: a '>' scalar joins lines with spaces (no interior
+    # newlines), a '|' scalar keeps them. Both must hold post-round-trip.
+    assert after["folded"] == "This is a folded scalar that spans multiple lines\n"
+    assert after["literal"] == "line one\nline two\n"
+
+
+def test_bare_string_scalar_quoting_round_trip():
+    """A quoted scalar whose value contains ``:`` must stay quoted across a
+    YAML -> JSON -> YAML round-trip so it can't be reparsed as a mapping.
+
+    Guards against yq #2608 ("single string scalar output not quoted
+    properly"), where ``"this: should really work"`` is emitted unquoted as
+    ``this: should really work`` — silently changing a string into a mapping
+    and breaking round-trip safety.
+    """
+    import yaml as pyyaml
+
+    src = '"this: should really work"\n'
+    # YAML -> JSON: the whole document is a single string scalar.
+    r = convert(src, "json", "yaml")
+    assert r["success"], f"YAML->JSON failed: {r.get('error')}"
+    assert json.loads(r["output"]) == "this: should really work"
+    # JSON -> YAML: output must round-trip back to the SAME string scalar,
+    # not a mapping. Emitted form must therefore carry quoting.
+    r2 = convert(r["output"], "yaml", "json")
+    assert r2["success"], f"JSON->YAML failed: {r2.get('error')}"
+    reparsed = pyyaml.safe_load(r2["output"])
+    assert reparsed == "this: should really work", (
+        f"scalar lost quoting and reparsed as {type(reparsed).__name__}: "
+        f"{reparsed!r}\noutput was:\n{r2['output']}"
+    )
+
+
 def test_helm_values_yaml_indentation_valid():
     """Helm values.yaml round-trip output must have valid YAML indentation."""
     text = (FIXTURES / "helm_values.yaml").read_text()

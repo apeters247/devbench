@@ -91,7 +91,11 @@ def test_detect_ambiguous_toml_vs_ini():
 
 
 def test_detect_csv_bom():
-    """A BOM-prefixed comma file is still detected as CSV."""
+    """A BOM-prefixed comma file is still detected as CSV.
+
+    Uses the real U+FEFF byte-order mark (``\\ufeff``) — not the Latin-1
+    rendering of its UTF-8 bytes — so we exercise genuine BOM handling.
+    """
     assert detect_format("﻿a,b,c\n1,2,3\n4,5,6\n") == "csv"
 
 
@@ -173,7 +177,10 @@ def test_empty_csv():
     r = convert("name,age\n", "json")
     assert r["success"]
     data = _j(r["output"])
-    assert data == [] or data == [{}]
+    # A header-only CSV has zero data rows, so the canonical result is an empty
+    # list. (Asserting a single behavior here, not "[] or [{}]", which masked
+    # whichever shape the code actually produced.)
+    assert data == []
 
 
 def test_empty_ini():

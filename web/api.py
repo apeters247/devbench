@@ -104,8 +104,11 @@ class RateLimiter:
                 try:
                     self.cleanup()
                 except Exception as exc:  # noqa: BLE001 — keep daemon thread alive
+                    # Log the exception type only — mirror the HIGH-5 generic
+                    # error pattern and avoid echoing raw exception detail
+                    # (which can carry environment/context) into the logs.
                     print(
-                        f"api-rate-cleanup: cleanup failed: {exc}",
+                        f"api-rate-cleanup: cleanup failed ({type(exc).__name__})",
                         file=sys.stderr,
                     )
 

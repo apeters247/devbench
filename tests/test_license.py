@@ -8,6 +8,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 # Ensure the project root is importable
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent))
@@ -37,8 +39,9 @@ def _wait_for_server(port: int, retries: int = 10, delay: float = 0.1) -> None:
     """Poll the server's /health endpoint until it responds (or retries run out).
 
     Replaces fixed ``time.sleep(0.3)`` startup waits with a fast retry loop so
-    tests don't pay a fixed latency tax. Falls back to a single 0.3s sleep if
-    the server never answered within the retry budget.
+    tests don't pay a fixed latency tax. Raises ``RuntimeError`` if the server
+    never answers within the retry budget — a fixed fallback sleep would mask a
+    genuinely-dead server while still adding latency, so we fail loudly instead.
     """
     import urllib.request
     import urllib.error
@@ -50,8 +53,10 @@ def _wait_for_server(port: int, retries: int = 10, delay: float = 0.1) -> None:
             return
         except (urllib.error.URLError, ConnectionError, OSError):
             time.sleep(delay)
-    # Fallback: give the server one last chance to come up.
-    time.sleep(0.3)
+    raise RuntimeError(
+        f"server on port {port} did not become ready within "
+        f"{retries} retries (~{retries * delay:.1f}s)"
+    )
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -117,6 +122,19 @@ class TestLicenseVerify:
     def test_verify_future_expiry(self):
         lm = _make_mgr()
         key = lm.generate("a@b.com", "cus_1", expiry=int(time.time()) + 86400)
+        assert lm.verify(key) is True
+
+    def test_verify_negative_expiry_is_expired(self):
+        """A negative expiry is always in the past, so it must read as expired
+        rather than slipping past a `> 0` guard and being treated as eternal."""
+        lm = _make_mgr()
+        key = lm.generate("a@b.com", "cus_1", expiry=-1)
+        assert lm.verify(key) is False
+
+    def test_verify_zero_expiry_never_expires(self):
+        """A stored expiry of 0 means 'never expires' and stays valid."""
+        lm = _make_mgr()
+        key = lm.generate("a@b.com", "cus_1", expiry=0)
         assert lm.verify(key) is True
 
 
@@ -323,7 +341,9 @@ class TestEdgeCases:
         far_future = int(time.time()) + 365 * 86400
         key = lm.generate("renew@test.com", "cus_r", expiry=far_future)
         new_expiry = lm.extend_expiry(key, 365 * 86400)
-        assert new_expiry == far_future + 365 * 86400
+        # Anchored to the stored future expiry; allow a small tolerance so the
+        # assertion never races the clock used inside extend_expiry().
+        assert new_expiry == pytest.approx(far_future + 365 * 86400, abs=2)
         assert lm.get_key_info(key)["expiry"] == new_expiry
 
     def test_extend_expiry_anchors_to_now_when_lapsed(self):
@@ -331,8 +351,11 @@ class TestEdgeCases:
         lm = _make_mgr(tmp_db=True)
         past = int(time.time()) - 10 * 86400
         key = lm.generate("lapsed@test.com", "cus_l", expiry=past)
+        now = int(time.time())
         new_expiry = lm.extend_expiry(key, 365 * 86400)
-        assert new_expiry > int(time.time()) + 364 * 86400
+        # A lapsed license is re-anchored to "now", so the new expiry is one
+        # full period from now (not from the stale past expiry).
+        assert new_expiry == pytest.approx(now + 365 * 86400, abs=2)
 
     def test_extend_expiry_never_expires_untouched(self):
         lm = _make_mgr(tmp_db=True)
@@ -343,6 +366,17 @@ class TestEdgeCases:
     def test_extend_expiry_unknown_key(self):
         lm = _make_mgr(tmp_db=True)
         assert lm.extend_expiry("CF.nope.nope", 86400) == 0
+
+    def test_extend_expiry_malformed_key(self):
+        """Malformed / unparseable key strings extend nothing and never raise.
+
+        ``extend_expiry`` looks the key up by its raw string, so garbage that
+        could never have been issued (wrong prefix, missing separators, empty)
+        simply finds no DB row and returns 0 rather than blowing up.
+        """
+        lm = _make_mgr(tmp_db=True)
+        for bad in ("", "not-a-key", "CF.", "CF.onlytwo", "garbage.with.dots"):
+            assert lm.extend_expiry(bad, 86400) == 0, f"expected 0 for {bad!r}"
 
 
 # ── License Server Endpoint Tests ───────────────────────────────────────────
