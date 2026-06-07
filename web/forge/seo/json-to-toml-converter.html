@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>JSON to TOML Converter — CLI Tool for Node.js, Rust & Python Configs</title>
+  <meta name="description" content="Convert JSON config files to TOML with native type support. CLI tool handles nested objects, arrays, booleans, dates, and batch conversion. Free offline converter for Node.js to Rust migrations and Python config modernization.">
+  <meta property="og:title" content="JSON to TOML Converter — Free Offline CLI Tool">
+  <meta property="og:description" content="Convert JSON to TOML with full type safety. Handles nested objects, arrays, booleans, datetime, and null values. Batch mode, offline, CI/CD ready.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/json-to-toml-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="JSON to TOML Converter — Free Offline CLI Tool">
+  <meta name="twitter:description" content="Convert JSON to TOML with full type safety. Handles nested objects, arrays, booleans, datetime, and null values. Batch mode, offline, CI/CD ready.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="json-to-toml-converter-free-offline-cli-tool">JSON to TOML Converter: Free Offline CLI Tool</h1>
+<br />
+<p>Are you migrating a Node.js <code>package.json</code> to a Rust <code>Cargo.toml</code>? Modernizing a Python project from JSON config files to TOML's cleaner syntax? You need a <strong>JSON to TOML converter</strong> that handles nested objects, real type conversion, and batch file processing — all offline.</p>
+<br />
+<p><strong>ConfigForge</strong> is the only CLI tool that converts JSON to TOML bidirectionally with native type support, 100% offline, with no data leaving your machine.</p>
+<br />
+<h2 id="why-convert-json-to-toml">Why Convert JSON to TOML?</h2>
+<br />
+<p>TOML is increasingly the standard for modern tools — Rust's Cargo, Python's pyproject.toml, and many new frameworks prefer it over JSON for configuration:</p>
+<br />
+<tr><td>Feature</td><td>JSON</td><td>TOML</td></tr>
+|---------|------|------|
+<tr><td>Comments</td><td>❌ Not supported</td><td>✅ `# inline comments`</td></tr>
+<tr><td>Readability</td><td>❌ No native line breaks</td><td>✅ Table syntax easy to scan</td></tr>
+<tr><td>Date types</td><td>❌ Strings only</td><td>✅ Native datetime</td></tr>
+<tr><td>Type safety</td><td>❌ Everything is string/number/bool/null</td><td>✅ Explicit types</td></tr>
+<tr><td>Multi-line strings</td><td>❌ Escape sequences required</td><td>✅ `"""triple quotes"""`</td></tr>
+<br />
+<h2 id="install-configforge">Install ConfigForge</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+</code></pre>
+<br />
+<p>Or use the web demo instantly — no install required: <a href="https://naxiai.com/tools/devbench/demo/">ConfigForge Web Demo</a></p>
+<br />
+<h2 id="example-convert-packagejson-to-cargotoml-style-toml">Example: Convert package.json to Cargo.toml-style TOML</h2>
+<br />
+<p><strong>Input: <code>package.json</code></strong></p>
+<br />
+<pre><code class="language-json">
+{
+  "name": "my-app",
+  "version": "1.0.0",
+  "description": "A web application",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "lodash": "^4.17.21"
+  },
+  "engines": {
+    "node": "&gt;=18.0.0"
+  }
+}
+</code></pre>
+<br />
+<p><strong>Convert to TOML:</strong></p>
+<br />
+<pre><code class="language-bash">
+devbench cf package.json --to toml
+</code></pre>
+<br />
+<p><strong>Output: <code>package.toml</code></strong></p>
+<br />
+<pre><code class="language-toml">
+name = "my-app"
+version = "1.0.0"
+description = "A web application"
+main = "index.js"
+
+[scripts]
+start = "node index.js"
+test = "jest"
+
+[dependencies]
+"express" = "^4.18.0"
+"lodash" = "^4.17.21"
+
+[engines]
+node = "&gt;=18.0.0"
+</code></pre>
+<br />
+<h2 id="native-type-conversion">Native Type Conversion</h2>
+<br />
+<p>Most converters just copy string values — ConfigForge detects and converts actual types:</p>
+<br />
+<tr><td>JSON Type</td><td>JSON Input</td><td>TOML Output</td></tr>
+|-----------|-----------|-------------|
+<tr><td>String</td><td>`"hello"`</td><td>`key = "hello"`</td></tr>
+<tr><td>Number</td><td>`42`</td><td>`key = 42`</td></tr>
+<tr><td>Boolean</td><td>`true`</td><td>`key = true`</td></tr>
+<tr><td>Array</td><td>`[1, 2, 3]`</td><td>`key = [1, 2, 3]`</td></tr>
+<tr><td>Object</td><td>`{"n": 1}`</td><td>`[key]` table</td></tr>
+<tr><td>Null</td><td>`null`</td><td>(omitted by default)</td></tr>
+<tr><td>ISO Date</td><td>`"2024-01-15T10:30:00Z"`</td><td>`key = 2024-01-15T10:30:00Z`</td></tr>
+<br />
+<h2 id="batch-convert-multiple-json-files">Batch Convert Multiple JSON Files</h2>
+<br />
+<p>Working on a project with 20+ JSON config files? Convert them all at once:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf configs/*.json --to toml --out-dir ./toml-configs
+</code></pre>
+<br />
+<p>This preserves your directory structure and converts every file in one command.</p>
+<br />
+<h2 id="json-to-toml-in-ci-cd-pipelines">JSON to TOML in CI/CD Pipelines</h2>
+<br />
+<p>Add a conversion step to your CI/CD pipeline:</p>
+<br />
+<pre><code class="language-yaml">
+# .github/workflows/convert-configs.yml
+- name: Convert JSON configs to TOML
+  run: |
+    pip install devbench-cf
+    devbench cf ./config/*.json --to toml --out-dir ./toml/
+</code></pre>
+<br />
+<h2 id="comparison-configforge-vs-other-tools">Comparison: ConfigForge vs Other Tools</h2>
+<br />
+<tr><td>Feature</td><td>ConfigForge</td><td>jq</td><td>Custom Scripts</td></tr>
+|---------|-------------|----|---------------|
+<tr><td>JSON to TOML conversion</td><td>✅ Native</td><td>❌</td><td>❌ Requires awk/sed</td></tr>
+<tr><td>Nested objects</td><td>✅ Tables</td><td>✅</td><td>❌</td></tr>
+<tr><td>Type inference (dates, booleans)</td><td>✅ Auto</td><td>❌ Strings</td><td>❌ Strings</td></tr>
+<tr><td>Batch mode</td><td>✅ Glob</td><td>✅ Loop</td><td>❌ Error-prone</td></tr>
+<tr><td>100% offline</td><td>✅ Zero network</td><td>✅</td><td>✅</td></tr>
+<tr><td>Null handling</td><td>✅ Customizable</td><td>✅ null</td><td>❌ Inconsistent</td></tr>
+<tr><td>One command install</td><td>✅ pip install</td><td>❌ Binary+path</td><td>❌ Manual</td></tr>
+<br />
+<h2 id="common-use-cases">Common Use Cases</h2>
+<br />
+<h3 id="migrating-from-nodejs-to-rust">Migrating from Node.js to Rust</h3>
+<br />
+<pre><code class="language-bash">
+devbench cf package.json --to toml &gt; Cargo.toml-style.toml
+</code></pre>
+<br />
+<h3 id="modernizing-python-configs">Modernizing Python Configs</h3>
+<br />
+<pre><code class="language-bash">
+# Convert old setup.py JSON configs to pyproject.toml
+devbench cf setup-config.json --to toml &gt; pyproject.toml
+</code></pre>
+<br />
+<h3 id="spring-boot-to-toml">Spring Boot to TOML</h3>
+<br />
+<pre><code class="language-bash">
+devbench cf application.json --to toml &gt; application.toml
+</code></pre>
+<br />
+<h2 id="why-offline-matters">Why Offline Matters</h2>
+<br />
+<p>Your config files contain sensitive data — database URLs, API keys, internal paths. <strong>Never paste production configs into a web form.</strong> ConfigForge runs entirely on your machine with zero network calls.</p>
+<br />
+<p>> *"I'm not pasting my production database config into some random website."* — Reddit r/selfhosted</p>
+<br />
+<h2 id="related-resources">Related Resources</h2>
+<br />
+<p>- <a href="/tools/devbench/forge/seo/vs-jq.html">ConfigForge vs jq</a></p>
+<p>- <a href="/tools/devbench/forge/seo/vs-online.html">ConfigForge vs Online Converters</a></p>
+<p>- <a href="/tools/devbench/forge/seo/ini-to-toml-converter.html">Convert INI to TOML with Types</a></p>
+<p>- <a href="/tools/devbench/forge/seo/use-cases.html">ConfigForge Real-World Use Cases</a></p>
+<br />
+<h2 id="quick-reference">Quick Reference</h2>
+<br />
+<pre><code class="language-bash">
+# Single file
+devbench cf input.json --to toml &gt; output.toml
+
+# Batch directory
+devbench cf *.json --to toml --out-dir ./toml/
+
+# With format override
+devbench cf input.json --to toml --from json
+</code></pre>
+<br />
+<hr />
+<br />
+<p>*ConfigForge — convert config files between 9 formats, offline, private, fast. One-time purchase $19.*</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

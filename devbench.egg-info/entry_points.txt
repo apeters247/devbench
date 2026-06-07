@@ -1,0 +1,2 @@
+[console_scripts]
+devbench = core.cli:entry_point

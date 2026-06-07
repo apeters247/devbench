@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>ConfigForge Config File Converter | NaxiAI Devbench</title>
+  <meta name="description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+  <meta property="og:title" content="ConfigForge — Multi-Format Config Converter">
+  <meta property="og:description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/kubernetes-config-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ConfigForge — Multi-Format Config Converter">
+  <meta name="twitter:description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="convert-kubernetes-yaml-to-json-a-complete-guide-for-k8s-configs">Convert Kubernetes YAML to JSON: A Complete Guide for K8s Configs</h1>
+<br />
+<p>If you've searched for <strong>how to convert Kubernetes YAML to JSON</strong>, you already know the challenge: K8s manifests use multi-document YAML with <code>---</code> separators, nested resource specs, and inline anchors. Most YAML-to-JSON converters either crash on multi-document files or silently process only the first document.</p>
+<br />
+<p>This guide covers every method — from <code>kubectl</code> to dedicated CLI tools — and shows when each one works best.</p>
+<br />
+<h2 id="method-1-using-kubectl-when-it-works">Method 1: Using kubectl (When It Works)</h2>
+<br />
+<p>When you have a running cluster, <code>kubectl</code> can output JSON natively:</p>
+<br />
+<pre><code class="language-bash">
+kubectl get deployment myapp -o json
+</code></pre>
+<br />
+<p>Or get the raw manifest without cluster defaults:</p>
+<br />
+<pre><code class="language-bash">
+kubectl get deployment myapp -o json --dry-run=client
+</code></pre>
+<br />
+<p><strong>Limitations of kubectl:</strong></p>
+<p>- Requires a live cluster connection — no offline use</p>
+<p>- Only works for Kubernetes kinds — can't convert arbitrary YAML</p>
+<p>- Injects cluster defaults (status fields, defaulted values)</p>
+<p>- No batch mode for directory conversion</p>
+<br />
+<h2 id="method-2-using-configforge-cli-for-offline-conversion">Method 2: Using ConfigForge CLI for Offline Conversion</h2>
+<br />
+<p>For offline, private conversion of any YAML file — not just K8s — ConfigForge (<code>devbench cf</code>) gives you full control:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to json &lt; deployment.yaml
+</code></pre>
+<br />
+<p>This works without a cluster, without internet, and handles any valid YAML — not just Kubernetes kinds.</p>
+<br />
+<h2 id="handling-multi-document-yaml-the-kubernetes-challenge">Handling Multi-Document YAML (The Kubernetes Challenge)</h2>
+<br />
+<p>A single Kubernetes manifest file often contains multiple resources separated by <code>---</code>:</p>
+<br />
+<pre><code class="language-yaml">
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-svc
+</code></pre>
+<br />
+<p>Most converters crash here or process only the first <code>---</code> document. ConfigForge handles multi-document YAML natively, converting each document separately:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to json &lt; multi-resource.yaml
+</code></pre>
+<br />
+<p>You get a valid JSON representation of all resources — namespace, deployment, and service — preserving the document structure.</p>
+<br />
+<h2 id="batch-converting-an-entire-manifests-directory">Batch Converting an Entire Manifests Directory</h2>
+<br />
+<p>When you have a <code>manifests/</code> directory with 100+ YAML files that need conversion:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf convert "manifests/*.yaml" --to json --batch
+</code></pre>
+<br />
+<p>One command converts every <code>.yaml</code> file to <code>.json</code> with per-file progress reporting.</p>
+<br />
+<h2 id="converting-json-back-to-yaml-for-editing">Converting JSON Back to YAML for Editing</h2>
+<br />
+<p>After modifying K8s configs in JSON (e.g., a CI pipeline processes JSON), convert back to YAML:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to yaml &lt; modified.json
+</code></pre>
+<br />
+<h2 id="converting-helm-valuesyaml-to-json">Converting Helm values.yaml to JSON</h2>
+<br />
+<p>Helm's <code>values.yaml</code> is pure YAML — <code>kubectl</code> can't help here since there's no <code>kind</code>:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to json &lt; values.yaml
+</code></pre>
+<br />
+<p>Useful when generating environment-specific configs from a values template.</p>
+<br />
+<h2 id="comparison-table">Comparison Table</h2>
+<br />
+<tr><td>Feature</td><td>ConfigForge</td><td>kubectl</td><td>yq</td><td>Online Converters</td></tr>
+|---|---|---|---|---|
+<tr><td>**YAML → JSON**</td><td>✅ Native</td><td>✅ Native</td><td>⚠️ Limited</td><td>✅</td></tr>
+<tr><td>**Multi-doc YAML**</td><td>✅ Full</td><td>❌ Single</td><td>⚠️ Split</td><td>❌</td></tr>
+<tr><td>**Offline**</td><td>✅ 100%</td><td>✅ (with cluster)</td><td>✅ 100%</td><td>❌ Requires web</td></tr>
+<tr><td>**Batch directory**</td><td>✅ Glob patterns</td><td>❌</td><td>⚠️ Shell loops</td><td>❌</td></tr>
+<tr><td>**Non-K8s YAML**</td><td>✅ Any YAML</td><td>❌ K8s kinds only</td><td>✅ Any YAML</td><td>✅ Any</td></tr>
+<tr><td>**Comment preservation**</td><td>✅ YAML, INI, .env</td><td>❌</td><td>⚠️ Partial</td><td>❌</td></tr>
+<tr><td>**9 format support**</td><td>✅ JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties</td><td>❌</td><td>❌ YAML/JSON only</td><td>❌ Usually 1-2</td></tr>
+<tr><td>**Setup**</td><td>`pip install`</td><td>`kubectl` install</td><td>Binary download</td><td>Browser</td></tr>
+<br />
+<h2 id="security-why-you-shouldnt-upload-k8s-configs-online">Security: Why You Shouldn't Upload K8s Configs Online</h2>
+<br />
+<p>Kubernetes manifests contain sensitive information:</p>
+<p>- Service names and internal DNS patterns</p>
+<p>- Image repository URLs and tags</p>
+<p>- Base64-encoded secrets (which are not encrypted)</p>
+<p>- Persistent volume claims exposing storage topology</p>
+<p>- ConfigMap contents with application settings</p>
+<br />
+<p><strong>Never paste K8s manifests into an online YAML-to-JSON converter.</strong> ConfigForge keeps all data on your machine — zero API calls, zero uploads, zero logs on third-party servers.</p>
+<br />
+<h2 id="ci-pipeline-example">CI Pipeline Example</h2>
+<br />
+<p>In a GitHub Actions workflow, convert manifests before deployment:</p>
+<br />
+<pre><code class="language-yaml">
+- name: Convert K8s manifests to JSON
+  run: |
+    pip install devbench-cf
+    devbench cf convert "manifests/*.yaml" --to json --batch --output-dir dist/
+- name: Deploy
+  run: some-json-only-tool --config dist/
+</code></pre>
+<br />
+<h2 id="get-started">Get Started</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+devbench cf --to json &lt; deployment.yaml
+</code></pre>
+<br />
+<p>Convert Kubernetes YAML to JSON (and any of 9 formats) — 100% offline, multi-document support included, and your cluster secrets never leave your machine.</p>
+<br />
+<hr />
+<p>_Generated by: AI writer_</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

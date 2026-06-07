@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>ConfigForge Config File Converter | NaxiAI Devbench</title>
+  <meta name="description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+  <meta property="og:title" content="ConfigForge — Multi-Format Config Converter">
+  <meta property="og:description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/json-to-yaml-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ConfigForge — Multi-Format Config Converter">
+  <meta name="twitter:description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="how-to-convert-json-to-yaml-from-the-command-line--a-complete-guide">How to Convert JSON to YAML from the Command Line — A Complete Guide</h1>
+<br />
+<p>Stop pasting JSON into browser converters. This guide shows you how to convert JSON to YAML from the command line using <strong>ConfigForge</strong> (<code>devbench cf</code>) — a free, offline CLI that supports 9 config formats. No data leaves your machine, no accounts required, no rate limits.</p>
+<br />
+<h2 id="why-use-a-cli-for-json-to-yaml-conversion">Why Use a CLI for JSON to YAML Conversion?</h2>
+<br />
+<p>Online JSON to YAML converters have three problems:</p>
+<p>- <strong>Privacy risk</strong> — You paste production configs into a third-party server</p>
+<p>- <strong>Format limits</strong> — Most sites only convert one format pair (JSON ↔ YAML), not TOML, XML, CSV, or others</p>
+<p>- <strong>No batch mode</strong> — One file at a time, manually</p>
+<br />
+<p>A local CLI solves all three. Let's get started.</p>
+<br />
+<h2 id="prerequisites">Prerequisites</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+</code></pre>
+<br />
+<p>That's it. No dependencies, no accounts, no configuration. The tool runs entirely on your machine.</p>
+<br />
+<h2 id="basic-json-to-yaml-conversion">Basic JSON to YAML Conversion</h2>
+<br />
+<p>The simplest form: name your source and target files, and ConfigForge auto-detects both formats:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf convert config.json config.yaml
+</code></pre>
+<br />
+<p>This reads <code>config.json</code>, detects it as JSON, and writes <code>config.yaml</code> as clean YAML.</p>
+<br />
+<h2 id="stdin-piping-quick-one-offs">Stdin Piping (Quick One-Offs)</h2>
+<br />
+<p>For quick conversions without creating intermediate files, pipe data through stdin:</p>
+<br />
+<pre><code class="language-bash">
+cat config.json | devbench cf --to yaml
+</code></pre>
+<br />
+<p>Or with a heredoc for inline data:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to yaml &lt;&lt;&lt; '{"name": "myapp", "version": "1.0.0"}'
+</code></pre>
+<br />
+<h2 id="handling-nested-json-objects">Handling Nested JSON Objects</h2>
+<br />
+<p>JSON with deep nesting converts to cleanly indented YAML:</p>
+<br />
+<pre><code class="language-bash">
+# Input: config.json with nested "database" object
+devbench cf --to yaml &lt; config.json
+# Output:
+# database:
+#   host: localhost
+#   port: 5432
+#   credentials:
+#     user: admin
+#     password_encrypted: true
+</code></pre>
+<br />
+<p>YAML's indentation-based structure is more readable for humans than deeply nested JSON braces. ConfigForge preserves the nesting exactly, producing valid, clean YAML.</p>
+<br />
+<h2 id="json-arrays-to-yaml-lists">JSON Arrays to YAML Lists</h2>
+<br />
+<p>JSON arrays become YAML list syntax naturally:</p>
+<br />
+<pre><code class="language-bash">
+# Input: {"servers": ["web01", "web02", "db01"]}
+devbench cf --to yaml &lt; servers.json
+# Output:
+# servers:
+#   - web01
+#   - web02
+#   - db01
+</code></pre>
+<br />
+<h2 id="batch-converting-many-json-files-to-yaml">Batch Converting Many JSON Files to YAML</h2>
+<br />
+<p>Need to convert an entire directory? ConfigForge's batch mode handles glob patterns and recursive directory traversal:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf convert "configs/*.json" --to yaml --batch
+</code></pre>
+<br />
+<p>This converts every JSON file in <code>configs/</code> to <code>.yaml</code> in a single command, with per-file progress reporting.</p>
+<br />
+<h2 id="feature-comparison">Feature Comparison</h2>
+<br />
+<tr><td>Feature</td><td>ConfigForge (devbench cf)</td><td>jq</td><td>Online Converters</td><td>Python Scripts</td></tr>
+|---|---|---|---|---|
+<tr><td>**JSON → YAML**</td><td>✅ Native</td><td>❌ JSON only</td><td>✅ One pair</td><td>⚠️ Manual setup</td></tr>
+<tr><td>**Formats supported**</td><td>**9** (JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties)</td><td>1 (JSON)</td><td>Usually 1-2</td><td>1 per library</td></tr>
+<tr><td>**Bidirectional**</td><td>✅ All pairs</td><td>❌ JSON→JSON only</td><td>✅ One pair</td><td>⚠️ Per format</td></tr>
+<tr><td>**Batch mode**</td><td>✅ Glob patterns</td><td>⚠️ Shell loops</td><td>❌</td><td>⚠️ Custom code</td></tr>
+<tr><td>**Offline**</td><td>✅ 100%, zero API calls</td><td>✅ 100%</td><td>❌ Requires web</td><td>✅ 100%</td></tr>
+<tr><td>**Comment preservation**</td><td>✅ YAML, TOML, INI, .env</td><td>❌ N/A</td><td>❌ Stripped</td><td>⚠️ Library-dependent</td></tr>
+<tr><td>**Setup**</td><td>`pip install`</td><td>`apt`/`brew`</td><td>Browser</td><td>Write code</td></tr>
+<br />
+<h2 id="real-world-example-converting-docker-composejson-back-to-yaml">Real-World Example: Converting docker-compose.json Back to YAML</h2>
+<br />
+<p>You have a CI pipeline that outputs JSON, but Docker Compose reads YAML:</p>
+<br />
+<pre><code class="language-bash">
+# CI step generates docker-compose.json
+# Convert it back to YAML for Docker Compose
+devbench cf convert docker-compose.json docker-compose.yml
+docker compose up -f docker-compose.yml
+</code></pre>
+<br />
+<h2 id="frequently-asked-questions">Frequently Asked Questions</h2>
+<br />
+<p><strong>Does it preserve comments?</strong> JSON has no comment syntax, so there are no comments to preserve from the input. But when converting *from* comment-supporting formats (YAML, TOML, INI, .env) to JSON, ConfigForge preserves those comments in the intermediate representation.</p>
+<br />
+<p><strong>Can I convert JSON to TOML?</strong> Yes! ConfigForge handles JSON ↔ TOML bidirectionally. This is useful when migrating Node.js configs (JSON) to Rust Cargo.toml-style configs.</p>
+<br />
+<p><strong>Is it free?</strong> Yes — <code>pip install devbench-cf</code> installs the full CLI for free. No trial, no premium tier, no feature gates.</p>
+<br />
+<p><strong>Is it really 100% offline?</strong> Yes. ConfigForge makes zero external API calls. Your data never leaves your machine — not even for telemetry.</p>
+<br />
+<h2 id="get-started-now">Get Started Now</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+devbench cf --to yaml &lt; config.json
+</code></pre>
+<br />
+<p>Convert JSON to YAML, TOML to XML, INI to .env, and any other pairing between 9 formats — all from one CLI, entirely offline, with zero data upload.</p>
+<br />
+<hr />
+<p>_Generated by: AI writer_</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

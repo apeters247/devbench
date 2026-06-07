@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- SEO Meta -->
+  <title>Devbench — 9 Developer Tools + ConfigForge Multi-Format Config Converter (9 Formats, 100% Offline)</title>
+  <meta name="description" content="Devbench gives you 9 essential developer tools right in your macOS menubar plus ConfigForge CLI: JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties converter, JSON formatter, base64 encoder, UUID generator, timestamp converter, and more. The best yaml to json converter alternative — offline, private, fast.">
+  <meta name="keywords" content="devbench, developer tools, mac menubar, macos utility, config file converter, yaml to json converter, json to yaml, toml converter, configforge, json formatter, base64, uuid generator, timestamp converter, clipboard tools, developer productivity">
+  <meta name="author" content="NaxiAI">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://naxiai.com/tools/devbench/">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/">
+  <meta property="og:title" content="Devbench — 9 Developer Tools + ConfigForge CLI: 9-Format Config Converter, 100% Offline">
+  <meta property="og:description" content="9 essential developer tools + ConfigForge multi-format config converter (9 formats: JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties), always one click away in your menubar. Fully offline. One-time purchase, $19.">
+  <meta property="og:image" content="https://naxiai.com/tools/devbench/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:site_name" content="NaxiAI">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Devbench — 9 Developer Tools + ConfigForge CLI: 9-Format Config Converter">
+  <meta name="twitter:description" content="9 essential developer tools + ConfigForge multi-format config converter (9 formats, 100% offline), always one click away in your menubar. Clipboard auto-detect included. One-time purchase, $19.">
+  <meta name="twitter:image" content="https://naxiai.com/tools/devbench/og-image.png">
+
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel",
+    "memoryRequirements": "50 MB",
+    "storageRequirements": "20 MB",
+    "datePublished": "2026-06-07",
+    "keywords": "developer tools, mac menubar, JSON formatter, base64, UUID, timestamp, clipboard"
+  }
+  </script>
+
+  <!-- JSON-LD / ConfigForge CLI tool -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Configuration Management",
+    "description": "Multi-format config file converter supporting JSON, YAML, TOML, XML, CSV, INI, and .env bidirectionally. Offline CLI tool. The best yaml to json converter alternative.",
+    "url": "https://pypi.org/project/devbench-cf/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/InStock"
+      }
+    ],
+    "softwareVersion": "1.0.0",
+    "keywords": "yaml to json converter, json to yaml, toml converter, ini to yaml, xml to json, env file converter, config file converter, cli tool, offline converter"
+  }
+  </script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%236c8cff'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='white' font-size='18' font-weight='bold' font-family='monospace'%3EDB%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+
+  <!-- ============================================================
+       HEADER
+       ============================================================ -->
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="#features">Features</a></li>
+          <li><a href="#screenshots">Screenshots</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="support.html">Support</a></li>
+          <li><a href="privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============================================================
+         HERO
+         ============================================================ -->
+    <section class="hero" id="hero" aria-labelledby="hero-title">
+      <div class="container text-center">
+        <div class="hero-badge">
+          <span aria-hidden="true">&#9670;</span> Now available for macOS 13+
+        </div>
+
+        <h1 id="hero-title">
+          <span class="text-gradient">Devbench</span><br>
+          9 developer tools + ConfigForge CLI in your menubar
+        </h1>
+
+        <p class="subhead">
+          Stop switching between browser tabs and terminal windows. Devbench puts
+          JSON formatting, base64 encoding, UUID generation, timestamp conversion,
+          and ConfigForge (convert config files between JSON, YAML, TOML, XML, CSV,
+          INI, .env, HCL, and .properties — all 9 formats bidirectionally, 100% offline) —
+          right in your macOS menubar. One click away, always.
+        </p>
+
+        <div class="hero-actions" style="justify-content: center;">
+          <a href="#pricing" class="btn btn-primary">
+            <svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l3-3 4 4 4-4"/></svg>
+            Buy Now — $19
+          </a>
+          <a href="#features" class="btn btn-secondary">See All Features</a>
+        </div>
+
+        <div class="macos-req" style="justify-content: center;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+          </svg>
+          Requires macOS 13+ &middot; Apple Silicon &amp; Intel
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         FEATURES
+         ============================================================ -->
+    <section class="section" id="features" aria-labelledby="features-title">
+      <div class="container">
+        <h2 id="features-title" class="section-title text-center">
+          Everything you need, right in your menubar
+        </h2>
+        <p class="section-subtitle">
+          Nine essential tools, plus ConfigForge CLI. One lightweight menubar app. No window juggling,
+          no context switching. Just click and go.
+        </p>
+
+        <div class="features-grid">
+
+          <!-- Headline feature: Clipboard Auto-Detect -->
+          <div class="feature-card headline">
+            <div class="icon-wrapper highlight" aria-hidden="true">&#x1F4CB;</div>
+            <div class="headline-content">
+              <h3>
+                Clipboard Auto-Detect
+                <span class="headline-badge">New</span>
+              </h3>
+              <p>
+                Copy anything — JSON, a timestamp, base64 text, or a UUID —
+                and Devbench automatically detects what it is and shows you the
+                relevant tools. No manual selection needed. Just copy and convert.
+              </p>
+              <span class="tool-shortcut">⌃⌥C</span>
+            </div>
+          </div>
+
+          <!-- Tool 2 -->
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">{ }</div>
+            <h3>JSON Formatter</h3>
+            <p>
+              Format, validate, and minify JSON with syntax highlighting and
+              tree view. Paste from clipboard or type directly.
+            </p>
+            <span class="tool-shortcut">⌃⌥J</span>
+          </div>
+
+          <!-- Tool 3 -->
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">A&lt;/&gt;</div>
+            <h3>Base64 Encoder / Decoder</h3>
+            <p>
+              Encode text or files to base64 and decode them back. Handles
+              strings, images, and binary data.
+            </p>
+            <span class="tool-shortcut">⌃⌥B</span>
+          </div>
+
+          <!-- Tool 4 -->
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">#</div>
+            <h3>UUID Generator</h3>
+            <p>
+              Generate v4 UUIDs instantly. Copy to clipboard with one click.
+              Bulk mode generates multiple IDs at once.
+            </p>
+            <span class="tool-shortcut">⌃⌥U</span>
+          </div>
+
+          <!-- Tool 5 -->
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">&#x1F551;</div>
+            <h3>Timestamp Converter</h3>
+            <p>
+              Convert Unix timestamps to human-readable dates and vice versa.
+              Supports milliseconds, seconds, ISO 8601, and timezone offsets.
+            </p>
+            <span class="tool-shortcut">⌃⌥T</span>
+          </div>
+
+          <!-- Tool 6 -->
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">c&lt;&gt;</div>
+            <h3>HTML Entity Encoder</h3>
+            <p>
+              Encode and decode HTML entities. Perfect for escaping special
+              characters in web templates and email content.
+            </p>
+            <span class="tool-shortcut">⌃⌥H</span>
+          </div>
+
+          <!-- Tool 7 -->
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">%%</div>
+            <h3>URL Encoder / Decoder</h3>
+            <p>
+              Quickly URL-encode or decode query strings, form data, and
+              special characters. Handles full UTF-8.
+            </p>
+            <span class="tool-shortcut">⌃⌥R</span>
+          </div>
+
+          <!-- Tool 8 -->
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">cX</div>
+            <h3>Color Converter</h3>
+            <p>
+              Convert between hex, RGB, HSL, and named CSS colors. Preview
+              colors visually and copy any format with one click.
+            </p>
+            <span class="tool-shortcut">⌃⌥L</span>
+          </div>
+
+          <!-- Tool 9 -->
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">&amp;</div>
+            <h3>Regex Tester</h3>
+            <p>
+              Test regular expressions in real-time with match highlighting,
+              capture group display, and flags toggle. Save common patterns.
+            </p>
+            <span class="tool-shortcut">⌃⌥X</span>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         SCREENSHOTS
+         ============================================================ -->
+    <section class="section" id="screenshots" aria-labelledby="screenshots-title" style="padding-top:0;">
+      <div class="container">
+        <h2 id="screenshots-title" class="section-title text-center">
+          See it in action
+        </h2>
+        <p class="section-subtitle">
+          A menubar app that stays out of your way until you need it.
+        </p>
+
+        <div class="screenshot-area">
+          <div class="screenshot-placeholder">
+            <div class="mock-display" role="img" aria-label="Devbench app screenshot placeholder showing menubar dropdown with tools list">
+              <div class="mock-menubar">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <div class="mock-icon" aria-hidden="true">&#x1F4BB;</div>
+              <div class="mock-label">Screenshot: Menubar dropdown with all 9 tools</div>
+            </div>
+            <p class="caption">Devbench lives in your menubar — click the icon to reveal all tools.</p>
+          </div>
+        </div>
+
+        <div class="screenshot-area" style="margin-top:0;">
+          <div class="screenshot-placeholder">
+            <div class="mock-display" role="img" aria-label="Devbench clipboard auto-detect screenshot placeholder showing detected JSON">
+              <div class="mock-menubar">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <div class="mock-icon" aria-hidden="true">&#x1F4CB;</div>
+              <div class="mock-label">Screenshot: Clipboard auto-detect — JSON detected</div>
+            </div>
+            <p class="caption">Copy any data, and Devbench auto-detects the format. Shown: JSON detection.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         PRICING
+         ============================================================ -->
+    <section class="section" id="pricing" aria-labelledby="pricing-title">
+      <div class="container">
+        <h2 id="pricing-title" class="section-title text-center">
+          Simple pricing. No subscriptions.
+        </h2>
+        <p class="section-subtitle">
+          Pay once, use forever. All future updates included.
+        </p>
+
+        <div class="pricing-card">
+          <div class="price">$19</div>
+          <div class="price-label">one-time payment</div>
+
+          <ul class="perks">
+            <li>All 9 developer tools</li>
+            <li>Clipboard auto-detect</li>
+            <li>Customizable keyboard shortcuts</li>
+            <li>Automatic updates</li>
+            <li>macOS 13+ (Apple Silicon &amp; Intel)</li>
+            <li>Free updates for life</li>
+          </ul>
+
+          <div class="buy-links">
+            <a href="https://checkout.stripe.com/c/pay/cs_live_a1LIkWbuu8T6WilF04DOIq8CoO0nio7dRHSMhDvlKWYIqBH1zHiKKUZBwq" class="btn btn-primary" id="buy-stripe" target="_blank" rel="noopener">
+              <svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l3-3 4 4 4-4"/></svg>
+              Buy Now — $19
+            </a>
+            <a href="#" class="btn btn-ghost btn-sm" id="buy-gumroad">
+              Also available on Gumroad &rarr;
+            </a>
+          </div>
+
+          <div class="store-badges">
+            <span class="store-badge" title="Coming soon to the Mac App Store">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7v10l10 5 10-5V7l-10-5z"/><path d="M2 7l10 5 10-5"/><path d="M12 22V12"/></svg>
+              Mac App Store — Coming Soon
+            </span>
+          </div>
+
+          <p class="price-note">
+            Secure payment via Stripe. No account required.
+          </p>
+        </div>
+      </div>
+    </section>
+    <!-- ============================================================
+         TRY IT NOW — WEB DEMO
+         ============================================================ -->
+    <section class="section" id="try-it" aria-labelledby="try-title" style="background:var(--bg-alt);">
+      <div class="container">
+        <h2 id="try-title" class="section-title text-center">
+          Try ConfigForge Right Now &mdash; No Install Required
+        </h2>
+        <p class="section-subtitle">
+          Convert config files between 9 formats &mdash; offline, private, fast.
+          Try the web demo instantly or install the CLI in one command.
+        </p>
+
+        <div class="features-grid">
+          <div class="feature-card" style="grid-column:1/-1;text-align:center;">
+            <h3>Web Demo</h3>
+            <p>Paste any config file and convert it instantly in your browser. No upload, no sign-up, no data leaves your machine.</p>
+            <div style="margin:1.5rem 0;padding:1rem;background:#1a1a2e;border-radius:8px;text-align:left;font-family:monospace;font-size:0.9rem;line-height:1.6;">
+              <code style="color:#6c8cff;">$</code> <code style="color:#4ecdc4;">curl -s</code> <code>https://naxiai.com/tools/devbench/demo/</code><br>
+              <code style="color:#666;">&lt;!-- Opens the interactive ConfigForge web demo --&gt;</code>
+            </div>
+            <a href="https://naxiai.com/tools/devbench/demo/" class="btn btn-primary" target="_blank" rel="noopener">
+              <svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-4l-2 4-3-6-2 4H2"/></svg>
+              Launch Web Demo
+            </a>
+          </div>
+
+          <div class="feature-card" style="grid-column:1/-1;text-align:center;">
+            <h3>One-Command CLI Install</h3>
+            <p>Install globally and convert files from your terminal &mdash; perfect for CI/CD, automation, and power users.</p>
+            <div style="margin:1.5rem 0;padding:1rem;background:#1a1a2e;border-radius:8px;text-align:left;font-family:monospace;font-size:0.9rem;line-height:1.6;">
+              <code style="color:#6c8cff;">$</code> <code style="color:#4ecdc4;">pip install devbench-cf</code><br>
+              <code style="color:#6c8cff;">$</code> <code style="color:#4ecdc4;">devbench cf --to yaml</code> <code>&lt; config.json</code><br>
+              <code style="color:#666;"># Converts JSON to YAML instantly &mdash; 100% offline</code>
+            </div>
+            <a href="https://pypi.org/project/devbench-cf/" class="btn btn-secondary" target="_blank" rel="noopener">
+              View on PyPI
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ============================================================
+         COMPARISON TABLE
+         ============================================================ -->
+    <section class="section" id="comparison" aria-labelledby="comparison-title">
+      <div class="container">
+        <h2 id="comparison-title" class="section-title text-center">
+          ConfigForge vs Other Tools: Side-by-Side
+        </h2>
+        <p class="section-subtitle">
+          See how ConfigForge stacks up against yq, jq, and online converters.
+        </p>
+
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--primary);">
+                <th style="padding:12px 8px;text-align:left;">Feature</th>
+                <th style="padding:12px 8px;text-align:center;color:var(--primary);font-weight:700;">ConfigForge</th>
+                <th style="padding:12px 8px;text-align:center;">yq</th>
+                <th style="padding:12px 8px;text-align:center;">jq</th>
+                <th style="padding:12px 8px;text-align:center;">Online Converters</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>Formats supported</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;font-weight:700;">9 (bidirectional)</td>
+                <td style="padding:10px 8px;text-align:center;">2</td>
+                <td style="padding:10px 8px;text-align:center;">1</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">Usually 1-2</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>JSON ↔ YAML</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌ (JSON only)</td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>TOML / XML / CSV / INI / .env</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ All 5</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>HCL (Terraform)</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>Java .properties</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>Bidirectional conversion</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ All pairs</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Limited</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Limited</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>Batch directory mode</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Native</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Shell loops</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Shell loops</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>Comment preservation</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Round-trip</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Partial</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌ N/A</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌ Stripped</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>100% offline</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Zero API calls</td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌ Requires web</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>Multi-doc YAML</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Full support</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Split mode</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>Type inference (INI→TOML)</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Booleans, numbers, dates</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 8px;"><strong>Install</strong></td>
+                <td style="padding:10px 8px;text-align:center;"><code>pip install</code></td>
+                <td style="padding:10px 8px;text-align:center;">Binary</td>
+                <td style="padding:10px 8px;text-align:center;"><code>apt</code>/<code>brew</code></td>
+                <td style="padding:10px 8px;text-align:center;">Browser</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="text-align:center;margin-top:2rem;">
+          <p style="margin-bottom:1rem;"><strong>Read more detailed comparisons:</strong></p>
+          <div class="hero-actions" style="justify-content:center;gap:0.75rem;flex-wrap:wrap;">
+            <a href="/tools/devbench/forge/seo/vs-yq.html" class="btn btn-secondary btn-sm">ConfigForge vs yq</a>
+            <a href="/tools/devbench/forge/seo/vs-jq.html" class="btn btn-secondary btn-sm">ConfigForge vs jq</a>
+            <a href="/tools/devbench/forge/seo/vs-online.html" class="btn btn-secondary btn-sm">ConfigForge vs Online Converters</a>
+            <a href="/tools/devbench/forge/seo/use-cases.html" class="btn btn-secondary btn-sm">Real-World Use Cases</a>
+            <a href="/tools/devbench/forge/seo/json-to-toml-converter.html" class="btn btn-secondary btn-sm">JSON → TOML</a>
+            <a href="/tools/devbench/forge/seo/ini-to-toml-converter.html" class="btn btn-secondary btn-sm">INI → TOML</a>
+            <a href="/tools/devbench/forge/seo/csv-to-yaml-converter.html" class="btn btn-secondary btn-sm">CSV → YAML</a>
+            <a href="/tools/devbench/forge/seo/xml-to-yaml-guide.html" class="btn btn-secondary btn-sm">XML → YAML</a>
+            <a href="/tools/devbench/forge/seo/env-to-json-guide.html" class="btn btn-secondary btn-sm">ENV → JSON</a>
+            <a href="/tools/devbench/forge/seo/json-to-yaml-converter.html" class="btn btn-secondary btn-sm">JSON → YAML</a>
+            <a href="/tools/devbench/forge/seo/toml-vs-yaml.html" class="btn btn-secondary btn-sm">TOML vs YAML</a>
+            <a href="/tools/devbench/forge/seo/kubernetes-config-converter.html" class="btn btn-secondary btn-sm">K8s Config Converter</a>
+            <a href="/tools/devbench/forge/seo/docker-compose-converter.html" class="btn btn-secondary btn-sm">Docker Compose Guide</a>
+            <a href="/tools/devbench/forge/seo/ansible-ini-to-yaml.html" class="btn btn-secondary btn-sm">Ansible INI → YAML</a>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ============================================================
+         CONFIGFORGE
+         ============================================================ -->
+    <section class="section" id="configforge" aria-labelledby="cf-title" style="background:var(--bg-alt);">
+      <div class="container">
+        <h2 id="cf-title" class="section-title text-center">
+          ConfigForge &mdash; Multi-Format Config File Converter (9 Formats)
+        </h2>
+        <p class="section-subtitle">
+          Convert between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties &mdash; all 9 formats
+          bidirectionally. Runs 100% offline. Preserves comments. Batch mode included.
+        </p>
+
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">&#x21C4;</div>
+            <h3>9 Formats Bidirectional</h3>
+            <p>
+              Convert any format to any other: JSON &harr; YAML, TOML &harr; XML,
+              HCL &harr; JSON, .properties &harr; YAML, CSV &harr; INI,
+              and every other pair. Auto-detects input format
+              from content.
+            </p>
+          </div>
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">#</div>
+            <h3>Comment Preservation</h3>
+            <p>
+              YAML and INI comments are extracted before conversion and
+              re-inserted into the output. No silent data loss &mdash; what
+              you document stays documented.
+            </p>
+          </div>
+          <div class="feature-card">
+            <div class="icon-wrapper" aria-hidden="true">&#x26A1;</div>
+            <h3>Batch Mode &amp; CLI</h3>
+            <p>
+              Convert entire directories with <code>cf --batch *.yaml --to json</code>.
+              Zero dependency Python CLI. <code>pip install devbench-cf</code>.
+            </p>
+          </div>
+        </div>
+
+        <div style="text-align:center;margin-top:2rem;">
+          <p style="margin-bottom:1rem;"><strong>How ConfigForge compares to other tools:</strong></p>
+          <div class="hero-actions" style="justify-content:center;gap:0.75rem;flex-wrap:wrap;">
+            <a href="/tools/devbench/forge/seo/vs-yq.html" class="btn btn-secondary btn-sm">vs yq</a>
+            <a href="/tools/devbench/forge/seo/vs-jq.html" class="btn btn-secondary btn-sm">vs jq</a>
+            <a href="/tools/devbench/forge/seo/vs-online.html" class="btn btn-secondary btn-sm">vs Online Converters</a>
+            <a href="/tools/devbench/forge/seo/json-to-toml-converter.html" class="btn btn-secondary btn-sm">JSON → TOML</a>
+            <a href="/tools/devbench/forge/seo/ini-to-toml-converter.html" class="btn btn-secondary btn-sm">INI → TOML</a>
+            <a href="/tools/devbench/forge/seo/csv-to-yaml-converter.html" class="btn btn-secondary btn-sm">CSV → YAML</a>
+            <a href="/tools/devbench/forge/seo/xml-to-yaml-guide.html" class="btn btn-secondary btn-sm">XML → YAML</a>
+            <a href="/tools/devbench/forge/seo/env-to-json-guide.html" class="btn btn-secondary btn-sm">ENV → JSON</a>
+            <a href="/tools/devbench/forge/seo/json-to-yaml-converter.html" class="btn btn-secondary btn-sm">JSON → YAML</a>
+            <a href="/tools/devbench/forge/seo/toml-vs-yaml.html" class="btn btn-secondary btn-sm">TOML vs YAML</a>
+            <a href="/tools/devbench/forge/seo/kubernetes-config-converter.html" class="btn btn-secondary btn-sm">K8s Config Converter</a>
+            <a href="/tools/devbench/forge/seo/docker-compose-converter.html" class="btn btn-secondary btn-sm">Docker Compose Guide</a>
+            <a href="/tools/devbench/forge/seo/ansible-ini-to-yaml.html" class="btn btn-secondary btn-sm">Ansible INI → YAML</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================
+       FOOTER
+       ============================================================ -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="/tools/devbench/" class="site-logo" style="margin-bottom:8px;display:inline-flex;">
+            <span class="logo-icon" aria-hidden="true">DB</span>
+            Devbench
+          </a>
+          <p>Nine essential developer tools + ConfigForge CLI, always one click away in your macOS menubar. Built by NaxiAI.</p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#screenshots">Screenshots</a></li>
+            <li><a href="#pricing">Pricing</a></li>
+            <li><a href="support.html#faq">FAQ</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="support.html">Help Center</a></li>
+            <li><a href="support.html#contact">Contact Us</a></li>
+            <li><a href="support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="privacy.html">Privacy Policy</a></li>
+            <li><a href="#">Terms of Use</a></li>
+            <li><a href="mailto:support@naxiai.com">support@naxiai.com</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <span>&copy; 2025 NaxiAI. All rights reserved.</span>
+        <span>macOS is a trademark of Apple Inc.</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Smooth scroll for anchor links -->
+  <script>
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        const href = this.getAttribute('href');
+        if (href === '#') return;
+        e.preventDefault();
+        const target = document.querySelector(href);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
+</body>
+</html>

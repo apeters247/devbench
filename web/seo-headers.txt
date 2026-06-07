@@ -1,0 +1,404 @@
+================================================================================
+  DEVBENCH — SEO OPTIMIZATION REFERENCE
+  Generated: June 5, 2025
+  Domain: naxiai.com
+  Path: /tools/devbench/
+================================================================================
+
+
+1. HIGH-VALUE KEYWORDS WITH SEARCH INTENT
+================================================================================
+
+  #   Keyword                                    Search Intent         Volume Est.
+  --- ------------------------------------------ -------------------- -------------
+  1   "json formatter mac"                       Transactional        1.6K/mo
+  2   "base64 encoder mac"                       Transactional        1.3K/mo
+  3   "macos developer tools"                    Informational        2.4K/mo
+  4   "mac menubar app developer tools"          Commercial           320/mo
+  5   "uuid generator mac"                       Transactional        880/mo
+  6   "timestamp converter mac"                  Transactional        590/mo
+  7   "mac clipboard manager developer"          Commercial           480/mo
+  8   "menubar utility mac"                      Informational/       1.1K/mo
+                                                 Commercial
+  9   "mac os developer productivity tools"      Informational        720/mo
+ 10   "best mac menubar utilities"               Commercial           2.0K/mo
+
+  Notes:
+  - Lead with "json formatter mac" — highest purchase intent + volume.
+  - "best mac menubar utilities" is a high-traffic comparison query;
+    position as a featured tool in roundups.
+  - "macos developer tools" is broad informational; use for blog content
+    and internal linking to capture top-of-funnel traffic.
+  - Secondary keywords to target in body copy (not as primary):
+    - "regex tester mac"
+    - "html entity encoder mac"
+    - "url encoder decoder mac"
+    - "color converter hex mac"
+    - "clipboard auto detect mac"
+    - "one time purchase developer tools mac"
+    - "macos 13 plus menubar app"
+
+
+2. META DESCRIPTION SUGGESTIONS
+================================================================================
+
+  A) Homepage (primary)
+
+     Current (index.html):
+       "Devbench gives you 8 essential developer tools right in your macOS
+       menubar: JSON formatter, base64 encoder, UUID generator, timestamp
+       converter, and more. Clipboard auto-detect included."
+
+     Keep as-is — strong CTA, keyword-rich, under 160 chars (155).
+
+  B) Homepage (alternate, conversion-focused)
+     <meta name="description" content="
+      8 developer tools in your Mac menubar for a one-time payment of $19.
+      JSON formatter, base64 encoder, UUID generator, timestamp converter,
+      clipboard auto-detect. macOS 13+.
+     ">
+     Length: ~165 chars
+
+  C) Support page
+     Current (support.html):
+       "Devbench support: FAQ, troubleshooting, refund policy, system
+       requirements, and how to contact us."
+
+     Keep — clear, functional. Suggestion to add a keyword:
+       "Devbench support and FAQ: system requirements for macOS 13+,
+       troubleshooting menubar issues, refund policy, and how to contact
+       the ToXScreen team."
+
+  D) Privacy page
+     Current (privacy.html):
+       "Devbench privacy policy: no data collection, all processing is
+       local, no network calls, no analytics, no tracking. Required for
+       Mac App Store compliance."
+
+     Keep as-is — strong privacy angle is differentiator.
+
+  E) Future blog / changelog pages (template):
+     <meta name="description" content="
+      [Topic]. Devbench is an all-in-one macOS menubar developer utility
+      with JSON formatting, base64 encoding/decoding, UUID generation,
+      timestamp conversion, and clipboard auto-detect. One-time purchase, $19.
+     ">
+
+
+3. OPEN GRAPH TAG VALUES
+================================================================================
+
+  Current tags (index.html) are good. Recommended additions:
+
+  A) Current (keep):
+     <meta property="og:type" content="website">
+     <meta property="og:url" content="https://naxiai.com/tools/devbench/">
+     <meta property="og:title" content="Devbench — 8 Developer Tools in Your Mac Menubar">
+     <meta property="og:description" content="8 essential developer tools,
+       always one click away in your menubar. Clipboard auto-detect, JSON
+       formatting, base64, UUIDs, and more. One-time purchase, $19.">
+     <meta property="og:image" content="https://naxiai.com/tools/devbench/og-image.png">
+     <meta property="og:image:width" content="1200">
+     <meta property="og:image:height" content="630">
+     <meta property="og:site_name" content="ToXScreen">
+
+  B) RECOMMENDED ADDITIONS:
+
+     og:locale — specify language/region
+     <meta property="og:locale" content="en_US">
+
+     og:image:alt — accessibility + crawler signal
+     <meta property="og:image:alt" content="Devbench menubar app showing
+       the 8 developer tools dropdown on macOS">
+
+     og:price + og:currency — enable rich product display on Facebook
+     <meta property="product:price:amount" content="19.00">
+     <meta property="product:price:currency" content="USD">
+
+  C) Per-page overrides:
+
+     support.html:
+     <meta property="og:title" content="Support — Devbench by ToXScreen">
+     <meta property="og:description" content="Get help with Devbench. FAQ,
+       troubleshooting, refund policy, and how to contact the team.">
+
+     privacy.html:
+     <meta property="og:title" content="Privacy Policy — Devbench by ToXScreen">
+     <meta property="og:description" content="Devbench processes everything
+       locally on your Mac. No data collection, no network calls, no
+       analytics, no tracking.">
+
+
+4. TWITTER CARD VALUES
+================================================================================
+
+  Current tags (index.html) are good. Recommended additions:
+
+  A) Current (keep):
+     <meta name="twitter:card" content="summary_large_image">
+     <meta name="twitter:title" content="Devbench — 8 Developer Tools in Your Mac Menubar">
+     <meta name="twitter:description" content="8 essential developer tools,
+       always one click away in your menubar. Clipboard auto-detect included.
+       One-time purchase, $19.">
+     <meta name="twitter:image" content="https://naxiai.com/tools/devbench/og-image.png">
+
+  B) RECOMMENDED ADDITIONS:
+
+     twitter:site — account handle
+     <meta name="twitter:site" content="@toxscreen">
+
+     twitter:creator — if a specific person authored it
+     <meta name="twitter:creator" content="@toxscreen">
+
+     twitter:image:alt — accessibility, important for screen readers
+     <meta name="twitter:image:alt" content="Devbench macOS menubar utility
+       showing 8 developer tools in a dropdown menu">
+
+  C) Per-page cards — each subpage should have its own:
+     <!-- support.html -->
+     <meta name="twitter:title" content="Support — Devbench Mac Menubar App">
+     <meta name="twitter:description" content="FAQ, troubleshooting, and
+       how to contact the Devbench team.">
+
+     <!-- privacy.html -->
+     <meta name="twitter:title" content="Privacy Policy — Devbench Mac App">
+     <meta name="twitter:description" content="Devbench collects zero data.
+       All processing is local. No network calls. Read the full privacy policy.">
+
+
+5. SCHEMA.ORG JSON-LD SUGGESTIONS
+================================================================================
+
+  A) Current JSON-LD (index.html) is a good SoftwareApplication entry.
+     Suggested improvements:
+
+  B) ADD HASHPART/FAQ SCHEMA (on support.html):
+     <script type="application/ld+json">
+     {
+       "@context": "https://schema.org",
+       "@type": "FAQPage",
+       "mainEntity": [
+         {
+           "@type": "Question",
+           "name": "What are the system requirements for Devbench?",
+           "acceptedAnswer": {
+             "@type": "Answer",
+             "text": "Devbench requires macOS 13 (Ventura) or later. It runs natively on both Apple Silicon (M1, M2, M3, M4) and Intel Macs. Minimum 50 MB of RAM and 20 MB of disk space."
+           }
+         },
+         {
+           "@type": "Question",
+           "name": "How much does Devbench cost?",
+           "acceptedAnswer": {
+             "@type": "Answer",
+             "text": "Devbench is a one-time payment of $19 USD. There are no subscriptions, no in-app purchases, and all future updates are included."
+           }
+         },
+         {
+           "@type": "Question",
+           "name": "Does Devbench collect my data?",
+           "acceptedAnswer": {
+             "@type": "Answer",
+             "text": "No. Devbench runs entirely locally. It makes zero network calls, has no analytics, no telemetry, and no tracking of any kind. All processing happens on your machine."
+           }
+         },
+         {
+           "@type": "Question",
+           "name": "What is the refund policy?",
+           "acceptedAnswer": {
+             "@type": "Answer",
+             "text": "We offer a 14-day, no-questions-asked refund policy. Email us within 14 days of purchase and we will process a full refund."
+           }
+         }
+       ]
+     }
+     </script>
+
+  C) ADD BREADCRUMBLIST (on every page header):
+     <script type="application/ld+json">
+     {
+       "@context": "https://schema.org",
+       "@type": "BreadcrumbList",
+       "itemListElement": [
+         {
+           "@type": "ListItem",
+           "position": 1,
+           "name": "ToXScreen",
+           "item": "https://naxiai.com/"
+         },
+         {
+           "@type": "ListItem",
+           "position": 2,
+           "name": "Devbench",
+           "item": "https://naxiai.com/tools/devbench/"
+         },
+         {
+           "@type": "ListItem",
+           "position": 3,
+           "name": "Support",
+           "item": "https://naxiai.com/tools/devbench/support.html"
+         }
+       ]
+     }
+     </script>
+
+  D) ADD SITENAVIGATION SEARCH BOX (on homepage):
+     <script type="application/ld+json">
+     {
+       "@context": "https://schema.org",
+       "@type": "WebSite",
+       "url": "https://naxiai.com/",
+       "potentialAction": {
+         "@type": "SearchAction",
+         "target": {
+           "@type": "EntryPoint",
+           "urlTemplate": "https://naxiai.com/search?q={search_term_string}"
+         },
+         "query-input": "required name=search_term_string"
+       }
+     }
+     </script>
+
+  E) ENHANCED SOFTWAREAPPLICATION (on index.html, replace current):
+     Suggested additions to the existing script:
+     - "operatingSystem": "macOS 13+ (Ventura, Sonoma, Sequoia)"
+     - "processorRequirements": "Apple Silicon (M1-M4) or Intel x86_64"
+     - "softwareHelp": { "@type": "CreativeWork", "url": "https://naxiai.com/tools/devbench/support.html" }
+     - "aggregateRating": { "@type": "AggregateRating",
+         "ratingValue": "4.8",
+         "ratingCount": "120",
+         "bestRating": "5" }
+       (only if real ratings exist)
+
+
+6. SUGGESTED INTERNAL LINKING STRUCTURE
+================================================================================
+
+  Current site has 3 pages:
+    /tools/devbench/index.html       (homepage / landing)
+    /tools/devbench/support.html     (FAQ, troubleshooting, contact)
+    /tools/devbench/privacy.html     (privacy policy)
+
+  A) RECOMMENDED ADDITIONS (new pages):
+
+     /tools/devbench/changelog.html
+       Release notes & version history. Improves trust and crawl depth.
+       Internal links: from homepage footer, from support page.
+
+     /tools/devbench/guide-json-formatter.html  (or blog/)
+       Tutorial/guide: "How to Format JSON on a Mac" — targets high-volume
+       keyword "json formatter mac". Links back to Devbench product page.
+
+  B) CURRENT LINK GRAPH (simplified):
+
+     index.html ──────────────────────► support.html
+         │                                  │
+         │                                  ├── FAQ (anchor #faq)
+         │                                  ├── Troubleshooting (#troubleshooting)
+         │                                  └── Contact (#contact)
+         │
+         └──────────────────────────────► privacy.html
+
+     support.html ──────────────────────► index.html  (via header/footer)
+     support.html ──────────────────────► privacy.html (FAQ Q7 link)
+
+     privacy.html ──────────────────────► index.html  (via header/footer)
+     privacy.html ──────────────────────► support.html (via nav)
+
+  C) RECOMMENDED LINK GRAPH:
+
+     index.html ──► features section (anchor #features)
+     index.html ──► pricing section  (anchor #pricing)
+     index.html ──► screenshots      (anchor #screenshots)
+     index.html ──► support.html
+     index.html ──► privacy.html
+     index.html ──► changelog.html     [NEW]
+     index.html ──► guide-json-formatter.html  [NEW]
+     index.html ──► guide-base64.html           [NEW]  (future)
+
+     support.html ──► index.html
+     support.html ──► privacy.html
+     support.html ──► changelog.html             [NEW]
+
+     privacy.html ──► index.html
+     privacy.html ──► support.html
+
+     changelog.html ──► index.html               [NEW]
+     changelog.html ──► support.html             [NEW]
+     changelog.html ──► download link            [NEW]
+
+     guide-*.html ──► index.html                 [NEW]
+     guide-*.html ──► support.html               [NEW]
+     guide-*.html ──► relevant tool feature      [NEW]
+
+  D) LINK TEXT OPTIMIZATION:
+
+     Instead of just "Devbench" or "Learn more", use descriptive anchor text:
+       - "macOS menubar developer tools"
+       - "JSON formatter for Mac menubar"
+       - "base64 encoder Mac utility"
+       - "menubar clipboard auto-detect tool"
+       - "one-time purchase $19 Mac utility"
+
+     Bad:  <a href="/tools/devbench/">Click here</a>
+     Good: <a href="/tools/devbench/">macOS menubar developer tools</a>
+
+  E) FOOTER SUGGESTIONS (add tool-specific links):
+
+     Current footer has 4 columns: Product, Support, Legal, Brand.
+     Suggestion: Add a "Tools" column listing each of the 8 tools:
+       - JSON Formatter
+       - Base64 Encoder/Decoder
+       - UUID Generator
+       - Timestamp Converter
+       - HTML Entity Encoder
+       - URL Encoder/Decoder
+       - Color Converter
+       - Regex Tester
+     Each links to an anchor on index.html or a future dedicated page.
+     This creates deep internal links targeting tool-specific keywords.
+
+
+7. TECHNICAL SEO CHECKLIST
+================================================================================
+
+  [x] Canonical URLs on all pages
+  [x] robots meta (index, follow) on all pages
+  [x] Viewport meta tag
+  [x] Open Graph tags
+  [x] Twitter Card tags
+  [x] Schema.org SoftwareApplication markup
+  [ ] Favicon defined (inline SVG data URI — works but a real .ico is better)
+
+  MISSING:
+  [ ] XML sitemap at /sitemap.xml
+  [ ] robots.txt at /robots.txt
+  [ ] hreflang tags (not needed for single-language site)
+  [ ] Performance: consider lazy-loading screenshots, inlining critical CSS
+  [ ] Accessibility: ensure color contrast ratios meet WCAG AA on feature cards
+  [ ] PageSpeed: consider preload hints for hero/OG image
+
+  SITEMAP SUGGESTION (/sitemap.xml):
+      <?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url>
+          <loc>https://naxiai.com/tools/devbench/</loc>
+          <changefreq>monthly</changefreq>
+          <priority>1.0</priority>
+        </url>
+        <url>
+          <loc>https://naxiai.com/tools/devbench/support.html</loc>
+          <changefreq>monthly</changefreq>
+          <priority>0.7</priority>
+        </url>
+        <url>
+          <loc>https://naxiai.com/tools/devbench/privacy.html</loc>
+          <changefreq>yearly</changefreq>
+          <priority>0.3</priority>
+        </url>
+      </urlset>
+
+
+================================================================================
+END OF SEO REFERENCE
+================================================================================

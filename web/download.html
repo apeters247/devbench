@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devbench — Download</title>
+<meta name="robots" content="noindex">
+<meta name="description" content="Download Devbench — 9 developer tools with ConfigForge config converter. macOS app and cross-platform CLI.">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: #0d1117; color: #e6edf3; line-height: 1.6;
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; flex: 1; }
+  header { text-align: center; padding: 3rem 0 2rem; }
+  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+  h1 span { color: #58a6ff; }
+  .tagline { color: #8b949e; margin-top: 0.5rem; font-size: 1.1rem; }
+  .card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .card h2 { font-size: 1.25rem; margin-bottom: 1rem; color: #f0f6fc; }
+  .card h3 { font-size: 1rem; margin: 1rem 0 0.5rem; color: #8b949e; }
+  .license-key {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    padding: 1rem; font-size: 0.95rem; word-break: break-all;
+    color: #58a6ff; margin: 0.5rem 0;
+  }
+  .btn-download {
+    display: inline-block; background: #238636; color: #fff;
+    padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none;
+    font-weight: 600; font-size: 1rem; margin: 0.5rem 0;
+    transition: background 0.2s;
+  }
+  .btn-download:hover { background: #2ea043; }
+  .btn-secondary {
+    display: inline-block; border: 1px solid #30363d; color: #e6edf3;
+    padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none;
+    font-weight: 500; margin: 0.5rem 0.5rem 0.5rem 0; transition: border 0.2s;
+  }
+  .btn-secondary:hover { border-color: #58a6ff; }
+  .cmd {
+    background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    padding: 0.75rem 1rem; font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.85rem; margin: 0.5rem 0; overflow-x: auto;
+  }
+  .cmd .prompt { color: #8b949e; }
+  .cmd .code { color: #7ee787; }
+  ul { list-style: none; padding: 0; }
+  li { padding: 0.25rem 0; color: #8b949e; }
+  li::before { content: '✓ '; color: #3fb950; }
+  footer { text-align: center; padding: 2rem; color: #484f58; font-size: 0.85rem; }
+  .status-valid { color: #3fb950; font-weight: 600; }
+  .status-invalid { color: #f85149; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1><span>Devbench</span> — Thank you!</h1>
+    <p class="tagline">Your license is active. Here's everything you need to get started.</p>
+  </header>
+
+  <div class="card" id="license-info">
+    <h2>🔑 Your License</h2>
+    <p id="license-status" class="status-valid">✓ License validated</p>
+    <div class="license-key" id="license-key-display">—</div>
+    <p style="color: #8b949e; font-size: 0.9rem; margin-top: 0.5rem;">
+      Up to 3 machines. Need help? <a href="mailto:hi@naxiai.com" style="color: #58a6ff;">hi@naxiai.com</a>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>📦 Downloads</h2>
+    <a href="#" class="btn-download" id="dl-dmg" onclick="return false;">
+      Download for macOS
+    </a>
+    <p style="color: #484f58; font-size: 0.85rem; margin-top: 0.25rem;">
+      macOS 13+ (Apple Silicon &amp; Intel). DMG file.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>💻 Cross-Platform CLI</h2>
+    <p style="color: #8b949e; margin-bottom: 0.75rem;">
+      One command, works on macOS, Linux, and Windows (via Python):
+    </p>
+    <div class="cmd">
+      <span class="prompt">$</span> <span class="code">curl -sSL https://naxiai.com/install.sh | bash</span>
+    </div>
+    <p style="color: #8b949e; font-size: 0.9rem;">
+      Or install via pip: <code style="color: #7ee787;">pip install devbench</code>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>🚀 Quick Start</h2>
+    <div class="cmd">
+      <span class="prompt">$</span> <span class="code">devbench cf --serve</span><br>
+      <span style="color: #8b949e;"># Opens the web UI at http://127.0.0.1:8080</span>
+    </div>
+    <div class="cmd">
+      <span class="prompt">$</span> <span class="code">echo 'hello: world' | devbench cf --to json</span><br>
+      <span style="color: #8b949e;"># CLI one-liner: YAML → JSON</span>
+    </div>
+    <div class="cmd">
+      <span class="prompt">$</span> <span class="code">devbench license activate &lt;your-key&gt;</span><br>
+      <span style="color: #8b949e;"># Activate your license on this machine</span>
+    </div>
+    <div class="cmd">
+      <span class="prompt">$</span> <span class="code">devbench license verify &lt;your-key&gt;</span><br>
+      <span style="color: #8b949e;"># Check license status</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📚 Resources</h2>
+    <ul>
+      <li><a href="https://github.com/apeters247/devbench" style="color: #58a6ff;">GitHub Repository</a></li>
+      <li><a href="https://naxiai.com/tools/devbench/" style="color: #58a6ff;">ConfigForge Documentation</a></li>
+      <li><a href="https://naxiai.com/tools/devbench/demo/" style="color: #58a6ff;">Try ConfigForge Online</a></li>
+      <li><a href="mailto:hi@naxiai.com" style="color: #58a6ff;">Support: hi@naxiai.com</a></li>
+    </ul>
+  </div>
+
+  <footer>
+    Devbench v0.1.0 — Built with ❤️
+  </footer>
+</div>
+
+<script>
+// Extract license key from URL path: /download/<key>
+(function() {
+  var keyEl = document.getElementById('license-key-display');
+  var statusEl = document.getElementById('license-status');
+  var paths = window.location.pathname.split('/download/');
+  if (paths.length > 1 && paths[1]) {
+    var key = paths[1].split('?')[0].split('#')[0];
+    keyEl.textContent = key;
+  }
+  // DMG download — disabled until macOS build is available
+  var dmg = document.getElementById('dl-dmg');
+  dmg.href = '#';
+  dmg.style.opacity = '0.5';
+  dmg.title = 'macOS build coming soon (in progress)';
+})();
+</script>
+</body>
+</html>

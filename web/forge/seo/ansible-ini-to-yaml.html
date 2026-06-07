@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>ConfigForge Config File Converter | NaxiAI Devbench</title>
+  <meta name="description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+  <meta property="og:title" content="ConfigForge — Multi-Format Config Converter">
+  <meta property="og:description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/ansible-ini-to-yaml.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ConfigForge — Multi-Format Config Converter">
+  <meta name="twitter:description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="migrate-from-ansible-ini-inventory-to-yaml-a-complete-conversion-guide">Migrate from Ansible INI Inventory to YAML: A Complete Conversion Guide</h1>
+<br />
+<p>If you're maintaining Ansible inventory in INI format and considering moving to YAML, you're not alone. Modern Ansible best practices recommend YAML inventory for better structure, nested group support, and variable inheritance. But manually converting hundreds of lines of INI to YAML is error-prone and tedious.</p>
+<br />
+<p>This guide shows how to <strong>convert Ansible INI to YAML</strong> (and back) using <strong>ConfigForge</strong> (<code>devbench cf</code>) — a free, offline CLI that handles 9 config formats. Your hostnames, SSH users, and connection strings stay on your machine — nothing is uploaded anywhere.</p>
+<br />
+<h2 id="why-migrate-from-ini-to-yaml">Why Migrate from INI to YAML?</h2>
+<br />
+<tr><td>INI Inventory</td><td>YAML Inventory</td></tr>
+|---|---|
+<tr><td>Flat group definitions</td><td>Nested group hierarchy</td></tr>
+<tr><td>Limited to `:children` and `:vars`</td><td>Full YAML dict/list structure</td></tr>
+<tr><td>No comments per-host</td><td>Inline comments on every entry</td></tr>
+<tr><td>Hard to version-control diff</td><td>Clean, readable YAML diffs</td></tr>
+<tr><td>Parsing-dependent type handling</td><td>Native type inference</td></tr>
+<br />
+<h2 id="basic-ini-to-yaml-conversion">Basic INI to YAML Conversion</h2>
+<br />
+<p>Start simple — convert a single inventory file:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to yaml --from ini &lt; production.ini
+</code></pre>
+<br />
+<p>ConfigForge detects the INI sections (<code>[group]</code>), children (<code>[group:children]</code>), and variables (<code>[group:vars]</code>), and produces clean, structured YAML.</p>
+<br />
+<h2 id="handling-group-inheritance">Handling Group Inheritance</h2>
+<br />
+<p>INI uses <code>:children</code> syntax for group membership:</p>
+<br />
+<pre><code class="language-ini">
+[web:children]
+app_servers
+cache_servers
+
+[app_servers]
+web01 ansible_host=10.0.1.10
+web02 ansible_host=10.0.1.11
+
+[cache_servers]
+redis01 ansible_host=10.0.2.10
+</code></pre>
+<br />
+<p>ConfigForge converts this to nested YAML:</p>
+<br />
+<pre><code class="language-yaml">
+web:
+  children:
+    app_servers:
+      hosts:
+        web01:
+          ansible_host: 10.0.1.10
+        web02:
+          ansible_host: 10.0.1.11
+    cache_servers:
+      hosts:
+        redis01:
+          ansible_host: 10.0.2.10
+</code></pre>
+<br />
+<h2 id="converting-group-variables">Converting Group Variables</h2>
+<br />
+<p>INI group variables become clean YAML dicts:</p>
+<br />
+<pre><code class="language-ini">
+[db:vars]
+ansible_user=deploy
+ansible_port=22
+postgres_version=15
+debug=false
+max_connections=100
+</code></pre>
+<br />
+<p>ConfigForge's type inference converts the values so booleans stay booleans and numbers stay numbers:</p>
+<br />
+<pre><code class="language-yaml">
+db:
+  vars:
+    ansible_user: deploy
+    ansible_port: 22
+    postgres_version: 15
+    debug: false
+    max_connections: 100
+</code></pre>
+<br />
+<p>Note <code>debug=false</code> becomes YAML boolean <code>false</code> (not the string <code>"false"</code>), and <code>max_connections=100</code> becomes integer <code>100</code>.</p>
+<br />
+<h2 id="converting-ansible-vars-yaml-to-json">Converting Ansible Vars YAML to JSON</h2>
+<br />
+<p>After migration, you may need to feed Ansible variable files to JSON-only tools:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to json &lt; group_vars/all.yml
+</code></pre>
+<br />
+<p>This converts your Ansible vars from YAML to JSON, preserving the nested dict structure.</p>
+<br />
+<h2 id="batch-converting-an-entire-inventory-directory">Batch Converting an Entire Inventory Directory</h2>
+<br />
+<p>For a full migration with multiple inventory files:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf convert "inventory/*.ini" --to yaml --from ini --batch
+</code></pre>
+<br />
+<p>Or recursively for nested inventory structures:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf convert "inventory/**/*.ini" --to yaml --from ini --batch
+</code></pre>
+<br />
+<h2 id="comparison-table-conversion-methods">Comparison Table: Conversion Methods</h2>
+<br />
+<tr><td>Method</td><td>Offline</td><td>Type Inference</td><td>Batch Mode</td><td>Comment Preservation</td></tr>
+|---|---|---|---|---|
+<tr><td>**ConfigForge**</td><td>✅ 100%</td><td>✅ Booleans, numbers</td><td>✅ Glob + progress</td><td>✅ INI comments</td></tr>
+<tr><td>**Manual editing**</td><td>✅</td><td>✅ (by hand)</td><td>❌ Hours of work</td><td>✅</td></tr>
+<tr><td>**sed/awk scripts**</td><td>✅</td><td>❌ All strings</td><td>❌ Error-prone</td><td>❌ Stripped</td></tr>
+<tr><td>**Online converters**</td><td>❌ Uploads data</td><td>❌ All strings</td><td>❌</td><td>❌ Stripped</td></tr>
+<br />
+<h2 id="security-why-your-ansible-inventory-should-never-go-online">Security: Why Your Ansible Inventory Should Never Go Online</h2>
+<br />
+<p>Ansible inventory files contain:</p>
+<p>- Server IP addresses and internal DNS hostnames</p>
+<p>- SSH user accounts and connection ports</p>
+<p>- Connection strings with database credentials</p>
+<p>- Environment-specific topology patterns</p>
+<br />
+<p><strong>Never paste Ansible inventory into an online converter.</strong> ConfigForge runs entirely on your machine — no uploads, no API calls, no telemetry.</p>
+<br />
+<h2 id="real-example-200-line-inventory-migration">Real Example: 200-Line Inventory Migration</h2>
+<br />
+<p>A production <code>inventory.ini</code> with 200 lines, multiple group hierarchies, and hundreds of host variables:</p>
+<br />
+<pre><code class="language-bash">
+# Convert the entire production inventory
+devbench cf --to yaml --from ini &lt; production.ini &gt; production.yml
+
+# Verify the conversion
+head -50 production.yml
+# Clean, structured YAML output with all groups and variables
+</code></pre>
+<br />
+<h2 id="get-started">Get Started</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+devbench cf --to yaml --from ini &lt; inventory.ini
+</code></pre>
+<br />
+<p>Convert Ansible INI inventory to clean YAML — with type inference, comment preservation, and 100% offline privacy. One command handles your entire migration.</p>
+<br />
+<hr />
+<p>_Generated by: AI writer_</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

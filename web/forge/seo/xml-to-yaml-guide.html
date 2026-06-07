@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>XML to YAML Conversion Guide — Modernize Legacy Config Files</title>
+  <meta name="description" content="Convert XML config files to YAML without the deeply nested mess. CLI tool for Spring Boot XML to YAML migration, Ant build files, and Java config modernization. Clean output, batch support, 100% offline.">
+  <meta property="og:title" content="XML to YAML Conversion Guide — Free CLI Tool">
+  <meta property="og:description" content="Convert XML configs to clean YAML without deeply nested mess. Spring Boot, Ant, Java config modernization. Smart flattening option. Offline CLI.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/xml-to-yaml-guide.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="XML to YAML Conversion Guide — Free CLI Tool">
+  <meta name="twitter:description" content="Convert XML configs to clean YAML without deeply nested mess. Spring Boot, Ant, Java config modernization. Smart flattening option. Offline CLI.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="xml-to-yaml-conversion-guide-from-verbose-xml-to-clean-yaml">XML to YAML Conversion Guide: From Verbose XML to Clean YAML</h1>
+<br />
+<p>XML config files are still everywhere — Spring Boot applications, Ant build files, Java enterprise projects. But YAML is cleaner, shorter, and more maintainable. However, most <strong>XML to YAML converters</strong> produce deeply nested output that's worse than the original XML.</p>
+<br />
+<p><strong>ConfigForge</strong> converts XML to readable YAML with a smart flattening option — no more <code><root><item></code>-style nesting nightmares.</p>
+<br />
+<h2 id="the-xml-to-yaml-nesting-problem">The XML to YAML Nesting Problem</h2>
+<br />
+<p>A Reddit user complained: *"Every automated XML→YAML converter produces XML-style deeply nested YAML that's WORSE than the original XML."*</p>
+<br />
+<p>Here's what a bad converter gives you:</p>
+<br />
+<pre><code class="language-yaml">
+# Bad converter — preserves XML nesting literally
+application:
+  name:
+    "#text": my-app
+  version:
+    "#text": "1.0"
+  servers:
+    server:
+    - id: web-01
+      port:
+        "#text": "8080"
+      features:
+        feature:
+        - logging
+        - auth
+</code></pre>
+<br />
+<p>ConfigForge output — clean, config-style YAML:</p>
+<br />
+<pre><code class="language-yaml">
+# ConfigForge — clean and readable
+application:
+  name: my-app
+  version: "1.0"
+  servers:
+    - id: web-01
+      port: 8080
+      features:
+        - logging
+        - auth
+</code></pre>
+<br />
+<h2 id="install">Install</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+</code></pre>
+<br />
+<p>Or try the web demo: <a href="https://naxiai.com/tools/devbench/demo/">ConfigForge Web Demo</a></p>
+<br />
+<h2 id="example-convert-spring-boot-xml-config-to-yaml">Example: Convert Spring Boot XML Config to YAML</h2>
+<br />
+<p><strong>Input: <code>application.xml</code></strong></p>
+<br />
+<pre><code class="language-xml">
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;configuration&gt;
+    &lt;server&gt;
+        &lt;port&gt;8080&lt;/port&gt;
+        &lt;contextPath&gt;/api&lt;/contextPath&gt;
+        &lt;ssl&gt;
+            &lt;enabled&gt;true&lt;/enabled&gt;
+            &lt;keyStore&gt;/etc/certs/keystore.jks&lt;/keyStore&gt;
+            &lt;keyStorePassword&gt;${SSL_PASSWORD}&lt;/keyStorePassword&gt;
+        &lt;/ssl&gt;
+    &lt;/server&gt;
+    &lt;database&gt;
+        &lt;url&gt;jdbc:postgresql://localhost:5432/appdb&lt;/url&gt;
+        &lt;username&gt;app_user&lt;/username&gt;
+        &lt;password&gt;${DB_PASSWORD}&lt;/password&gt;
+        &lt;pool&gt;
+            &lt;maxSize&gt;20&lt;/maxSize&gt;
+            &lt;minIdle&gt;5&lt;/minIdle&gt;
+            &lt;timeout&gt;30000&lt;/timeout&gt;
+        &lt;/pool&gt;
+    &lt;/database&gt;
+    &lt;logging&gt;
+        &lt;level&gt;INFO&lt;/level&gt;
+        &lt;file&gt;/var/log/app.log&lt;/file&gt;
+        &lt;pattern&gt;%d{yyyy-MM-dd} %level %msg%n&lt;/pattern&gt;
+    &lt;/logging&gt;
+&lt;/configuration&gt;
+</code></pre>
+<br />
+<p><strong>Convert to YAML:</strong></p>
+<br />
+<pre><code class="language-bash">
+devbench cf application.xml --to yaml
+</code></pre>
+<br />
+<p><strong>Output: <code>application.yaml</code></strong></p>
+<br />
+<pre><code class="language-yaml">
+configuration:
+  server:
+    port: 8080
+    contextPath: /api
+    ssl:
+      enabled: true
+      keyStore: /etc/certs/keystore.jks
+      keyStorePassword: ${SSL_PASSWORD}
+  database:
+    url: "jdbc:postgresql://localhost:5432/appdb"
+    username: app_user
+    password: ${DB_PASSWORD}
+    pool:
+      maxSize: 20
+      minIdle: 5
+      timeout: 30000
+  logging:
+    level: INFO
+    file: /var/log/app.log
+    pattern: "%d{yyyy-MM-dd} %level %msg%n"
+</code></pre>
+<br />
+<h2 id="smart-flattening">Smart Flattening</h2>
+<br />
+<p>For deeply nested XML, use the flatten option to collapse single-child elements:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf complex.xml --to yaml --flatten
+</code></pre>
+<br />
+<p>Converts this XML:</p>
+<br />
+<pre><code class="language-xml">
+&lt;root&gt;
+    &lt;settings&gt;
+        &lt;connection&gt;
+            &lt;timeout&gt;30&lt;/timeout&gt;
+            &lt;retry&gt;3&lt;/retry&gt;
+        &lt;/connection&gt;
+    &lt;/settings&gt;
+&lt;/root&gt;
+</code></pre>
+<br />
+<p>To this YAML (flattened):</p>
+<br />
+<pre><code class="language-yaml">
+root:
+  settings:
+    connection:
+      timeout: 30
+      retry: 3
+</code></pre>
+<br />
+<p>Without flatten, single wrappers are preserved for clarity. Choose what works for your project.</p>
+<br />
+<h2 id="type-conversion-from-xml-to-yaml">Type Conversion from XML to YAML</h2>
+<br />
+<p>ConfigForge detects numeric and boolean values in XML text content:</p>
+<br />
+<tr><td>XML Content</td><td>YAML Type</td></tr>
+|-------------|-----------|
+<tr><td>`<port>8080</port>`</td><td>`port: 8080` (integer)</td></tr>
+<tr><td>`<enabled>true</enabled>`</td><td>`enabled: true` (boolean)</td></tr>
+<tr><td>`<ratio>0.75</ratio>`</td><td>`ratio: 0.75` (float)</td></tr>
+<tr><td>`<name>my-app</name>`</td><td>`name: my-app` (string)</td></tr>
+<tr><td>`<created>2024-01-15</created>`</td><td>`created: 2024-01-15` (date)</td></tr>
+<br />
+<h2 id="batch-convert-all-xml-files">Batch Convert All XML Files</h2>
+<br />
+<pre><code class="language-bash">
+# Convert entire XML config directory
+devbench cf config/*.xml --to yaml --out-dir ./yaml-config/
+
+# Recursive glob
+devbench cf "**/*.xml" --to yaml --out-dir ./yaml-config/
+</code></pre>
+<br />
+<h2 id="use-cases">Use Cases</h2>
+<br />
+<h3 id="spring-boot-xml-to-yaml-migration">Spring Boot XML to YAML Migration</h3>
+<br />
+<pre><code class="language-bash">
+# Convert all Spring XML configs
+devbench cf src/main/resources/*.xml --to yaml --out-dir ./src/main/resources/yaml/
+</code></pre>
+<br />
+<h3 id="ant-buildxml-to-gradle-style-yaml">Ant build.xml to Gradle-style YAML</h3>
+<br />
+<pre><code class="language-bash">
+devbench cf build.xml --to yaml &gt; build.yaml
+</code></pre>
+<br />
+<h3 id="java-enterprise-config-modernization">Java Enterprise Config Modernization</h3>
+<br />
+<pre><code class="language-bash">
+# Batch convert an entire Java EE project
+find . -name "*-config.xml" -exec devbench cf {} --to yaml --out-dir ./converted/ \;
+</code></pre>
+<br />
+<h2 id="comparison-configforge-vs-other-xmlyaml-tools">Comparison: ConfigForge vs Other XML→YAML Tools</h2>
+<br />
+<tr><td>Feature</td><td>ConfigForge</td><td>Python xmltodict</td><td>XSLT</td><td>Online converters</td></tr>
+|---------|-------------|-----------------|------|-------------------|
+<tr><td>Clean nesting</td><td>✅ Smart flattening</td><td>❌ Raw `<tag>` keys</td><td>❌ Manual</td><td>❌ Raw nesting</td></tr>
+<tr><td>Type inference</td><td>✅ Auto</td><td>❌ Strings</td><td>❌ Strings</td><td>❌ Strings</td></tr>
+<tr><td>Attribute handling</td><td>✅ Structured</td><td>⚠️ `@attr` keys</td><td>✅</td><td>❌</td></tr>
+<tr><td>Batch mode</td><td>✅ Glob</td><td>⚠️ Script</td><td>⚠️ Script</td><td>❌</td></tr>
+<tr><td>Offline</td><td>✅ Zero network</td><td>✅</td><td>✅</td><td>❌ Upload</td></tr>
+<tr><td>One-command</td><td>✅</td><td>❌ Write script</td><td>❌ Complex</td><td>✅</td></tr>
+<br />
+<h2 id="why-offline-matters">Why Offline Matters</h2>
+<br />
+<p>Your XML configs may contain database credentials, SSL key paths, or internal IPs. <strong>Never paste enterprise configs into an online converter.</strong></p>
+<br />
+<p>> *"We inherited a Java app with 2000-line XML configs. Every automated converter produces XML-style deeply nested YAML that's WORSE than the original XML."* — Reddit r/programming</p>
+<br />
+<h2 id="related-resources">Related Resources</h2>
+<br />
+<p>- <a href="/tools/devbench/forge/seo/vs-online.html">ConfigForge vs Online Converters</a></p>
+<p>- <a href="/tools/devbench/forge/seo/csv-to-yaml-converter.html">CSV to YAML Converter</a></p>
+<p>- <a href="/tools/devbench/forge/seo/json-to-yaml-converter.html">JSON to YAML Converter</a></p>
+<p>- <a href="/tools/devbench/forge/seo/use-cases.html">ConfigForge Real-World Use Cases</a></p>
+<br />
+<h2 id="quick-reference">Quick Reference</h2>
+<br />
+<pre><code class="language-bash">
+# Simple convert
+devbench cf config.xml --to yaml &gt; config.yaml
+
+# With smart flattening
+devbench cf config.xml --to yaml --flatten
+
+# Batch mode
+devbench cf *.xml --to yaml --out-dir ./yaml/
+
+# With format hint
+devbench cf unknown.ext --to yaml --from xml
+</code></pre>
+<br />
+<hr />
+<br />
+<p>*ConfigForge — the config converter that respects your time and your data. One-time purchase $19.*</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

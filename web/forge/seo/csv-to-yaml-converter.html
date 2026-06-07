@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>CSV to YAML Converter — Free CLI Tool for Server Inventory & Data Configs</title>
+  <meta name="description" content="Convert CSV spreadsheets to YAML with proper list-of-dicts structure. CLI tool for Ansible inventory, server configs, and batch data transformation. 100% offline, no data uploaded.">
+  <meta property="og:title" content="CSV to YAML Converter — Free Offline CLI">
+  <meta property="og:description" content="Convert CSV files to properly structured YAML lists and maps. Handles headers, nested keys, quoted values, and batch conversion. Perfect for server inventories and data configs.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/csv-to-yaml-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CSV to YAML Converter — Free Offline CLI">
+  <meta name="twitter:description" content="Convert CSV files to properly structured YAML lists and maps. Handles headers, nested keys, quoted values, and batch conversion. Perfect for server inventories and data configs.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="csv-to-yaml-converter-free-offline-cli-tool">CSV to YAML Converter: Free Offline CLI Tool</h1>
+<br />
+<p>Need to convert a spreadsheet of server configurations into Ansible inventory YAML? Converting 200-row CSV exports into structured config files? You need a <strong>CSV to YAML converter</strong> that understands headers, types, and proper YAML structure.</p>
+<br />
+<h2 id="the-problem-with-csv--yaml">The Problem with CSV → YAML</h2>
+<br />
+<p>A Stack Overflow user asked: *"I have a CSV file with 200 rows of server configurations. Each row needs to become a YAML block. Python libraries exist but I want a simple CLI. Is there anything?"*</p>
+<br />
+<p>Most converters produce flat, unreadable output. ConfigForge generates proper YAML lists of dicts, ready to use in Ansible, Kubernetes, or Docker Compose.</p>
+<br />
+<h2 id="install">Install</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+</code></pre>
+<br />
+<p>Or try the web demo: <a href="https://naxiai.com/tools/devbench/demo/">ConfigForge Web Demo</a></p>
+<br />
+<h2 id="example-csv-server-inventory-to-yaml">Example: CSV Server Inventory to YAML</h2>
+<br />
+<p><strong>Input: <code>servers.csv</code></strong></p>
+<br />
+<pre><code class="language-csv">
+name,host,port,region,environment,enabled,os
+web-01,10.0.1.10,443,us-east-1,production,true,ubuntu
+web-02,10.0.1.11,443,us-east-1,production,true,ubuntu
+db-01,10.0.2.10,5432,us-east-1,production,true,debian
+cache-01,10.0.3.10,6379,eu-west-1,staging,false,alpine
+dev-01,10.0.4.10,8080,eu-west-1,development,true,ubuntu
+</code></pre>
+<br />
+<p><strong>Convert to YAML:</strong></p>
+<br />
+<pre><code class="language-bash">
+devbench cf servers.csv --to yaml
+</code></pre>
+<br />
+<p><strong>Output: <code>servers.yaml</code></strong></p>
+<br />
+<pre><code class="language-yaml">
+servers:
+  - name: web-01
+    host: 10.0.1.10
+    port: 443
+    region: us-east-1
+    environment: production
+    enabled: true
+    os: ubuntu
+  - name: web-02
+    host: 10.0.1.11
+    port: 443
+    region: us-east-1
+    environment: production
+    enabled: true
+    os: ubuntu
+  - name: db-01
+    host: 10.0.2.10
+    port: 5432
+    region: us-east-1
+    environment: production
+    enabled: true
+    os: debian
+  - name: cache-01
+    host: 10.0.3.10
+    port: 6379
+    region: eu-west-1
+    environment: staging
+    enabled: false
+    os: alpine
+  - name: dev-01
+    host: 10.0.4.10
+    port: 8080
+    region: eu-west-1
+    environment: development
+    enabled: true
+    os: ubuntu
+</code></pre>
+<br />
+<h2 id="converting-csv-to-ansible-inventory-yaml">Converting CSV to Ansible Inventory YAML</h2>
+<br />
+<p>Ansible expects a specific structure. ConfigForge can help:</p>
+<br />
+<pre><code class="language-bash">
+# Group servers by environment
+devbench cf servers.csv --to yaml | grep -A 5 "environment: production"
+</code></pre>
+<br />
+<p>Or pre-process your CSV for Ansible:</p>
+<br />
+<pre><code class="language-yaml">
+# Convert CSV to structured Ansible inventory
+all:
+  children:
+    production:
+      hosts:
+        web-01:
+          ansible_host: 10.0.1.10
+        db-01:
+          ansible_host: 10.0.2.10
+    staging:
+      hosts:
+        cache-01:
+          ansible_host: 10.0.3.10
+</code></pre>
+<br />
+<h2 id="type-detection-in-csvyaml">Type Detection in CSV→YAML</h2>
+<br />
+<p>ConfigForge detects types from CSV values just like it does for INI:</p>
+<br />
+<tr><td>CSV Value</td><td>YAML Output</td></tr>
+|-----------|-------------|
+<tr><td>`true`, `false`, `yes`, `no`</td><td>`true` / `false` (boolean)</td></tr>
+<tr><td>`42`, `8080`, `-7`</td><td>`42` / `8080` (integer)</td></tr>
+<tr><td>`3.14`, `0.5`</td><td>`3.14` / `0.5` (float)</td></tr>
+<tr><td>`"quoted"`, `plain`</td><td>`"quoted"` / `plain` (string)</td></tr>
+<tr><td>`"2024-01-15"`</td><td>`2024-01-15` (date)</td></tr>
+<tr><td>Empty cell</td><td>(field omitted)</td></tr>
+<br />
+<h2 id="batch-convert-all-csv-files">Batch Convert All CSV Files</h2>
+<br />
+<pre><code class="language-bash">
+# Convert every CSV in a directory
+devbench cf data/*.csv --to yaml --out-dir ./yaml-output/
+
+# With progress
+devbench cf data/*.csv --to yaml --verbose
+</code></pre>
+<br />
+<h2 id="advanced-csv-with-nested-column-headers">Advanced: CSV with Nested Column Headers</h2>
+<br />
+<p>For spreadsheets with dot-notation headers like <code>network.dns.primary</code>:</p>
+<br />
+<pre><code class="language-csv">
+name,network.dns.primary,network.dns.secondary,storage.volume,storage.size_gb
+web-01,8.8.8.8,8.8.4.4,/dev/sda1,100
+db-01,10.0.0.1,10.0.0.2,/dev/xvdf,500
+</code></pre>
+<br />
+<p><strong>Command:</strong> <code>devbench cf servers.csv --to yaml</code> generates nested YAML:</p>
+<br />
+<pre><code class="language-yaml">
+- name: web-01
+  network:
+    dns:
+      primary: 8.8.8.8
+      secondary: 8.8.4.4
+  storage:
+    volume: /dev/sda1
+    size_gb: 100
+- name: db-01
+  network:
+    dns:
+      primary: 10.0.0.1
+      secondary: 10.0.0.2
+  storage:
+    volume: /dev/xvdf
+    size_gb: 500
+</code></pre>
+<br />
+<h2 id="comparison-configforge-vs-other-csvyaml-tools">Comparison: ConfigForge vs Other CSV→YAML Tools</h2>
+<br />
+<tr><td>Feature</td><td>ConfigForge</td><td>Python pandas</td><td>awk/sed</td><td>Online tools</td></tr>
+|---------|-------------|---------------|---------|-------------|
+<tr><td>Type inference</td><td>✅ Auto booleans, numbers</td><td>✅ With code</td><td>❌ Strings</td><td>❌ Strings</td></tr>
+<tr><td>Nested headers</td><td>✅ Dot-notation</td><td>⚠️ Requires code</td><td>❌</td><td>❌</td></tr>
+<tr><td>Batch mode</td><td>✅ Glob `*.csv`</td><td>⚠️ Script required</td><td>✅ Loop</td><td>❌</td></tr>
+<tr><td>Offline</td><td>✅ Zero network</td><td>✅</td><td>✅</td><td>❌ Upload</td></tr>
+<tr><td>One-command</td><td>✅ `devbench cf`</td><td>❌ Write script</td><td>❌ Debug each</td><td>✅ Browser</td></tr>
+<tr><td>Unicode support</td><td>✅ Full</td><td>✅</td><td>⚠️ Locale</td><td>⚠️</td></tr>
+<br />
+<h2 id="common-use-cases">Common Use Cases</h2>
+<br />
+<h3 id="ansible-dynamic-inventory">Ansible Dynamic Inventory</h3>
+<br />
+<pre><code class="language-bash">
+# Convert Terraform CSV output to Ansible YAML inventory
+terraform output -csv &gt; instances.csv
+devbench cf instances.csv --to yaml &gt; inventory.yaml
+</code></pre>
+<br />
+<h3 id="kubernetes-config-generation">Kubernetes Config Generation</h3>
+<br />
+<pre><code class="language-bash">
+# Convert deployment spreadsheet to YAML blocks
+devbench cf deployments.csv --to yaml &gt; deployments.yaml
+</code></pre>
+<br />
+<h3 id="ci-cd-pipeline-integration">CI/CD Pipeline Integration</h3>
+<br />
+<pre><code class="language-bash">
+# In CI
+pip install devbench-cf
+devbench cf reports/*.csv --to yaml --out-dir ./converted/
+</code></pre>
+<br />
+<h2 id="related-resources">Related Resources</h2>
+<br />
+<p>- <a href="/tools/devbench/forge/seo/vs-jq.html">ConfigForge vs jq</a></p>
+<p>- <a href="/tools/devbench/forge/seo/use-cases.html">ConfigForge Real-World Use Cases</a></p>
+<p>- <a href="/tools/devbench/forge/seo/xml-to-yaml-guide.html">XML to YAML Conversion Guide</a></p>
+<br />
+<h2 id="quick-reference">Quick Reference</h2>
+<br />
+<pre><code class="language-bash">
+# Simple convert
+devbench cf data.csv --to yaml &gt; output.yaml
+
+# Batch mode
+devbench cf *.csv --to yaml --out-dir yaml-files/
+
+# With format override
+devbench cf data.csv --to yaml --from csv
+
+# Expand nested headers
+devbench cf data.csv --to yaml --expand-dots
+</code></pre>
+<br />
+<hr />
+<br />
+<p>*ConfigForge — convert config files between 9 formats. CSV to YAML included. One-time purchase $19.*</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

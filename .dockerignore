@@ -1,0 +1,32 @@
+# Files that should NOT end up in the Docker image
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg/
+
+.git/
+.gitignore
+.github/
+
+snapshots/
+.forge/
+forge/
+
+*.md
+!README.md
+
+tests/
+ui/
+scripts/
+!scripts/docker-entrypoint.sh
+
+# The web api/serve modules handle host binding — the Dockerfile provides
+# '--host' via the compose command override; no additional config needed.
+.env
+*.env
+
+*.dmg
+*.app

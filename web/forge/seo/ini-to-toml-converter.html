@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>INI to TOML Converter with Type Inference — Free Offline CLI Tool</title>
+  <meta name="description" content="Convert INI config files to TOML with proper type inference — booleans, numbers, dates, and arrays detected automatically. CLI tool for legacy app modernization, Python ConfigParser migration, and batch conversion. 100% offline.">
+  <meta property="og:title" content="INI to TOML Converter with Type Inference — Free CLI">
+  <meta property="og:description" content="Convert INI files to properly typed TOML. Booleans, integers, dates, arrays detected automatically. Batch mode for 47+ files. Offline and private.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/ini-to-toml-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="INI to TOML Converter with Type Inference — Free CLI">
+  <meta name="twitter:description" content="Convert INI files to properly typed TOML. Booleans, integers, dates, arrays detected automatically. Batch mode for 47+ files. Offline and private.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="ini-to-toml-converter-with-type-inference">INI to TOML Converter with Type Inference</h1>
+<br />
+<p>Converting INI configuration files to TOML is harder than it looks. Most converters just copy <code>key=value</code> pairs as strings — turning <code>enabled = true</code> into <code>enabled = "true"</code> instead of a real boolean. <strong>ConfigForge</strong> detects actual types and outputs proper TOML.</p>
+<br />
+<h2 id="the-type-problem">The Type Problem</h2>
+<br />
+<p>INI has no type system — everything is a string. TOML has native booleans (<code>true</code>/<code>false</code>), integers, floats, dates, and arrays. A naive converter gives you TOML that's just INI with brackets:</p>
+<br />
+<pre><code class="language-toml">
+# Bad converter output — all strings!
+enabled = "true"
+timeout = "30"
+pi = "3.14"
+tags = '["a", "b"]'
+last_run = "2024-01-15T10:00:00Z"
+</code></pre>
+<br />
+<p>ConfigForge output — proper types:</p>
+<br />
+<pre><code class="language-toml">
+# ConfigForge output — real types
+enabled = true
+timeout = 30
+pi = 3.14
+tags = ["a", "b"]
+last_run = 2024-01-15T10:00:00Z
+</code></pre>
+<br />
+<h2 id="install">Install</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+</code></pre>
+<br />
+<p>Or try the web demo: <a href="https://naxiai.com/tools/devbench/demo/">ConfigForge Web Demo</a></p>
+<br />
+<h2 id="example-convert-a-legacy-ini-config-to-toml">Example: Convert a Legacy INI Config to TOML</h2>
+<br />
+<p><strong>Input: <code>app.ini</code></strong></p>
+<br />
+<pre><code class="language-ini">
+[server]
+host = localhost
+port = 8080
+debug = true
+ssl = false
+
+[database]
+url = postgres://user:pass@localhost:5432/db
+pool_size = 20
+enable_logging = false
+created_at = 2024-03-15T08:30:00Z
+
+[features]
+experimental = true
+max_retries = 5
+tags = ["api", "core", "v2"]
+</code></pre>
+<br />
+<p><strong>Convert to TOML:</strong></p>
+<br />
+<pre><code class="language-bash">
+devbench cf app.ini --to toml
+</code></pre>
+<br />
+<p><strong>Output: <code>app.toml</code></strong></p>
+<br />
+<pre><code class="language-toml">
+[server]
+host = "localhost"
+port = 8080
+debug = true
+ssl = false
+
+[database]
+url = "postgres://user:pass@localhost:5432/db"
+pool_size = 20
+enable_logging = false
+created_at = 2024-03-15T08:30:00Z
+
+[features]
+experimental = true
+max_retries = 5
+tags = ["api", "core", "v2"]
+</code></pre>
+<br />
+<h2 id="type-inference-rules">Type Inference Rules</h2>
+<br />
+<p>ConfigForge applies smart type inference, not regex guessing:</p>
+<br />
+<tr><td>INI Value</td><td>Detected Type</td><td>TOML Output</td></tr>
+|-----------|---------------|-------------|
+<tr><td>`true`, `false`, `yes`, `no`, `on`, `off`</td><td>Boolean</td><td>`key = true`</td></tr>
+<tr><td>`42`, `-7`, `0`</td><td>Integer</td><td>`key = 42`</td></tr>
+<tr><td>`3.14`, `-0.5`, `1e10`</td><td>Float</td><td>`key = 3.14`</td></tr>
+<tr><td>`"hello"`, `'single'`</td><td>String (quotes stripped)</td><td>`key = "hello"`</td></tr>
+<tr><td>`2024-01-15` (ISO date)</td><td>Date</td><td>`key = 2024-01-15`</td></tr>
+<tr><td>`2024-01-15T10:00:00Z`</td><td>Datetime</td><td>`key = 2024-01-15T10:00:00Z`</td></tr>
+<tr><td>`[1, 2, 3]`</td><td>Inline array</td><td>`key = [1, 2, 3]`</td></tr>
+<tr><td>`["a", "b"]`</td><td>String array</td><td>`key = ["a", "b"]`</td></tr>
+<tr><td>`plain text`</td><td>String</td><td>`key = "plain text"`</td></tr>
+<br />
+<h2 id="batch-convert-47-ini-files">Batch Convert 47+ INI Files</h2>
+<br />
+<p>Reddit user complaint: *"I have 47 INI files in a project that need to be TOML. Doing them one by one with sed/awk is insanity."*</p>
+<br />
+<pre><code class="language-bash">
+# Convert entire directory
+devbench cf configs/*.ini --to toml --out-dir ./toml-configs/
+
+# Dry run first — preview what will change
+devbench cf configs/*.ini --to toml --dry-run
+</code></pre>
+<br />
+<h2 id="convert-python-configparser-ini-to-toml">Convert Python ConfigParser INI to TOML</h2>
+<br />
+<p>When modernizing a legacy Python app from <code>configparser</code> to TOML:</p>
+<br />
+<p><strong>Original <code>config.ini</code>:</strong></p>
+<pre><code class="language-ini">
+[logging]
+level = INFO
+file = /var/log/app.log
+max_size = 10485760
+backup_count = 5
+</code></pre>
+<br />
+<p><strong>Command:</strong></p>
+<pre><code class="language-bash">
+devbench cf config.ini --to toml
+</code></pre>
+<br />
+<p><strong>Result: <code>config.toml</code>:</strong></p>
+<pre><code class="language-toml">
+[logging]
+level = "INFO"
+file = "/var/log/app.log"
+max_size = 10485760
+backup_count = 5
+</code></pre>
+<br />
+<h2 id="comparison-configforge-vs-other-initoml-tools">Comparison: ConfigForge vs Other INI→TOML Tools</h2>
+<br />
+<tr><td>Feature</td><td>ConfigForge</td><td>sed/awk scripts</td><td>Python one-liners</td><td>Online converters</td></tr>
+|---------|-------------|-----------------|-------------------|-------------------|
+<tr><td>Type inference</td><td>✅ Auto booleans, numbers, dates</td><td>❌ Strings only</td><td>❌ Strings only</td><td>❌ Strings only</td></tr>
+<tr><td>Batch mode</td><td>✅ Glob `*.ini`</td><td>✅ Loop</td><td>✅ Loop</td><td>❌ One-by-one</td></tr>
+<tr><td>Array detection</td><td>✅ `[a, b, c]`</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>Section nesting</td><td>✅ Nested tables</td><td>⚠️ Basic</td><td>⚠️ Basic</td><td>⚠️ Basic</td></tr>
+<tr><td>100% offline</td><td>✅ Zero network</td><td>✅</td><td>✅</td><td>❌ Requires upload</td></tr>
+<tr><td>Null handling</td><td>✅ Configurable</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>Unicode</td><td>✅ Full support</td><td>⚠️</td><td>⚠️</td><td>⚠️</td></tr>
+<br />
+<h2 id="use-cases">Use Cases</h2>
+<br />
+<h3 id="modernizing-django-settings">Modernizing Django Settings</h3>
+<br />
+<pre><code class="language-bash">
+# Convert Django-like INI settings to TOML for new framework
+devbench cf settings.ini --to toml &gt; settings.toml
+</code></pre>
+<br />
+<h3 id="php-to-rust-migration">PHP to Rust Migration</h3>
+<br />
+<pre><code class="language-bash">
+# Convert PHP project INI configs to Rust Cargo workspace TOML
+devbench cf config/*.ini --to toml --out-dir ./rust-config/
+</code></pre>
+<br />
+<h3 id="ansible-ini-inventory-to-toml">Ansible INI Inventory to TOML</h3>
+<br />
+<pre><code class="language-bash">
+devbench cf production.ini --to toml &gt; inventory.toml
+</code></pre>
+<br />
+<h2 id="related-resources">Related Resources</h2>
+<br />
+<p>- <a href="/tools/devbench/forge/seo/json-to-toml-converter.html">JSON to TOML Converter</a></p>
+<p>- <a href="/tools/devbench/forge/seo/vs-online.html">ConfigForge vs Online Converters</a></p>
+<p>- <a href="/tools/devbench/forge/seo/env-to-json-guide.html">Convert ENV to JSON</a></p>
+<p>- <a href="/tools/devbench/forge/seo/ansible-ini-to-yaml.html">Ansible INI to YAML Migration</a></p>
+<br />
+<h2 id="quick-reference">Quick Reference</h2>
+<br />
+<pre><code class="language-bash">
+# Single file
+devbench cf config.ini --to toml &gt; config.toml
+
+# With format hint
+devbench cf unknown.ext --to toml --from ini
+
+# Batch
+devbench cf *.ini --to toml --out-dir out/
+
+# Preview
+devbench cf config.ini --to toml --dry-run
+</code></pre>
+<br />
+<hr />
+<br />
+<p>*ConfigForge — convert config files between 9 formats. Type-safe INI→TOML conversion included. One-time purchase $19.*</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

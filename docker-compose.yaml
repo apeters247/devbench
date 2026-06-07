@@ -1,0 +1,40 @@
+# =============================================================================
+# ConfigForge — docker compose stack
+#
+# Starts both the web demo UI (browser-based config converter) on port 8080
+# and the REST API (JSON endpoints) on port 8081.
+#
+# Usage:
+#   docker compose up -d          # start both services
+#   docker compose logs -f        # watch logs
+#   docker compose down           # stop and clean up
+# =============================================================================
+
+services:
+  # -- Web demo (paste-and-convert UI, served at http://localhost:8080) ------
+  web:
+    image: devbench:latest
+    container_name: configforge-web
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    command: ["cf", "--serve", "--port", "8080", "--host", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # -- REST API (programmatic access, served at http://localhost:8081) --------
+  api:
+    image: devbench:latest
+    container_name: configforge-api
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    command: ["cf", "--api", "--api-port", "8081", "--host", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

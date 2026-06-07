@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>ConfigForge Config File Converter | NaxiAI Devbench</title>
+  <meta name="description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+  <meta property="og:title" content="ConfigForge — Multi-Format Config Converter">
+  <meta property="og:description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/docker-compose-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ConfigForge — Multi-Format Config Converter">
+  <meta name="twitter:description" content="Convert config files between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and .properties. 100% offline CLI tool with batch mode, type inference, and comment preservation.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="convert-docker-compose-yaml-to-json-a-step-by-step-guide">Convert Docker Compose YAML to JSON: A Step-by-Step Guide</h1>
+<br />
+<p>Your <code>docker-compose.yml</code> is clean YAML, but your deployment tools, CI pipeline, or monitoring system needs JSON. How do you convert a <strong>Docker Compose YAML to JSON</strong> without data loss or security risks?</p>
+<br />
+<p>This guide shows you how using <strong>ConfigForge</strong> (<code>devbench cf</code>) — a free, offline CLI that converts between 9 config formats. No uploads, no accounts, no rate limits.</p>
+<br />
+<h2 id="why-convert-docker-compose-files">Why Convert Docker Compose Files?</h2>
+<br />
+<p>Three common scenarios:</p>
+<br />
+<p>- <strong>JSON-only orchestration</strong> — Your custom deployment tool or PaaS expects JSON input</p>
+<p>- <strong>CI/CD pipeline integration</strong> — You need to transform Compose files for pipeline steps</p>
+<p>- <strong>Configuration management</strong> — Feeding Compose data into Ansible, Terraform, or monitoring dashboards</p>
+<br />
+<h2 id="basic-conversion">Basic Conversion</h2>
+<br />
+<p>Convert <code>docker-compose.yml</code> to JSON with a single command:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to json &lt; docker-compose.yml
+</code></pre>
+<br />
+<p>Devbench auto-detects the input as YAML and writes clean, valid JSON. The whole operation happens locally — your Compose file never touches a network.</p>
+<br />
+<h2 id="handling-multi-service-docker-compose-files">Handling Multi-Service Docker Compose Files</h2>
+<br />
+<p>A typical <code>docker-compose.yml</code> with multiple services converts cleanly:</p>
+<br />
+<pre><code class="language-yaml">
+# docker-compose.yml (input)
+version: "3.8"
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "80:80"
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: secret
+</code></pre>
+<br />
+<p>Output JSON preserves the full service structure including nested fields, arrays, and environment variables:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to json &lt; docker-compose.yml
+# Converts to valid JSON with "web" and "db" service objects
+</code></pre>
+<br />
+<h2 id="converting-docker-compose-to-toml">Converting Docker Compose to TOML</h2>
+<br />
+<p>Need TOML for an alternative orchestrator? ConfigForge handles every format pair:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to toml &lt; docker-compose.yml
+</code></pre>
+<br />
+<h2 id="converting-json-back-to-yaml-for-docker-compose">Converting JSON Back to YAML for Docker Compose</h2>
+<br />
+<p>Round-trip from JSON back to YAML when your pipeline finishes processing:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to yaml &lt; processed.json &gt; docker-compose.yml
+</code></pre>
+<br />
+<h2 id="batch-converting-multiple-compose-files">Batch Converting Multiple Compose Files</h2>
+<br />
+<p>If you maintain a monorepo with multiple <code>docker-compose.yml</code> files across microservices:</p>
+<br />
+<pre><code class="language-bash">
+find . -name "docker-compose.yml" -exec sh -c \
+  'devbench cf convert "$1" "${1%.yml}.json"' _ {} \;
+</code></pre>
+<br />
+<p>For tools that support native glob patterns, you can also batch-convert in one invocation:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf convert "**/docker-compose.yml" --to json --batch
+</code></pre>
+<br />
+<h2 id="converting-to-kubernetes-manifests">Converting to Kubernetes Manifests</h2>
+<br />
+<p>A common workflow is Docker Compose → JSON → Kubernetes manifests. First convert to JSON for a K8s conversion tool:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf --to json &lt; docker-compose.yml &gt; compose.json
+# Then process compose.json with your K8s migration tool
+</code></pre>
+<br />
+<h2 id="comparison-table">Comparison Table</h2>
+<br />
+<tr><td>Feature</td><td>ConfigForge</td><td>`docker-compose config`</td><td>yq</td><td>Online Converters</td></tr>
+|---|---|---|---|---|
+<tr><td>**Compose → JSON**</td><td>✅ Native</td><td>✅ JSON only</td><td>⚠️ Limited</td><td>⚠️</td></tr>
+<tr><td>**Compose → TOML**</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>**Compose → YAML round-trip**</td><td>✅</td><td>✅ (same YAML)</td><td>⚠️ Partial</td><td>❌</td></tr>
+<tr><td>**Offline**</td><td>✅ 100%</td><td>✅</td><td>✅</td><td>❌ Requires web</td></tr>
+<tr><td>**Batch mode**</td><td>✅ Glob</td><td>❌ One at a time</td><td>⚠️ Shell loops</td><td>❌</td></tr>
+<tr><td>**Comment preservation**</td><td>✅</td><td>❌ Stripped</td><td>⚠️ Partial</td><td>❌</td></tr>
+<tr><td>**9 format support**</td><td>✅ JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties</td><td>❌ YAML/JSON only</td><td>❌ YAML/JSON only</td><td>❌ 1-2 formats</td></tr>
+<tr><td>**Setup**</td><td>`pip install`</td><td>Docker runtime</td><td>Binary</td><td>Browser</td></tr>
+<br />
+<h2 id="security-never-upload-compose-files">Security: Never Upload Compose Files</h2>
+<br />
+<p>Docker Compose files contain sensitive information:</p>
+<p>- Image names and tags revealing infrastructure patterns</p>
+<p>- Service names and internal network topology</p>
+<p>- Environment variables with secrets and credentials</p>
+<p>- Volume mount paths exposing filesystem structure</p>
+<p>- Port mappings and exposed interfaces</p>
+<br />
+<p><strong>Never paste a docker-compose.yml into an online converter.</strong> ConfigForge runs entirely on your machine — zero external API calls, zero data uploaded, zero telemetry.</p>
+<br />
+<h2 id="ci-pipeline-example">CI Pipeline Example</h2>
+<br />
+<p>A GitHub Actions step that converts Compose file before deployment:</p>
+<br />
+<pre><code class="language-yaml">
+- name: Convert Compose file
+  run: |
+    pip install devbench-cf
+    devbench cf --to json &lt; docker-compose.yml &gt; dist/config.json
+- name: Deploy
+  run: deploy-tool --config dist/config.json
+</code></pre>
+<br />
+<h2 id="get-started">Get Started</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+devbench cf --to json &lt; docker-compose.yml
+</code></pre>
+<br />
+<p>Convert Docker Compose YAML to JSON (and any other format pairing) — 100% offline, private, and free.</p>
+<br />
+<hr />
+<p>_Generated by: AI writer_</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

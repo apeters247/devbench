@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>ConfigForge Real-World Use Cases — Kubernetes, Docker, Ansible, CI/CD</title>
+  <meta name="description" content="Real-world config conversion workflows: Kubernetes YAML to JSON, Docker Compose YAML to JSON, Ansible INI to YAML, CI/CD pipeline integration, batch conversions. ConfigForge CLI examples for each use case.">
+  <meta property="og:title" content="ConfigForge Use Cases — K8s, Docker, Ansible, CI/CD">
+  <meta property="og:description" content="Real ConfigForge workflows: convert K8s YAML to JSON, Docker Compose YAML, Ansible INI inventory, CI/CD pipeline integration. Batch mode, type inference, offline.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/use-cases.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ConfigForge Use Cases — K8s, Docker, Ansible, CI/CD">
+  <meta name="twitter:description" content="Real ConfigForge workflows: convert K8s YAML to JSON, Docker Compose YAML, Ansible INI inventory, CI/CD pipeline integration. Batch mode, type inference, offline.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="configforge-real-world-use-cases-convert-between-9-config-formats">ConfigForge Real-World Use Cases: Convert Between 9 Config Formats</h1>
+<br />
+<p>ConfigForge (<code>devbench cf</code>) converts configuration files between <strong>9 formats</strong> — JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and Java .properties — bidirectionally, 100% offline, with comment preservation. Here are the real-world workflows where it saves you time and protects your data.</p>
+<br />
+<h2 id="1-convert-kubernetes-yaml-to-json">1. Convert Kubernetes YAML to JSON</h2>
+<br />
+<p><strong>Scenario:</strong> You maintain a Kubernetes manifests directory and need to feed your YAML configs into a JSON-only tool — a monitoring dashboard, a custom controller, or a CI pipeline step that reads JSON.</p>
+<br />
+<p>Kubernetes manifests often use multi-document YAML with <code>---</code> separators. Most converters either crash on multi-doc YAML or silently process only the first document. ConfigForge handles the full file:</p>
+<br />
+<pre><code class="language-bash">
+# Convert a multi-doc Kubernetes YAML to JSON, preserving all documents
+devbench cf --to json &lt; deployment.yaml
+
+# Batch convert an entire manifests directory
+devbench batch --tool cf --files "manifests/*.yaml" --to json
+</code></pre>
+<br />
+<p><strong>Why ConfigForge:</strong> Works 100% offline — your cluster secrets never leave your machine. Handles multi-document <code>---</code> separators natively. Preserves YAML comments through the conversion where other tools strip them silently.</p>
+<br />
+<hr />
+<br />
+<h2 id="2-convert-docker-compose-yaml-to-json">2. Convert Docker Compose YAML to JSON</h2>
+<br />
+<p><strong>Scenario:</strong> You need to transform <code>docker-compose.yml</code> into JSON for a custom deployment orchestrator, a configuration management system, or a CI pipeline that only accepts JSON.</p>
+<br />
+<pre><code class="language-bash">
+# Convert docker-compose.yml to JSON for pipeline processing
+devbench cf --to json &lt; docker-compose.yml
+
+# Auto-detect format and convert
+cat docker-compose.yml | devbench cf --to json
+</code></pre>
+<br />
+<p><strong>Why ConfigForge:</strong> Converts inline anchors, environment variable formatting, and service definitions correctly. No upload to a third-party server — critical when your compose file contains image names, secrets, and internal network configs.</p>
+<br />
+<hr />
+<br />
+<h2 id="3-convert-ansible-vars-yaml-to-json">3. Convert Ansible Vars YAML to JSON</h2>
+<br />
+<p><strong>Scenario:</strong> You have Ansible playbooks with extensive variable files (<code>group_vars/all.yml</code>) that need to be consumed by a Python automation script or a dynamic inventory system that reads JSON.</p>
+<br />
+<pre><code class="language-bash">
+# Convert Ansible vars YAML to JSON
+devbench cf --to json &lt; group_vars/all.yml
+
+# Or convert to YAML for the reverse — JSON inventory to Ansible vars
+devbench cf --to yaml &lt; inventory.json
+</code></pre>
+<br />
+<p><strong>Why ConfigForge:</strong> Preserves the nested dict structure of Ansible variables. Comments explaining each variable are preserved in YAML output. Works in air-gapped environments where you can't reach external APIs.</p>
+<br />
+<hr />
+<br />
+<h2 id="4-ci-cd-pipeline-config-converter">4. CI/CD Pipeline Config Converter</h2>
+<br />
+<p><strong>Scenario:</strong> Your CI/CD pipeline (GitHub Actions, GitLab CI) generates or transforms config files between formats. You need a tool that runs reliably in a build runner without external dependencies.</p>
+<br />
+<pre><code class="language-yaml">
+# GitHub Actions workflow step
+- name: Convert configs for deployment
+  run: |
+    pip install devbench-cf
+    devbench cf --to json &lt; config/production.yml &gt; dist/config.json
+</code></pre>
+<br />
+<pre><code class="language-bash">
+# Convert all TOML configs to JSON in a CI pipeline
+devbench batch --tool cf --files "config/*.toml" --to json
+</code></pre>
+<br />
+<p><strong>Why ConfigForge:</strong> Zero external API calls — no rate limits, no network dependency, no service outages to worry about. Standard exit codes make failures fail the build. Batch mode handles directory-wide conversions in one command.</p>
+<br />
+<hr />
+<br />
+<h2 id="5-convert-terraform-hcl--json">5. Convert Terraform HCL ↔ JSON</h2>
+<br />
+<p><strong>Scenario:</strong> You're working with Terraform configurations and need to convert HCL files to JSON for code generation tools, or convert generated JSON back to HCL for Terraform consumption.</p>
+<br />
+<pre><code class="language-bash">
+# Convert Terraform HCL to JSON for tooling
+devbench cf --to json --from hcl &lt; main.tf
+
+# Convert JSON back to HCL for Terraform
+devbench cf --to hcl --from json &lt; plan.json
+</code></pre>
+<br />
+<p><strong>Why ConfigForge:</strong> HCL support covers Terraform <code>.tf</code> files without needing the full Terraform CLI. Bidirectional conversion lets you round-trip between HCL and JSON for code generation pipelines.</p>
+<br />
+<hr />
+<br />
+<h2 id="6-convert-spring-boot-properties-to-yaml">6. Convert Spring Boot .properties to YAML</h2>
+<br />
+<p><strong>Scenario:</strong> Your Java microservices project is migrating from Spring Boot's <code>application.properties</code> to <code>application.yml</code> for better readability and hierarchical structure. You have dozens of property files to convert.</p>
+<br />
+<pre><code class="language-bash">
+# Convert a single properties file to YAML
+devbench cf --to yaml --from properties &lt; application.properties
+
+# Batch convert all property files in a project
+devbench batch --tool cf --files "src/**/*.properties" --to yaml
+</code></pre>
+<br />
+<p><strong>Why ConfigForge:</strong> Built-in Java .properties support handles all three separator styles (<code>key=value</code>, <code>key:value</code>, <code>key value</code>), continuation lines, Unicode escapes, and preserves comment blocks. Pure-Python implementation — no Java runtime required.</p>
+<br />
+<hr />
+<br />
+<h2 id="7-convert-env--json">7. Convert .env → JSON</h2>
+<br />
+<p><strong>Scenario:</strong> Your Docker deployment system generates hundreds of <code>.env</code> files that need to be imported into a JSON-based monitoring dashboard or configuration service.</p>
+<br />
+<pre><code class="language-bash">
+# Convert .env to JSON
+devbench cf --to json --from env &lt; production.env
+
+# Convert JSON back to .env for Docker injection
+devbench cf --to env --from json &lt; config.json
+</code></pre>
+<br />
+<p><strong>Why ConfigForge:</strong> Properly handles quoted values, whitespace in values, and multiline env vars. Runs entirely offline — your secrets in <code>.env</code> files never reach a network.</p>
+<br />
+<hr />
+<br />
+<h2 id="8-legacy-ini--yaml-modernization">8. Legacy INI → YAML Modernization</h2>
+<br />
+<p><strong>Scenario:</strong> You're modernizing a legacy Python or PHP application that uses INI config files and migrating to YAML or TOML for new development.</p>
+<br />
+<pre><code class="language-bash">
+# Convert INI to clean YAML
+devbench cf --to yaml --from ini &lt; legacy.ini
+
+# Convert INI to typed TOML (booleans, numbers stay typed)
+devbench cf --to toml --from ini &lt; config.ini
+</code></pre>
+<br />
+<p><strong>Why ConfigForge:</strong> INI → TOML type inference converts <code>enabled = 1</code> to <code>enabled = true</code>, <code>timeout = 30</code> to <code>timeout = 30</code> (integer), and <code>debug = true</code> to <code>debug = true</code> (boolean). Other converters leave everything as strings.</p>
+<br />
+<hr />
+<br />
+<h2 id="9-batch-directory-conversion">9. Batch Directory Conversion</h2>
+<br />
+<p><strong>Scenario:</strong> You have 300+ config files across multiple formats that need to be converted to a single format for a migration project.</p>
+<br />
+<pre><code class="language-bash">
+# Convert all YAML files in a project tree to JSON
+devbench batch --tool cf --files "configs/**/*.yaml" --to json
+
+# Convert all INI files to TOML in one command
+devbench batch --tool cf --files "legacy/**/*.ini" --to toml
+</code></pre>
+<br />
+<p><strong>Why ConfigForge:</strong> Native batch mode with glob patterns and per-file error reporting. One command converts hundreds of files with a single startup cost — no shell loops, no error-prone <code>find -exec</code> pipelines.</p>
+<br />
+<hr />
+<br />
+<h2 id="feature-comparison-configforge-vs-alternatives">Feature Comparison: ConfigForge vs Alternatives</h2>
+<br />
+<tr><td>Workflow</td><td>ConfigForge</td><td>kubectl</td><td>yq</td><td>jq</td><td>Online Converters</td></tr>
+|---|---|---|---|---|---|
+<tr><td>**K8s YAML → JSON**</td><td>✅ Native, multi-doc</td><td>✅ `kubectl get -o json`</td><td>⚠️ Manual</td><td>❌</td><td>⚠️ Data upload</td></tr>
+<tr><td>**Docker Compose → JSON**</td><td>✅ Native</td><td>❌</td><td>⚠️ Limited</td><td>❌</td><td>⚠️ Data upload</td></tr>
+<tr><td>**HCL ↔ JSON**</td><td>✅ HCL support</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>**.properties ↔ YAML**</td><td>✅ Native</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>**.env → JSON**</td><td>✅ Native</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>**INI → TOML**</td><td>✅ Typed conversion</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>**Batch directory**</td><td>✅ Glob + progress</td><td>❌</td><td>⚠️ Shell loop</td><td>⚠️ Shell loop</td><td>❌</td></tr>
+<tr><td>**Comment preservation**</td><td>✅ YAML, INI, .env</td><td>❌</td><td>⚠️ Partial</td><td>❌</td><td>❌</td></tr>
+<tr><td>**100% offline**</td><td>✅ Zero API calls</td><td>✅</td><td>✅</td><td>✅</td><td>❌ Requires web</td></tr>
+<tr><td>**Multi-doc YAML**</td><td>✅ Full support</td><td>✅</td><td>⚠️ Split mode</td><td>❌</td><td>❌</td></tr>
+<tr><td>**Formats supported**</td><td>**9**</td><td>1 (YAML)</td><td>2 (YAML, JSON)</td><td>1 (JSON)</td><td>Usually 1-2</td></tr>
+<tr><td>**Install**</td><td>`pip install`</td><td>`kubectl`</td><td>Binary</td><td>`apt`/`brew`</td><td>Browser</td></tr>
+<br />
+<hr />
+<br />
+<h2 id="why-configforge-is-the-right-tool-for-these-workflows">Why ConfigForge Is the Right Tool for These Workflows</h2>
+<br />
+<p>ConfigForge exists because no single tool handles the full spectrum of real-world config conversion:</p>
+<br />
+<p>- <strong>9 formats, one CLI:</strong> Stop juggling <code>yq</code> for YAML, <code>jq</code> for JSON, <code>tomlq</code> for TOML, and custom scripts for INI and <code>.env</code>. ConfigForge does all 9 in a single pip-installable command.</p>
+<p>- <strong>100% offline, zero telemetry:</strong> Your configs — secrets, credentials, internal hostnames — never leave your machine. No API calls, no data harvesting, no compliance risk.</p>
+<p>- <strong>Comment preservation:</strong> The documentation in your YAML and INI files survives round-trip conversions. Safety warnings, author notes, and TODOs stay intact.</p>
+<p>- <strong>Batch mode:</strong> Convert 300 files or a single file with the same command. Sequential per-file processing with progress reporting and error isolation.</p>
+<p>- <strong>Type-aware:</strong> INI → TOML conversion infers booleans, integers, floats, and datetime values. Not just string-copy semantics.</p>
+<br />
+<pre><code class="language-bash">
+# Install in one command
+pip install devbench-cf
+
+# Then convert anything to anything, 100% offline
+devbench cf --to yaml --from json &lt; data.json &gt; config.yaml
+</code></pre>
+<br />
+<p>Whether you're a <strong>DevOps engineer converting Kubernetes YAML to JSON</strong> for a monitoring stack, a <strong>backend developer migrating Spring Boot .properties to YAML</strong>, or a <strong>platform team batch-converting 300 config files for a migration</strong>, ConfigForge is the single CLI tool that handles your workflow.</p>
+<br />
+<hr />
+<br />
+<p>_Generated by: Claude Opus 4.8 (high effort)_</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

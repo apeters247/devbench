@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://naxiai.com/sitemap.xml
