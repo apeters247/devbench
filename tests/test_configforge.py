@@ -1,5 +1,7 @@
 """ConfigForge — conversion engine tests."""
 import sys, os, json
+import yaml
+import tomllib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from core.configforge import convert, convert_file, batch_convert, detect_format, SUPPORTED_FORMATS
 
@@ -28,7 +30,8 @@ def test_detect_csv():
 def test_convert_json_to_yaml():
     r = convert('{"name": "test", "value": 42}', "yaml")
     assert r["success"]
-    assert "name: test" in r["output"] or "value: 42" in r["output"]
+    parsed = yaml.safe_load(r["output"])
+    assert parsed == {"name": "test", "value": 42}
 
 def test_convert_json_to_toml():
     r = convert('{"server": {"host": "localhost", "port": 8080}}', "toml")
@@ -83,6 +86,9 @@ def test_roundtrip_toml():
     assert r1["success"]
     r2 = convert(r1["output"], "toml")
     assert r2["success"]
+    parsed_original = tomllib.loads(original)
+    parsed_roundtrip = tomllib.loads(r2["output"])
+    assert parsed_original == parsed_roundtrip
 
 def test_invalid_input():
     r = convert("not valid content", "json")
@@ -94,11 +100,8 @@ def test_empty_input():
     assert not r["success"]
 
 def test_supported_formats():
-    assert "json" in SUPPORTED_FORMATS
-    assert "yaml" in SUPPORTED_FORMATS
-    assert "toml" in SUPPORTED_FORMATS
-    assert "xml" in SUPPORTED_FORMATS
-    assert len(SUPPORTED_FORMATS) >= 7
+    expected_formats = ["json", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties"]
+    assert set(SUPPORTED_FORMATS) == set(expected_formats)
 
 def test_convert_file(tmp_path):
     import pathlib
@@ -108,6 +111,7 @@ def test_convert_file(tmp_path):
     r = convert_file(str(f), str(out))
     assert r["success"]
     assert out.exists()
+    assert yaml.safe_load(out.read_text()) == {"hello": "world"}
 
 def test_batch_convert(tmp_path):
     for i in range(3):
@@ -132,6 +136,8 @@ def test_large_array():
     d = list(range(1000))
     r = convert(json.dumps(d), "yaml")
     assert r["success"]
+    list_from_yaml = yaml.safe_load(r["output"])
+    assert list_from_yaml == d
 
 # ── Feature: Type inference for INI values ──
 def test_ini_type_inference_int():

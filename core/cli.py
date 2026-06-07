@@ -495,11 +495,11 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
     if not input_glob:
         print("error: --batch requires a glob pattern as the text argument", file=sys.stderr)
         print("  Usage: devbench cf --batch --to yaml '*.json'", file=sys.stderr)
-        return 2
+        return EXIT_ERROR
     if not to_fmt:
         print("error: --batch requires --to (target format)", file=sys.stderr)
         print("  Example: devbench cf --batch --to toml '*.ini'", file=sys.stderr)
-        return 2
+        return EXIT_ERROR
 
     options = {}
     if hasattr(args, "indent") and args.indent != 2:

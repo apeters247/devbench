@@ -101,7 +101,13 @@ class RateLimiter:
         def _loop() -> None:
             while True:
                 time.sleep(self.window)
-                self.cleanup()
+                try:
+                    self.cleanup()
+                except Exception as exc:  # noqa: BLE001 — keep daemon thread alive
+                    print(
+                        f"api-rate-cleanup: cleanup failed: {exc}",
+                        file=sys.stderr,
+                    )
 
         thread = threading.Thread(target=_loop, name="api-rate-cleanup", daemon=True)
         thread.start()

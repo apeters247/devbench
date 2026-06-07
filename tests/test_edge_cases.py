@@ -275,7 +275,9 @@ def test_unicode_passthrough(label, src, target_fmt):
     """Emoji / CJK / accented characters survive conversion to every format."""
     r = convert(src, target_fmt)
     if not r["success"] and target_fmt in ("csv", "ini", "env"):
-        return
+        pytest.skip(
+            f"{target_fmt} cannot represent the {label} structure: {r.get('error')}"
+        )
     assert r["success"], f"{label} → {target_fmt} failed: {r.get('error')}"
 
 
@@ -449,7 +451,10 @@ def test_large_json_array():
     items = [{"id": i, "name": f"item_{i}", "value": i * 10} for i in range(10000)]
     r = convert(json.dumps(items), "yaml")
     assert r["success"]
-    assert r["output_size"] > 10000
+    # Assert on the actual rendered output (a guaranteed field); cross-check
+    # the reported output_size against it so the metric can't silently drift.
+    assert len(r["output"]) > 10000
+    assert r["output_size"] == len(r["output"])
 
 
 def test_large_json_object():
@@ -495,7 +500,8 @@ def test_large_roundtrip_json_to_yaml():
     items = [{"id": i, "name": f"user_{i}"} for i in range(10000)]
     r1 = convert(json.dumps(items), "yaml")
     assert r1["success"]
-    assert r1["output_size"] > 50000
+    assert len(r1["output"]) > 50000
+    assert r1["output_size"] == len(r1["output"])
     r2 = convert(r1["output"], "json")
     assert r2["success"]
     data = _j(r2["output"])
@@ -1025,7 +1031,7 @@ def test_roundtrip_multiple_hops():
     for fmt in ["yaml", "toml", "xml", "json"]:
         r = convert(current, fmt)
         if not r["success"]:
-            return
+            pytest.fail(f"Multi-hop conversion broke at the {fmt} hop: {r.get('error')}")
         current = r["output"]
     assert isinstance(json.loads(current), dict)
 

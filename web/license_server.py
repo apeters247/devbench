@@ -205,7 +205,7 @@ class LicenseHandler(BaseHTTPRequestHandler):
     # ── POST ─────────────────────────────────────────────────────────────────
 
     def do_POST(self) -> None:
-        path = self.path.rstrip("/")
+        path = urllib.parse.urlparse(self.path).path.rstrip("/")
         client_ip = self.client_address[0]
 
         if not _check_rate(client_ip):

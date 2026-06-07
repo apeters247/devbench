@@ -221,6 +221,45 @@ def test_yaml_tilde_null_to_json_is_real_null():
     assert data["timeout"] is None
 
 
+def test_yaml_document_from_hell_glob_patterns_survive():
+    """External review: the 'YAML document from hell' patterns that broke yq.
+
+    Glob and negation patterns ('*.html', '*.png', '!.git') start with the YAML
+    alias ('*') and tag ('!') indicators. In well-formed configs (prettier,
+    eslint, Helm, .gitignore-as-yaml) they appear as quoted scalars. yq has been
+    reported to mangle these; ConfigForge must round them through to JSON byte
+    for byte, both as list items and as mapping values.
+    """
+    src = (
+        'ignore:\n'
+        '  - "*.html"\n'
+        '  - "*.png"\n'
+        '  - "!.git"\n'
+        '  - "node_modules/"\n'
+        'include: "*.html"\n'
+        'exclude: "!.git"\n'
+    )
+    r = convert(src, "json", from_fmt="yaml")
+    assert r["success"], f"YAML-from-hell conversion failed: {r.get('error')}"
+    data = json.loads(r["output"])
+    # List items preserved exactly — no alias resolution, no truncation.
+    assert data["ignore"] == ["*.html", "*.png", "!.git", "node_modules/"]
+    # Mapping values preserved exactly — '!' not treated as a tag.
+    assert data["include"] == "*.html"
+    assert data["exclude"] == "!.git"
+
+
+def test_yaml_document_from_hell_bare_glob_is_graceful_error():
+    """Unquoted '*.html' / '!.git' are genuinely invalid YAML (the '*' is an
+    alias indicator, the '!' a tag indicator). ConfigForge must surface a clean
+    error rather than crash — exactly the failure mode that pushes users off
+    raw yq onto a forgiving converter."""
+    for bad in ("include: *.html\n", "ignore: !.git\n"):
+        r = convert(bad, "json", from_fmt="yaml")
+        assert r["success"] is False, f"Expected failure for invalid YAML: {bad!r}"
+        assert r.get("error"), "A human-readable error message must be returned"
+
+
 # ── REAL-WORLD FIXTURE REGRESSION TESTS ──
 # These tests use real downloaded config files to verify the product's core
 # promise: round-trip fidelity on documented, production-grade configs.

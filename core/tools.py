@@ -306,8 +306,8 @@ def hash_generator(input_text: str) -> str:
     data = input_text.encode("utf-8")
 
     hashes = {
-        "MD5": hashlib.md5(data).hexdigest(),
-        "SHA-1": hashlib.sha1(data).hexdigest(),
+        "MD5": hashlib.md5(data, usedforsecurity=False).hexdigest(),
+        "SHA-1": hashlib.sha1(data, usedforsecurity=False).hexdigest(),
         "SHA-256": hashlib.sha256(data).hexdigest(),
         "SHA-512": hashlib.sha512(data).hexdigest(),
     }

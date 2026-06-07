@@ -33,6 +33,27 @@ def _make_mgr(tmp_db: bool = True, secret: bytes | None = None, max_activations:
     )
 
 
+def _wait_for_server(port: int, retries: int = 10, delay: float = 0.1) -> None:
+    """Poll the server's /health endpoint until it responds (or retries run out).
+
+    Replaces fixed ``time.sleep(0.3)`` startup waits with a fast retry loop so
+    tests don't pay a fixed latency tax. Falls back to a single 0.3s sleep if
+    the server never answered within the retry budget.
+    """
+    import urllib.request
+    import urllib.error
+
+    url = f"http://127.0.0.1:{port}/health"
+    for _ in range(retries):
+        try:
+            urllib.request.urlopen(url, timeout=0.5).read()
+            return
+        except (urllib.error.URLError, ConnectionError, OSError):
+            time.sleep(delay)
+    # Fallback: give the server one last chance to come up.
+    time.sleep(0.3)
+
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 class TestLicenseKeyFormat:
@@ -371,7 +392,7 @@ class TestServerEndpoints:
         import urllib.request
 
         port = self._start_server()
-        import time; time.sleep(0.3)
+        _wait_for_server(port)
 
         resp = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/health").read())
         assert resp["status"] == "healthy"
@@ -381,7 +402,7 @@ class TestServerEndpoints:
         import urllib.request
 
         port = self._start_server()
-        import time; time.sleep(0.3)
+        _wait_for_server(port)
 
         resp = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/").read())
         assert "License Server" in resp["service"]
@@ -392,7 +413,7 @@ class TestServerEndpoints:
         import urllib.parse
 
         port = self._start_server()
-        import time; time.sleep(0.3)
+        _wait_for_server(port)
 
         # Generate a key locally
         lm = _make_mgr()
@@ -409,7 +430,7 @@ class TestServerEndpoints:
         import urllib.request
 
         port = self._start_server()
-        import time; time.sleep(0.3)
+        _wait_for_server(port)
 
         lm = _make_mgr(tmp_db=True)
         key = lm.generate("activate@test.com", "cus_act")
@@ -462,7 +483,7 @@ class TestGumroadWebhook:
         import urllib.request
 
         port = self._start_server()
-        time.sleep(0.3)
+        _wait_for_server(port)
 
         payload = json.dumps({
             "sale_id": "gum_test_123",
@@ -492,7 +513,7 @@ class TestGumroadWebhook:
         import urllib.error
 
         port = self._start_server()
-        time.sleep(0.3)
+        _wait_for_server(port)
 
         payload = json.dumps({
             "sale_id": "no_email_test",
@@ -518,7 +539,7 @@ class TestGumroadWebhook:
         import urllib.error
 
         port = self._start_server()
-        time.sleep(0.3)
+        _wait_for_server(port)
 
         req = urllib.request.Request(
             f"http://127.0.0.1:{port}/webhook/gumroad",
@@ -537,7 +558,7 @@ class TestGumroadWebhook:
         import urllib.request
 
         port = self._start_server()
-        time.sleep(0.3)
+        _wait_for_server(port)
 
         # Send a Gumroad sale
         payload = json.dumps({

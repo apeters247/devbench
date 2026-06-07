@@ -409,7 +409,7 @@ class ConfigForgeHandler(BaseHTTPRequestHandler):
         from pathlib import Path as _Path
         demo_root = _Path(__file__).resolve().parent.parent / "demo" / "static"
         # Map /demo/index.html or /demo/ to the static index
-        rel = path.removeprefix("/demo/")
+        rel = path[len("/demo/"):] if path.startswith("/demo/") else path
         if not rel or rel == "index.html":
             rel = "index.html"
         target = demo_root / rel
@@ -455,7 +455,8 @@ class ConfigForgeHandler(BaseHTTPRequestHandler):
         try:
             result = cf.convert(text, to_fmt, from_fmt)
         except Exception as e:  # defensive — convert() already traps most errors
-            self._send_json(self._convert_error(str(e), to_fmt))
+            print(f"convert error: {e}", file=sys.stderr)
+            self._send_json(self._convert_error("Internal server error", to_fmt))
             return
 
         self._send_json({
