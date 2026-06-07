@@ -26,7 +26,7 @@ _BLANK_META_KEY = "__cf_blanks__"
 # ── Optional imports (graceful fallback) ──
 HAS_YAML = False
 HAS_TOML = False
-HAS_XML = True
+HAS_XML = False
 HAS_HCL = False
 
 try:
@@ -62,10 +62,12 @@ except ImportError:
 
 try:
     import xml.etree.ElementTree as ET
+    HAS_XML = True
 except ImportError:
-    HAS_XML = False
+    pass
 
 import configparser
+from collections import OrderedDict
 
 
 def _count_delims_outside_quotes(line: str, delim: str) -> int:
@@ -76,6 +78,10 @@ def _count_delims_outside_quotes(line: str, delim: str) -> int:
     while i < len(line):
         ch = line[i]
         if ch in ('"', "'"):
+            # Skip escaped quotes — don't toggle in_quotes
+            if i > 0 and line[i - 1] == "\\":
+                i += 1
+                continue
             in_quotes = not in_quotes
         elif ch == delim and not in_quotes:
             count += 1
@@ -98,8 +104,14 @@ def _yaml_find_comment(line: str) -> int:
     in_single = in_double = False
     for i, ch in enumerate(line):
         if ch == '"' and not in_single:
+            # Skip escaped quotes (\") — don't toggle in_double
+            if i > 0 and line[i - 1] == "\\":
+                continue
             in_double = not in_double
         elif ch == "'" and not in_double:
+            # Skip escaped single quotes (\') — don't toggle in_single
+            if i > 0 and line[i - 1] == "\\":
+                continue
             in_single = not in_single
         elif ch == "#" and not in_single and not in_double:
             if i == 0 or line[i - 1] in " \t":
@@ -137,10 +149,20 @@ def _build_key_paths(lines):
         while indent_stack and indent_stack[-1][0] >= indent:
             indent_stack.pop()
 
-        head = stripped.split(":", 1)[0].strip()
-        if (head.startswith('"') and head.endswith('"')) or \
-           (head.startswith("'") and head.endswith("'")):
-            head = head[1:-1]
+        # Extract key before ':', respecting quoted keys that contain colons.
+        # A key like `"my:key": value` must not be truncated at the colon
+        # inside the quotes.
+        head = None
+        if stripped[0:1] == '"':
+            close = stripped.find('"', 1)
+            if close > 0:
+                head = stripped[1:close]
+        elif stripped[0:1] == "'":
+            close = stripped.find("'", 1)
+            if close > 0:
+                head = stripped[1:close]
+        if head is None:
+            head = stripped.split(":", 1)[0].strip()
 
         if head:
             path_parts = [k for _, k in indent_stack]
@@ -231,8 +253,6 @@ def _reinsert_yaml_comments(yaml_text: str, comments: list) -> str:
             path_to_lines[p] = []
         path_to_lines[p].append(li)
 
-    inserted = set()  # set of line indices that have been modified/inserted before
-
     # Separate comments by type
     standalone = [c for c in comments
                   if c["key"] is None and not c.get("list_item") and not c.get("path")]
@@ -247,10 +267,19 @@ def _reinsert_yaml_comments(yaml_text: str, comments: list) -> str:
             indent = " " * c.get("indent", 0)
             lines.insert(header_pos, f"{indent}# {c['text']}")
             header_pos += 1
+
+    # Rebuild path_to_lines after standalone insertion shifted line indices
+    if header_pos > 0:
+        out_key_paths = _build_key_paths(lines)
+        path_to_lines = {}
+        for li, info in out_key_paths.items():
+            p = info["path"]
+            if p not in path_to_lines:
+                path_to_lines[p] = []
+            path_to_lines[p].append(li)
+
+    # Track which lines have had comments inserted, to avoid double-insertion
     inserted_set = set()
-    # shift all tracking by header_pos
-    for c in comments:
-        pass  # header comments don't affect path matching below
 
     # Second pass: comments with full path — most reliable
     # Process block comments first, then inline
@@ -258,7 +287,6 @@ def _reinsert_yaml_comments(yaml_text: str, comments: list) -> str:
     path_inline = [c for c in path_keyed if c["is_inline"]]
 
     # Group block comments by path, preserving original order
-    from collections import OrderedDict
     path_block_groups = OrderedDict()
     for c in path_block:
         p = c["path"]

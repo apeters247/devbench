@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 setup.py
 core/__init__.py
+core/_version.py
 core/cli.py
 core/configforge.py
 core/detector.py

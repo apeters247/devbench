@@ -26,12 +26,11 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 from typing import Any, NoReturn
+import importlib.util
 
 from . import detector
 from . import tools
-
-# Version (mirrors core/__init__.__version__)
-_VERSION = "0.1.0"
+from ._version import __version__ as _VERSION
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -495,7 +494,6 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
 
 def _run_cf_serve(port: int, host: str = "127.0.0.1") -> int:
     """Launch the ConfigForge web UI (web/serve.py) on the given port."""
-    import importlib.util
 
     serve_path = Path(__file__).resolve().parent.parent / "web" / "serve.py"
     if not serve_path.exists():
@@ -520,8 +518,6 @@ def _run_cf_api(port: int, host: str = "127.0.0.1") -> int:
     POST /api/v1/convert, GET /api/v1/formats, GET /health and GET /, all
     delegating to ``core.configforge``.
     """
-    import importlib.util
-
     api_path = Path(__file__).resolve().parent.parent / "web" / "api.py"
     if not api_path.exists():
         print(f"API server not found: {api_path}", file=sys.stderr)
@@ -544,8 +540,6 @@ def _run_cf_api(port: int, host: str = "127.0.0.1") -> int:
 
 def _run_license_server(host: str = "127.0.0.1", port: int = 9001) -> int:
     """Launch the ConfigForge License Server (web/license_server.py)."""
-    import importlib.util
-
     server_path = Path(__file__).resolve().parent.parent / "web" / "license_server.py"
     if not server_path.exists():
         print(f"License server not found: {server_path}", file=sys.stderr)
@@ -563,7 +557,6 @@ def _run_license_server(host: str = "127.0.0.1", port: int = 9001) -> int:
 
 def _run_license_activate(key: str, server_url: str, machine_id: str | None = None) -> int:
     """Activate a license key by calling the license server."""
-    import urllib.request
     import uuid
 
     if machine_id is None:
