@@ -267,6 +267,12 @@ def _check_jwt_expiry(payload: dict) -> Optional[str]:
     if exp is None:
         return None
 
+    # Some JS-based JWT libraries emit ``exp`` in milliseconds rather than the
+    # spec-mandated seconds. A seconds epoch only crosses 2e10 around the year
+    # 2603, so a value above that is almost certainly milliseconds — normalize.
+    if isinstance(exp, (int, float)) and exp > 2 * 10**10:
+        exp = exp / 1000
+
     now = datetime.datetime.now(datetime.timezone.utc)
     try:
         exp_dt = datetime.datetime.fromtimestamp(exp, tz=datetime.timezone.utc)

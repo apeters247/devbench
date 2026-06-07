@@ -104,6 +104,23 @@ devbench cf --to json &lt; deployment.yaml
 <br />
 <p>This works without a cluster, without internet, and handles any valid YAML — not just Kubernetes kinds.</p>
 <br />
+<h2 id="method-3-piping-kubectl-into-configforge">Method 3: Piping kubectl Straight Into ConfigForge</h2>
+<br />
+<p>The two tools compose cleanly. Let <code>kubectl</code> pull live resources from the cluster, then pipe its JSON straight into ConfigForge to reshape it — for example, exporting a running deployment back to clean, comment-friendly YAML:</p>
+<br />
+<pre><code class="language-bash">
+# Live deployment → tidy YAML, no temp files
+kubectl get deployment myapp -o json | devbench cf --to yaml
+
+# A whole namespace of resources → YAML in one pass
+kubectl get all -n production -o json | devbench cf --to yaml &gt; production-snapshot.yaml
+
+# Round-trip the other way: a manifest → JSON for a jq/CI step
+devbench cf --to json &lt; deployment.yaml | jq '.spec.replicas'
+</code></pre>
+<br />
+<p>Because ConfigForge reads from stdin, it slots into any pipeline where <code>kubectl</code> (or <code>helm</code>, or <code>kustomize build</code>) emits JSON or YAML. ConfigForge stays fully offline — only <code>kubectl</code> touches the cluster — so nothing leaves your machine in the conversion step.</p>
+<br />
 <h2 id="handling-multi-document-yaml-the-kubernetes-challenge">Handling Multi-Document YAML (The Kubernetes Challenge)</h2>
 <br />
 <p>A single Kubernetes manifest file often contains multiple resources separated by <code>---</code>:</p>

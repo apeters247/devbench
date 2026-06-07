@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>ConfigForge vs yj — The Multi-Format yj Alternative (9 Formats + Comment Preservation)</title>
+  <meta name="description" content="Compare ConfigForge vs yj (sclevine/yj) for config file conversion. ConfigForge supports 9 formats vs yj's 4 (JSON/YAML/TOML/HCL), and is the only config converter that preserves comments through round-trip conversions. Batch mode, 100% offline CLI.">
+  <meta name="keywords" content="yj alternative, sclevine yj, json yaml toml hcl converter, config file converter, comment preservation, configforge, yj vs configforge, terraform hcl converter, offline cli converter">
+  <meta property="og:title" content="ConfigForge vs yj — Which Config Converter Wins?">
+  <meta property="og:description" content="ConfigForge beats yj with 9 formats vs 4, comment preservation, native batch mode, and true offline operation. Head-to-head comparison.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/yj-alternative-comparison.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ConfigForge vs yj — Which Config Converter Wins?">
+  <meta name="twitter:description" content="ConfigForge beats yj with 9 formats vs 4, comment preservation, native batch mode, and true offline operation. Head-to-head comparison.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter with comment preservation, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="configforge-vs-yj">ConfigForge vs yj: The Multi-Format yj Alternative That Keeps Your Comments</h1>
+<br />
+<p>If you've landed here looking for a <strong>yj alternative</strong>, you're probably already using <code>yj</code> (<a href="https://github.com/sclevine/yj">sclevine/yj</a>) to shuffle between JSON, YAML, TOML, and HCL on the command line. It's a tidy little Go binary that does exactly that — four formats, stream in, stream out. ConfigForge (the <code>cf</code> command in the open-source <a href="https://pypi.org/project/devbench-cf/">devbench</a> toolkit) covers the same ground and then some: <strong>nine formats</strong>, and it's the <strong>only config converter that preserves comments</strong> through round-trip conversions. Here's the head-to-head.</p>
+<br />
+<h2 id="feature-comparison-table">Feature Comparison Table</h2>
+<br />
+<table>
+  <thead>
+    <tr><th>Feature</th><th>ConfigForge (<code>devbench cf</code>)</th><th>yj (sclevine/yj)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>JSON</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+    <tr><td><strong>YAML</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+    <tr><td><strong>TOML</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+    <tr><td><strong>HCL (Terraform)</strong></td><td>✅ Read + Write</td><td>⚠️ Read only (HCL → others)</td></tr>
+    <tr><td><strong>XML</strong></td><td>✅ Read + Write</td><td>❌</td></tr>
+    <tr><td><strong>CSV</strong></td><td>✅ Read + Write</td><td>❌</td></tr>
+    <tr><td><strong>INI</strong></td><td>✅ Read + Write</td><td>❌</td></tr>
+    <tr><td><strong>.env</strong></td><td>✅ Read + Write</td><td>❌</td></tr>
+    <tr><td><strong>Java .properties</strong></td><td>✅ Read + Write</td><td>❌</td></tr>
+    <tr><td><strong>Total formats</strong></td><td><strong>9 (bidirectional)</strong></td><td>4</td></tr>
+    <tr><td><strong>Comment preservation</strong></td><td>✅ Round-trip safe</td><td>❌ Stripped</td></tr>
+    <tr><td><strong>Batch / directory mode</strong></td><td>✅ Native (glob + recursive)</td><td>⚠️ Shell scripting required</td></tr>
+    <tr><td><strong>Offline operation</strong></td><td>✅ Zero external calls</td><td>✅ Local binary</td></tr>
+    <tr><td><strong>Install</strong></td><td><code>pip install devbench-cf</code></td><td>Binary / <code>go install</code></td></tr>
+    <tr><td><strong>License</strong></td><td>Open source</td><td>Open source (MIT)</td></tr>
+  </tbody>
+</table>
+<br />
+<h2 id="format-support-9-vs-4">Format Support: 9 vs 4</h2>
+<br />
+<p><code>yj</code> handles the four "structured config" formats that overlap most: JSON, YAML, TOML, and HCL (HCL is read-only — yj converts <em>from</em> HCL but not back to it). That's a genuinely useful set, especially if your work centers on Terraform and Kubernetes manifests.</p>
+<br />
+<p>ConfigForge is built for the messier reality of a real repository, where alongside those you'll also find a <code>config.ini</code>, a <code>.env</code> file, an exported <code>data.csv</code>, an XML manifest, and a Spring Boot <code>application.properties</code>. ConfigForge reads and writes <strong>all nine formats bidirectionally</strong>, including HCL in both directions, so any-to-any conversion works without reaching for a second tool:</p>
+<br />
+<pre><code class="language-bash">
+# The yj classics — same one-liners, plus TOML and HCL both ways
+devbench cf convert config.yaml config.json
+devbench cf convert pyproject.toml settings.yaml
+devbench cf convert main.tf main.json     # HCL → JSON
+devbench cf convert main.json main.tf     # JSON → HCL (yj can't do this)
+
+# The formats yj doesn't cover at all
+devbench cf convert legacy.ini modern.yaml
+devbench cf convert records.csv records.json
+devbench cf convert manifest.xml manifest.yaml
+devbench cf convert application.properties application.yaml
+</code></pre>
+<br />
+<p>If your world is exactly JSON/YAML/TOML/HCL, <code>yj</code> is a fine, lean choice. The moment a CSV export, an INI file, or a <code>.properties</code> file enters the picture, you'd need to bolt on more tools — or just use ConfigForge for the whole matrix.</p>
+<br />
+<h2 id="comment-preservation">Comment Preservation — the Decisive Difference</h2>
+<br />
+<p>This is the one that matters most day to day. Configuration files are documentation. The comment explaining <em>why</em> a timeout is 30 seconds, or <em>why</em> a feature flag is disabled, is often more valuable than the value itself. <code>yj</code> parses your config into a generic data structure and re-emits it — which means comments are dropped on the floor. Convert a commented <code>config.yaml</code> to TOML and back with <code>yj</code> and every annotation is gone.</p>
+<br />
+<p>ConfigForge is <strong>the only config converter that preserves comments</strong> across conversions wherever the target format supports them — YAML ↔ TOML ↔ INI ↔ .env all carry their inline and block comments through. Your annotations survive the round trip, so config files stay reviewable and your teammates keep the context they need.</p>
+<br />
+<h2 id="batch-mode">Batch Mode</h2>
+<br />
+<p><code>yj</code> is a single-stream filter: one document in on stdin, one document out on stdout. That's perfect for piping, but converting a whole directory means writing a <code>find ... -exec</code> loop and handling errors yourself. ConfigForge ships native batch support with glob patterns, recursion, and per-file error reporting:</p>
+<br />
+<pre><code class="language-bash">
+# Convert every JSON file in a tree to YAML, in place
+devbench cf convert --batch --recursive "**/*.json" --to yaml
+</code></pre>
+<br />
+<h2 id="offline-operation">Offline Operation</h2>
+<br />
+<p>Both tools run entirely on your machine — worth stating plainly because so many "online converter" websites ask you to paste sensitive config (API keys, database URLs, secrets) into a browser. <strong>ConfigForge makes zero external API calls.</strong> No telemetry, no cloud round-trip, no account. <code>yj</code> is likewise a local binary, so both win here over web tools — but only one of them also keeps your comments.</p>
+<br />
+<h2 id="who-should-use-which">Who Should Use Which?</h2>
+<br />
+<p><strong>Choose <code>yj</code> if:</strong> your world is strictly JSON, YAML, TOML, and HCL, you want the smallest possible single static binary, and you're building stdin/stdout pipelines where a lightweight filter is all you need.</p>
+<br />
+<p><strong>Choose ConfigForge (<code>devbench cf</code>) if:</strong> you work across more than those four formats, you need XML, CSV, INI, or <code>.properties</code> support, you want HCL conversion in <em>both</em> directions, you care about preserving comments through conversions, and you want native batch/recursive directory processing in a private, fully offline workflow.</p>
+<br />
+<p>For most polyglot codebases — and for anyone who has ever lost a carefully written config comment to a converter — ConfigForge is the broader, more future-proof choice. At <code>pip install devbench-cf</code>, it's one command away.</p>
+<br />
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/yq-alternative-comment-preservation.html">yq Comment Preservation</a></li>
+            <li><a href="/tools/devbench/forge/seo/jq-alternative-csv-to-json.html">jq CSV → JSON</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/yj-alternative-comparison.html">vs yj</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

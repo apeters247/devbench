@@ -294,7 +294,9 @@ def _try_config_format(text: str) -> dict[str, Any]:
     """
     try:
         detected = _cf.detect_format(text)
-    except Exception: # TODO: Replace with more specific exception from configforge if available
+    except (ValueError, TypeError, AttributeError):
+        # detect_format swallows its own parser errors and returns "unknown";
+        # this guards only against malformed/None input reaching it.
         return {"tool": None, "detection_type": "", "confidence": 0.0}
 
     if detected == "yaml":

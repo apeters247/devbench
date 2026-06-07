@@ -1005,7 +1005,9 @@ def test_csv_output_rfc4180_quotes_in_values():
     ])
     r = convert(src, "csv")
     assert r["success"], r.get("error")
-    assert '"""hello"""' in r["output"] or '""hello""' in r["output"] or '"She said ""hello"" to me"' in r["output"], \
+    # RFC 4180: a field containing double quotes is wrapped in quotes and each
+    # embedded quote is doubled. The canonical encoding is the only correct one.
+    assert '"She said ""hello"" to me"' in r["output"], \
         f"Quotes not properly escaped in CSV output: {r['output']!r}"
 
 
