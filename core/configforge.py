@@ -14,14 +14,16 @@ from datetime import date, datetime
 from pathlib import Path
 
 # JSON metadata key for carrying YAML comments through JSON intermediate.
-# The key name is deliberately distinctive to avoid realistic collisions.
-_COMMENT_META_KEY = "__cf_comments__"
-_COMMENT_DATA_KEY = "__cf_data__"
+# The prefix can be overridden via the DEVBENCH_META_PREFIX env var to avoid
+# collisions with real keys in the data. Default: __cf_ (distinctive but short).
+_CF_PREFIX = os.environ.get("DEVBENCH_META_PREFIX", "__cf_")
+_COMMENT_META_KEY = f"{_CF_PREFIX}comments__"
+_COMMENT_DATA_KEY = f"{_CF_PREFIX}data__"
 # JSON metadata key for carrying YAML blank-line positions through JSON.
 # Blank lines in YAML are structural (they separate logical blocks), so they
 # are preserved through the conversion pipeline just like comments. This is the
 # fix for yq#515 — the most-voted unresolved issue in yq.
-_BLANK_META_KEY = "__cf_blanks__"
+_BLANK_META_KEY = f"{_CF_PREFIX}blanks__"
 
 # ── Optional imports (graceful fallback) ──
 HAS_YAML = False
@@ -1734,6 +1736,12 @@ def convert(text: str, to_fmt: str, from_fmt: str = "auto", **options) -> dict:
         }
         if comments:
             result["_comments"] = comments
+            # Warn when comments are silently dropped (target format doesn't support them)
+            result["comment_loss_warning"] = (
+                f"⚠️  {len(comments)} comment(s) were lost: the target format '{to_fmt}' "
+                f"does not support comments. Use JSON as an intermediate format to "
+                f"preserve comments through round-trips (YAML → JSON → YAML)."
+            )
         return result
     except Exception as e:
         err_msg = str(e)
@@ -1846,7 +1854,11 @@ def batch_convert_stream(input_glob: str, to_fmt: str, output_dir: str = None, *
 
         if show_progress:
             if result["success"]:
-                print(f" ✓ ({result.get('output_size', 0)} bytes)")
+                cw = result.get("comment_loss_warning")
+                if cw:
+                    print(f" ✓ ({result.get('output_size', 0)} bytes) ⚠️ comments lost")
+                else:
+                    print(f" ✓ ({result.get('output_size', 0)} bytes)")
             else:
                 print(f" ✗ {result.get('error', 'unknown error')}")
 

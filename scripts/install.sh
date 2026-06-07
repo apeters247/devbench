@@ -24,7 +24,7 @@
 set -euo pipefail
 
 REPO="${DEVBENCH_REPO:-https://github.com/apeters247/devbench.git}"
-REF="${DEVBENCH_REF:-master}"
+REF="${DEVBENCH_REF:-main}"
 HOME_DIR="${DEVBENCH_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/devbench}"
 PYTHON="${PYTHON:-python3}"
 

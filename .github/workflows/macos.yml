@@ -1,7 +1,7 @@
 name: macOS
 
-# Builds the SwiftUI menu-bar app and verifies the Python <-> Swift bridge
-# contract, so the CLI envelope and the Swift app can never silently drift apart.
+# Builds the SwiftUI menu-bar app + verifies the Python bridge contract.
+# Runs on macOS 14 runners (Apple Silicon) so we get native arm64 builds.
 
 on:
   push:
@@ -28,6 +28,24 @@ jobs:
       - name: Build Devbench app
         working-directory: ui
         run: swift build -v
+
+      - name: Build release binary
+        working-directory: ui
+        run: swift build -c release -v
+
+      - name: Prepare .app bundle
+        run: |
+          mkdir -p build
+          cp -R ui/.build/release/Devbench build/Devbench.app 2>/dev/null || \
+            cp -R ui/.build/release/Devbench build/ 2>/dev/null || \
+            echo "No .app bundle found — check swift build output"
+
+      - name: Upload macOS build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Devbench-macOS
+          path: build/
+          retention-days: 30
 
   python-contract:
     name: Python bridge contract

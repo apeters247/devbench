@@ -1,0 +1,45 @@
+name: Publish to PyPI
+
+# Publishes devbench to PyPI on tagged releases.
+# Trigger: git tag v* && git push origin v*
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # for trusted publishing via PyPI
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Check distribution
+        run: twine check dist/*
+
+      - name: Publish to PyPI (test)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+        continue-on-error: true
+
+      - name: Publish to PyPI (prod)
+        uses: pypa/gh-action-pypi-publish@release/v1

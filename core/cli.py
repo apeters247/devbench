@@ -443,6 +443,10 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
         error = raw.get("error")
         if not success and error:
             error = _enrich_error_message(error, input_text, from_fmt)
+        # Surface comment-loss warning to stderr so users see it immediately
+        cw = raw.get("comment_loss_warning")
+        if cw:
+            print(cw, file=sys.stderr)
         return tools._ok(
             "cf",
             raw.get("output", ""),
@@ -451,6 +455,7 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
             input_size=raw.get("input_size"),
             output_size=raw.get("output_size"),
             success=success,
+            comment_loss_warning=cw,
         )
     else:
         # No --to flag: auto-detect and convert to JSON for display
