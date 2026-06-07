@@ -36,7 +36,8 @@ def test_convert_json_to_yaml():
 def test_convert_json_to_toml():
     r = convert('{"server": {"host": "localhost", "port": 8080}}', "toml")
     assert r["success"]
-    assert "[server]" in r["output"]
+    parsed = tomllib.loads(r["output"])
+    assert parsed == {"server": {"host": "localhost", "port": 8080}}
 
 def test_convert_yaml_to_json():
     r = convert("key: value\nnested:\n  a: 1", "json")
@@ -105,6 +106,7 @@ def test_invalid_input():
 def test_empty_input():
     r = convert("", "json")
     assert not r["success"]
+    assert r["error"]
 
 def test_supported_formats():
     expected_formats = ["json", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties"]
@@ -123,9 +125,14 @@ def test_convert_file(tmp_path):
 def test_batch_convert(tmp_path):
     for i in range(3):
         (tmp_path / f"cfg{i}.json").write_text(f'{{"id": {i}}}')
-    results = batch_convert(str(tmp_path / "*.json"), "yaml", str(tmp_path / "yaml_out"))
+    out_dir = tmp_path / "yaml_out"
+    results = batch_convert(str(tmp_path / "*.json"), "yaml", str(out_dir))
     assert len(results) == 3
     assert all(r["success"] for r in results)
+    for i in range(3):
+        out_file = out_dir / f"cfg{i}.yaml"
+        assert out_file.exists()
+        assert yaml.safe_load(out_file.read_text()) == {"id": i}
 
 def test_detect_unknown():
     assert detect_format("some random text") == "unknown"
