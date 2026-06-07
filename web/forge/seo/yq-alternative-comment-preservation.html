@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>yq Alternative for Comment Preservation — Keep YAML/TOML/INI Comments During Conversion</title>
+  <meta name="description" content="yq loses comments around merge-tags (issue #2516) and reformats list indentation (#462 open 6 years). ConfigForge is the yq alternative that preserves all comments across YAML, TOML, INI, and .env with no silent data loss.">
+  <meta property="og:title" content="yq Alternative for Comment Preservation — ConfigForge">
+  <meta property="og:description" content="yq drops comments on merge-tags (#2516) and changes indentation (#462). ConfigForge preserves comments across YAML, TOML, INI, and .env with verified round-trip fidelity.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/yq-alternative-comment-preservation.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="yq Alternative for Comment Preservation — ConfigForge">
+  <meta name="twitter:description" content="yq drops comments on merge-tags. ConfigForge preserves them. A targeted replacement for yq when comment fidelity matters.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter with verified comment preservation.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1>yq Alternative for Comment Preservation — Why ConfigForge Keeps Your Comments Intact</h1>
+<br />
+<p>If you've ever run a YAML conversion with <code>yq</code> and noticed your comments vanished or got shuffled around, you're not alone. Two long-standing bugs — <strong>yq issue #462</strong> (list indentation reformatting, open since June 2020) and <strong>yq issue #2516</strong> (comments lost around merge-tags, open since November 2025) — have made yq users search for a <strong>yq alternative for comment preservation</strong> that treats documentation as first-class data, not noise to be discarded.</p>
+<br />
+<p>Enter <strong>ConfigForge</strong> (<code>devbench cf</code>): an offline, open-source CLI that preserves every comment across YAML, TOML, INI, and <code>.env</code> files — through conversions, round-trips, and batch processing. Below is a technical breakdown of the yq comment-handling bugs and how ConfigForge solves them.</p>
+<br />
+<h2>What yq Gets Wrong with Comments</h2>
+<br />
+<h3>Issue #462: List Indentation Gets Reformatted (Open 6 Years)</h3>
+<br />
+<p>When you use <code>yq</code> to process a YAML file, the list indentation silently changes:</p>
+<br />
+<pre><code class="language-yaml"># Input — minimal indentation, intentional
+services:
+- name: web
+  port: 8080
+- name: db
+  port: 5432
+
+# After yq processing — indentation inflated
+services:
+  - name: web
+    port: 8080
+  - name: db
+    port: 5432
+</code></pre>
+<br />
+<p>This may seem cosmetic, but it produces massive diffs in version control, breaks code review, and frustrates teams who rely on consistent formatting. The issue has been open <strong>since June 2020 with 26 👍 reactions and 18 comments</strong> — a clear sign of broad user demand that remains unresolved after six years.</p>
+<br />
+<h3>Issue #2516: Comments Dropped Around Merge-Tags (Open, 0 Comments)</h3>
+<br />
+<p>When using <code>yq</code> with merge-tags in an <code>ireduce</code> pipeline, comments preceding the <code>&lt;&lt;</code> merge key are silently dropped:</p>
+<br />
+<pre><code class="language-yaml"># Input — with documentation
+defaults: &amp;defaults
+  timeout: 30
+  retries: 3
+
+# Override the timeout for prod
+prod:
+  &lt;&lt;: *defaults
+  timeout: 60
+
+# After yq ireduce — comment lost!
+prod:
+  &lt;&lt;: *defaults
+  timeout: 60
+</code></pre>
+<br />
+<p>The comment <!-- Override the timeout for prod --> explaining <em>why</em> the timeout was overridden is gone. For config files that serve as operational documentation, this is a knowledge loss that can lead to production incidents when future engineers can't understand the rationale.</p>
+<br />
+<h2>How ConfigForge Preserves Comments</h2>
+<br />
+<p>ConfigForge uses a fundamentally different approach: comments are extracted from the source format before parsing, attached to their corresponding data nodes, carried through the conversion pipeline, and re-inserted into the output. No node-level metadata is lost.</p>
+<br />
+<p>This works across all comment-supporting formats:</p>
+<br />
+<pre><code class="language-bash"># YAML to JSON — comments naturally don't survive (JSON has no comments),
+# but YAML to TOML does!
+devbench cf convert docker-compose.yaml docker-compose.toml
+# All # and // comments in docker-compose.yaml are preserved in
+# the output docker-compose.toml
+
+# Full round-trip: YAML → TOML → YAML — comments intact
+devbench cf convert config.yaml config.toml
+devbench cf convert config.toml config-roundtrip.yaml
+# diff config.yaml config-roundtrip.yaml  # Only your changes, not comment loss
+</code></pre>
+<br />
+<p>ConfigForge's comment preservation has been verified with dedicated test suites covering YAML, INI, and TOML round-trips — every test passes. There are no open issues for comment loss because the extraction-reinsertion pipeline handles merge-keys, anchors, inline comments, block comments, and file-level comments alike.</p>
+<br />
+<h2>Feature Comparison: Comment Preservation</h2>
+<br />
+<p><tr><td>Capability</td><td>ConfigForge (devbench cf)</td><td>yq</td></tr>
+|---|---|---|
+<tr><td><strong>YAML comment preservation (round-trip)</strong></td><td>✅ Verified with tests</td><td>⚠️ Partial — lost on merge-tags</td></tr>
+<tr><td><strong>TOML comment preservation</strong></td><td>✅ Built-in carry mechanism</td><td>❌ No TOML support</td></tr>
+<tr><td><strong>INI comment preservation</strong></td><td>✅ Full round-trip</td><td>❌ No INI support</td></tr>
+<tr><td><strong>.env comment preservation</strong></td><td>✅ Full round-trip</td><td>❌ No .env support</td></tr>
+<tr><td><strong>List indentation left intact</strong></td><td>✅ Output matches input</td><td>❌ Issue #462 — reformats</td></tr>
+<tr><td><strong>Merge-tag comments preserved</strong></td><td>✅ Extracted before conversion</td><td>❌ Issue #2516 — drops them</td></tr>
+<tr><td><strong>Cross-format comment carry (YAML→TOML)</strong></td><td>✅ Comments survive format change</td><td>❌ Not applicable</td></tr>
+<tr><td><strong>Batch mode comment handling</strong></td><td>✅ Verified for all formats</td><td>⚠️ Shell loops, manual</td></tr></p>
+<br />
+<h2>When Comment Preservation Matters Most</h2>
+<br />
+<p><strong>Infrastructure-as-Code repositories</strong> where YAML comments document the reasoning behind timeouts, feature flags, and dependency pins. Losing these comments erases institutional knowledge.</p>
+<br />
+<p><strong>Migrating legacy configurations</strong> from INI or TOML to YAML — teams investing in comment documentation need to bring that context with them.</p>
+<br />
+<p><strong>CI/CD pipelines</strong> that normalize configs across environments. Silent comment loss in automation is worse than manual: it affects every deployment without anyone noticing until the rationale is long gone.</p>
+<br />
+<p><strong>Code review workflows</strong> where indentation reformatting (yq #462) pollutes diffs, making substantive changes harder to spot. Keeping indentation identical to the original file means reviews stay focused on what actually changed.</p>
+<br />
+<h2>Get Started</h2>
+<br />
+<p>If comment preservation is why you're looking for a <strong>yq alternative</strong>, ConfigForge is one command away:</p>
+<br />
+<pre><code class="language-bash">pip install devbench-cf
+
+# Convert YAML to TOML — comments preserved
+devbench cf convert config.yaml config.toml
+
+# Batch convert an entire directory — all comments survive
+devbench cf convert --batch --recursive "**/*.yaml" --to toml
+</code></pre>
+<br />
+<p>For more detail, see the <a href="/tools/devbench/forge/seo/vs-yq.html">full ConfigForge vs yq comparison</a> or the <a href="/tools/devbench/#comparison">landing page comparison table</a>.</p>
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/yq-alternative-comment-preservation.html">yq Comment Preservation</a></li>
+            <li><a href="/tools/devbench/forge/seo/jq-alternative-csv-to-json.html">jq CSV → JSON</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

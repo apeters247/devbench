@@ -13,6 +13,16 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+# JSON metadata key for carrying YAML comments through JSON intermediate.
+# The key name is deliberately distinctive to avoid realistic collisions.
+_COMMENT_META_KEY = "__cf_comments__"
+_COMMENT_DATA_KEY = "__cf_data__"
+# JSON metadata key for carrying YAML blank-line positions through JSON.
+# Blank lines in YAML are structural (they separate logical blocks), so they
+# are preserved through the conversion pipeline just like comments. This is the
+# fix for yq#515 — the most-voted unresolved issue in yq.
+_BLANK_META_KEY = "__cf_blanks__"
+
 # ── Optional imports (graceful fallback) ──
 HAS_YAML = False
 HAS_TOML = False
@@ -372,6 +382,72 @@ def _reinsert_yaml_comments(yaml_text: str, comments: list) -> str:
     return "\n".join(lines)
 
 
+def _extract_yaml_blank_lines(text: str) -> list:
+    """Extract blank-line positions from YAML text, anchored to the full key
+    path of the NEXT key line that follows each blank.
+
+    Anchoring to the following key (rather than an absolute line number) is what
+    lets a blank line survive the trip through a structure-only intermediate
+    like JSON: even though serialization re-renders the document, the key paths
+    are stable (insertion order is preserved), so we can put the blank back in
+    front of the same key. Each blank line yields one entry; N consecutive
+    blanks before the same key yield N entries. A trailing blank with no
+    following key is dropped (YAML output already ends in a newline).
+    """
+    lines = text.split("\n")
+    key_paths = _build_key_paths(lines)
+    sorted_keys = sorted(key_paths)
+    blanks = []
+    for i, line in enumerate(lines):
+        if line.strip() != "":
+            continue
+        # The split on a trailing newline produces a final empty element that
+        # is not a real blank line — skip it.
+        if i == len(lines) - 1:
+            continue
+        next_path = None
+        for li in sorted_keys:
+            if li > i:
+                next_path = key_paths[li]["path"]
+                break
+        if next_path is not None:
+            blanks.append({"before_path": next_path})
+    return blanks
+
+
+def _reinsert_yaml_blank_lines(yaml_text: str, blanks: list) -> str:
+    """Reinsert blank lines into YAML output before the key whose full path each
+    blank was anchored to. Inserts bottom-up so earlier line indices stay valid.
+    Must run BEFORE comment reinsertion so that, when a key has both a leading
+    blank and a leading comment, the result is blank → comment → key."""
+    if not blanks:
+        return yaml_text
+    lines = yaml_text.split("\n")
+    out_key_paths = _build_key_paths(lines)
+
+    path_to_lines = {}
+    for li, info in out_key_paths.items():
+        path_to_lines.setdefault(info["path"], []).append(li)
+
+    # Count blanks anchored to each path, preserving first-seen order.
+    from collections import OrderedDict
+    counts = OrderedDict()
+    for b in blanks:
+        p = b.get("before_path")
+        if p is not None:
+            counts[p] = counts.get(p, 0) + 1
+
+    insertions = []  # (line_index, count)
+    for p, cnt in counts.items():
+        if p in path_to_lines and path_to_lines[p]:
+            insertions.append((path_to_lines[p][0], cnt))
+
+    for li, cnt in sorted(insertions, reverse=True):
+        for _ in range(cnt):
+            lines.insert(li, "")
+    return "\n".join(lines)
+
+
 def _extract_ini_comments(text: str) -> list:
     """Extract # and ; comments from INI text."""
     comments = []
@@ -438,6 +514,111 @@ def _reinsert_ini_comments(ini_text: str, comments: list) -> str:
                     inserted.add(i)
                     inserted = {j + 1 if j >= i else j for j in inserted}
                     break
+    return "\n".join(lines)
+
+
+# ── TOML comment preservation ──
+_TOML_HEADER_RE = re.compile(r"^\[\[?\s*(.+?)\s*\]\]?\s*$")
+
+
+def _toml_line_map(lines: list) -> dict:
+    """Map line index -> {"section", "key", "is_header"} for every TOML header
+    and `key = value` line, tracking the current [section] / [[array]] path.
+    The '#' part of a line is ignored when reading code (so a trailing comment
+    never confuses key detection)."""
+    info = {}
+    section = ""
+    for i, line in enumerate(lines):
+        ci = _yaml_find_comment(line)  # '#' rules are the same in TOML
+        code = (line[:ci] if ci >= 0 else line).strip()
+        if not code:
+            continue
+        m = _TOML_HEADER_RE.match(code)
+        if m:
+            section = m.group(1)
+            info[i] = {"section": section, "key": None, "is_header": True}
+        elif "=" in code:
+            key = code.split("=", 1)[0].strip()
+            if len(key) >= 2 and key[0] == key[-1] and key[0] in ("'", '"'):
+                key = key[1:-1]
+            info[i] = {"section": section, "key": key, "is_header": False}
+    return info
+
+
+def _extract_toml_comments(text: str) -> list:
+    """Extract # comments from TOML, anchored to (section, key).
+
+    Inline comments attach to the key (or header) on their own line; full-line
+    comments attach to the NEXT key/header line. Anchoring by section+key (not
+    line number) is what lets a comment survive a structure-preserving round
+    trip through JSON, since the serializer re-emits the same keys. Comments
+    BETWEEN elements of a multi-line array are not representable here because
+    the serializer renders arrays on a single line — a documented limitation."""
+    lines = text.split("\n")
+    info = _toml_line_map(lines)
+    sorted_keys = sorted(info)
+    comments = []
+    for i, line in enumerate(lines):
+        ci = _yaml_find_comment(line)
+        if ci < 0:
+            continue
+        is_inline = bool(line[:ci].strip())
+        ctext = line[ci + 1:].strip()
+        if is_inline:
+            anchor = info.get(i, {})
+        else:
+            anchor = {}
+            for j in sorted_keys:
+                if j > i:
+                    anchor = info[j]
+                    break
+        comments.append({
+            "section": anchor.get("section", ""),
+            "key": anchor.get("key"),
+            "is_header": anchor.get("is_header", False),
+            "text": ctext,
+            "is_inline": is_inline,
+        })
+    return comments
+
+
+def _reinsert_toml_comments(toml_text: str, comments: list) -> str:
+    """Reinsert extracted TOML comments, matching by (section, key, is_header).
+    Inline comments are appended to their key's line; full-line comments are
+    inserted just before it."""
+    if not comments:
+        return toml_text
+    lines = toml_text.split("\n")
+
+    def _match(meta, c):
+        return (meta["section"] == c["section"]
+                and meta["key"] == c["key"]
+                and meta["is_header"] == c.get("is_header", False))
+
+    inserted = set()
+    inline = [c for c in comments if c["is_inline"]]
+    block = [c for c in comments if not c["is_inline"]]
+
+    # Inline comments first — they don't shift line numbers.
+    info = _toml_line_map(lines)
+    for c in inline:
+        for i in sorted(info):
+            if i in inserted or not _match(info[i], c):
+                continue
+            if _yaml_find_comment(lines[i]) < 0:
+                lines[i] = lines[i] + f"  # {c['text']}"
+                inserted.add(i)
+                break
+
+    # Block comments — rebuild the map after each insert since indices shift.
+    for c in block:
+        info = _toml_line_map(lines)
+        target = next((i for i in sorted(info) if _match(info[i], c)), None)
+        if target is not None:
+            indent = lines[target][:len(lines[target]) - len(lines[target].lstrip())]
+            lines.insert(target, f"{indent}# {c['text']}")
+        else:
+            lines.insert(0, f"# {c['text']}")
     return "\n".join(lines)
 
 
@@ -1418,23 +1599,76 @@ def convert(text: str, to_fmt: str, from_fmt: str = "auto", **options) -> dict:
     try:
         preserve_comments = options.pop("preserve_comments", True)
         carry_comments = options.pop("_carry_comments", None)
+        carry_blanks = options.pop("_carry_blanks", None)
         comments = carry_comments if carry_comments is not None else []
+        blanks = carry_blanks if carry_blanks is not None else []
         if preserve_comments and not carry_comments:
             in_fmt = from_fmt if from_fmt != "auto" else detect_format(text)
             if in_fmt == "yaml":
                 comments = _extract_yaml_comments(text)
+                blanks = _extract_yaml_blank_lines(text)
             elif in_fmt == "ini":
                 comments = _extract_ini_comments(text)
+            elif in_fmt == "toml":
+                comments = _extract_toml_comments(text)
 
         parsed = parse_text(text, from_fmt, **options)
-        output = serialize(parsed["data"], to_fmt, **options)
+        data = parsed["data"]
 
-        # Re-insert comments if target format supports them
-        if comments and to_fmt == "yaml":
-            output = _reinsert_yaml_comments(output, comments)
-            comments = []  # consumed
+        # ── Cross-process comment round-trip through JSON ──
+        # When going YAML → JSON: embed extracted comments into the JSON data
+        # so they survive a pipe to a separate `devbench cf` process.
+        # When going JSON → YAML: extract embedded comments from the JSON data
+        # and use them for re-insertion into YAML.
+        if preserve_comments and not carry_comments:
+            if to_fmt == "json" and (comments or blanks):
+                # Embed comments and blank-line positions into JSON data before
+                # serialization so they survive a pipe to a separate process.
+                if isinstance(data, dict):
+                    if comments:
+                        data[_COMMENT_META_KEY] = comments
+                    if blanks:
+                        data[_BLANK_META_KEY] = blanks
+                elif isinstance(data, list) and comments:
+                    # Top-level array (e.g. multi-doc YAML): wrap so comments
+                    # ride along. Blank lines are NOT preserved for top-level
+                    # arrays — that would change the JSON shape from array to
+                    # object and break consumers expecting an array.
+                    data = {_COMMENT_META_KEY: comments, _COMMENT_DATA_KEY: data}
+                comments = []  # consumed — now lives in the JSON output
+                blanks = []
+            elif to_fmt in ("yaml", "ini", "toml") and (from_fmt == "json" or from_fmt == "auto"):
+                # Check if the JSON data carries embedded metadata from a prior
+                # YAML/TOML→JSON step.
+                if isinstance(data, dict) and (
+                    _COMMENT_META_KEY in data or _BLANK_META_KEY in data
+                ):
+                    comments = data.pop(_COMMENT_META_KEY, comments)
+                    blanks = data.pop(_BLANK_META_KEY, blanks)
+                    inner = data.pop(_COMMENT_DATA_KEY, None)
+                    if inner is not None:
+                        data = inner
+                    # Remove empty shell so the YAML output isn't contaminated
+                    elif not data:
+                        data = None
+
+        output = serialize(data, to_fmt, **options)
+
+        # Re-insert blank lines and comments if target format supports them.
+        # Blanks go in first so a key with both a leading blank and a leading
+        # comment ends up as blank → comment → key.
+        if to_fmt == "yaml":
+            if blanks:
+                output = _reinsert_yaml_blank_lines(output, blanks)
+                blanks = []  # consumed
+            if comments:
+                output = _reinsert_yaml_comments(output, comments)
+                comments = []  # consumed
         elif comments and to_fmt == "ini":
             output = _reinsert_ini_comments(output, comments)
+            comments = []  # consumed
+        elif comments and to_fmt == "toml":
+            output = _reinsert_toml_comments(output, comments)
             comments = []  # consumed
 
         result = {

@@ -19,15 +19,8 @@ tests/test_api.py
 tests/test_configforge.py
 tests/test_core.py
 tests/test_edge_cases.py
-tests/test_edge_cases_50.py
-tests/test_edge_cases_round7.py
 tests/test_hcl.py
 tests/test_license.py
-tests/test_missed_edge_cases.py
-tests/test_missed_edge_cases_2.py
-tests/test_missed_edge_cases_3.py
-tests/test_missed_edge_cases_4.py
-tests/test_missed_edge_cases_5.py
 tests/test_pain_points.py
 tests/test_properties.py
 tests/test_serve.py

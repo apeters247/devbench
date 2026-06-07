@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>jq Alternative for CSV to JSON Conversion — ConfigForge Solves jq Issue #1650</title>
+  <meta name="description" content="jq can't convert CSV strings to JSON (issue #1650, open 8 years). ConfigForge converts CSV to JSON, YAML, TOML, and more with a single pip-installable CLI command. 100% offline, zero API calls.">
+  <meta property="og:title" content="jq Alternative for CSV to JSON — ConfigForge">
+  <meta property="og:description" content="jq's @csv filter only works on arrays, not strings — issue #1650 has been open since 2018. ConfigForge does CSV to JSON, CSV to YAML, CSV to TOML, and more. Just pip install and run.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/jq-alternative-csv-to-json.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="jq Alternative for CSV to JSON — ConfigForge">
+  <meta name="twitter:description" content="jq can't handle CSV strings after 8 years. ConfigForge converts CSV to JSON, YAML, TOML, and any of 9 formats in a single CLI command.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter with full CSV conversion support.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1>jq Alternative for CSV to JSON Conversion — Solving the 8-Year Gap (Issue #1650)</h1>
+<br />
+<p>For <strong>eight years</strong>, users have been asking <code>jq</code> for one simple thing: convert a CSV string to JSON. <strong>jq issue #1650</strong>, opened in April 2018 with <strong>37 comments and the label "feature request: jq function library"</strong>, remains unresolved. The core problem: <code>jq -r '@csv'</code> only formats arrays as CSV — it cannot <em>parse</em> a CSV string into a structured format.</p>
+<br />
+<p>If you're searching for a <strong>jq alternative for CSV to JSON conversion</strong>, <strong>ConfigForge</strong> (<code>devbench cf</code>) fills this gap immediately. It converts CSV to JSON, CSV to YAML, CSV to TOML, and any of 9 supported formats — bidirectionally, 100% offline, with one command.</p>
+<br />
+<h2>The Problem: jq @csv Is Write-Only</h2>
+<br />
+<p>Here's what happens when you try to use <code>jq</code> to parse a CSV string today:</p>
+<br />
+<pre><code class="language-bash"># jq CAN format a JSON array as CSV (this works)
+$ echo '[{"name":"db","port":5432},{"name":"web","port":8080}]' | \
+  jq -r '.[] | [.name, .port] | @csv'
+"db",5432
+"web",8080
+</code></pre>
+<br />
+<pre><code class="language-bash"># jq CANNOT parse a CSV string back into JSON (issue #1650)
+$ echo '"db",5432
+"web",8080' | jq -r '@csv'
+# Error — jq has no CSV parser built in
+</code></pre>
+<br />
+<p>This means any workflow that receives CSV data — database exports, spreadsheet downloads, API responses, log files — requires a secondary tool. Common workarounds include piping through <code>mlr</code> (Miller), <code>csvkit</code>, or writing custom Python scripts. Each adds a dependency and breaks the "one piping chain" promise.</p>
+<br />
+<h2>The Solution: ConfigForge CSV Conversion</h2>
+<br />
+<p>ConfigForge treats CSV as a first-class format alongside JSON, YAML, TOML, XML, INI, <code>.env</code>, HCL, and Java <code>.properties</code>. The same single command handles both directions:</p>
+<br />
+<pre><code class="language-bash"># CSV to JSON — exactly what jq issue #1650 asks for
+$ devbench cf convert servers.csv servers.json
+
+# CSV to YAML (great for Ansible inventory)
+$ devbench cf convert inventory.csv inventory.yaml
+
+# CSV to TOML (app configs)
+$ devbench cf convert spreadsheet.csv config.toml
+
+# The reverse also works: JSON to CSV
+$ devbench cf convert config.json export.csv
+
+# Batch: convert all CSVs in a directory to JSON
+$ devbench cf convert --batch --recursive "data/*.csv" --to json
+</code></pre>
+<br />
+<p>Unlike <code>jq</code>'s array-only <code>@csv</code> filter, ConfigForge handles:</p>
+<ul>
+  <li><strong>Headers</strong> — First row becomes JSON keys automatically</li>
+  <li><strong>Nested structures</strong> — Pipe-delimited headers (<code>server.name</code>) produce nested JSON</li>
+  <li><strong>Quoted values</strong> — Commas inside quotes are handled correctly</li>
+  <li><strong>Type inference</strong> — Numbers, booleans, and nulls are auto-detected</li>
+  <li><strong>Multi-format output</strong> — CSV → any of 9 supported formats</li>
+</ul>
+<br />
+<h2>Real-World Comparison: jq vs ConfigForge for Common CSV Tasks</h2>
+<br />
+<p><tr><td>Task</td><td>jq</td><td>ConfigForge (devbench cf)</td></tr>
+|---|---|---|
+<tr><td><strong>CSV string → JSON array</strong></td><td>❌ Issue #1650 — no parser</td><td>✅ <code>devbench cf convert data.csv data.json</code></td></tr>
+<tr><td><strong>CSV → YAML</strong></td><td>❌ No YAML output</td><td>✅ <code>devbench cf convert data.csv data.yaml</code></td></tr>
+<tr><td><strong>CSV → TOML</strong></td><td>❌ No TOML output</td><td>✅ <code>devbench cf convert data.csv data.toml</code></td></tr>
+<tr><td><strong>JSON → CSV string</strong></td><td>⚠️ Requires <code>@csv</code> + array construction</td><td>✅ <code>devbench cf convert data.json data.csv</code></td></tr>
+<tr><td><strong>Batch CSV directory → JSON</strong></td><td>❌ Manual loop + issue #1650</td><td>✅ <code>devbench cf --batch "*.csv" --to json</code></td></tr>
+<tr><td><strong>100% offline</strong></td><td>✅ Yes</td><td>✅ Yes, zero API calls</td></tr>
+<tr><td><strong>Install</strong></td><td><code>apt</code>/<code>brew</code>/binary</td><td><code>pip install devbench-cf</code></td></tr></p>
+<br />
+<h2>Where jq Still Shines</h2>
+<br />
+<p>To be clear: <code>jq</code> remains the gold standard for <strong>JSON querying and transformation</strong>. Its expression language for filtering, slicing, and reshaping JSON objects is unmatched. If your data starts and ends as JSON, <code>jq</code> is the right tool.</p>
+<br />
+<p>The gap is <strong>cross-format conversion</strong> — specifically taking CSV (or YAML, TOML, INI, or <code>.env</code>) and producing a structured output. That's where jq issue #1650 has sat unresolved for 8 years, and where ConfigForge provides an immediate answer.</p>
+<br />
+<h2>Using Both Together: The Best of Both Worlds</h2>
+<br />
+<p>The most productive setup uses <code>jq</code> for querying and ConfigForge for format conversion, chained in a single pipeline:</p>
+<br />
+<pre><code class="language-bash"># jq reshapes JSON, ConfigForge converts to YAML
+cat data.json | jq '.items[] | {id, name, status}' | devbench cf --to yaml
+
+# ConfigForge converts CSV to JSON, jq filters it
+devbench cf convert pipeline.csv -t json | jq '.[] | select(.status == "active")'
+</code></pre>
+<br />
+<p>Together they cover the full spectrum of config and data processing — entirely offline, zero API calls, no web uploads.</p>
+<br />
+<h2>Get Started</h2>
+<br />
+<p>If you've been waiting 8 years for jq issue #1650 to be resolved, stop waiting:</p>
+<br />
+<pre><code class="language-bash">pip install devbench-cf
+
+# CSV to JSON — the exact use case from issue #1650
+devbench cf convert servers.csv servers.json
+
+# Or pipe from stdin
+cat data.csv | devbench cf --to json
+</code></pre>
+<br />
+<p>For more detail, see the <a href="/tools/devbench/forge/seo/vs-jq.html">full ConfigForge vs jq comparison</a>, the <a href="/tools/devbench/forge/seo/csv-to-yaml-converter.html">CSV to YAML conversion guide</a>, or the <a href="/tools/devbench/#comparison">landing page comparison table</a>.</p>
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/yq-alternative-comment-preservation.html">yq Comment Preservation</a></li>
+            <li><a href="/tools/devbench/forge/seo/jq-alternative-csv-to-json.html">jq CSV → JSON</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

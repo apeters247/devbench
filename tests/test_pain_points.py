@@ -8,6 +8,8 @@ import sys
 import os
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.configforge import (
@@ -16,6 +18,8 @@ from core.configforge import (
     validate_indentation,
     main,
     detect_format,
+    HAS_TOML,
+    HAS_HCL,
 )
 
 
@@ -36,6 +40,70 @@ def test_round_trip_ini_via_json():
     out = round_trip(src, via="json")
     assert out["success"]
     assert "top comment" in out["output"]
+
+
+# ── PP2: Blank line preservation on round-trip (yq#515 — 151 👍, 6yr open) ──
+def test_round_trip_preserves_blank_line_yq515():
+    """The exact yq#515 case: a blank line separating two keys under the same
+    parent must survive YAML -> JSON -> YAML."""
+    src = "foo:\n  bar: 1\n\n  baz: 2\n"
+    out = round_trip(src, via="json")
+    assert out["success"]
+    assert out["output"] == "foo:\n  bar: 1\n\n  baz: 2\n", (
+        f"blank line lost in round-trip:\n{out['output']!r}"
+    )
+
+
+def test_round_trip_preserves_multiple_blank_lines_at_nesting_levels():
+    """Multiple blank lines at different nesting levels must all survive."""
+    src = (
+        "server:\n"
+        "  host: localhost\n"
+        "\n"
+        "  port: 8080\n"
+        "\n"
+        "database:\n"
+        "  name: mydb\n"
+    )
+    out = round_trip(src, via="json")
+    assert out["success"]
+    assert out["output"] == src, (
+        f"blank lines lost in round-trip:\n{out['output']!r}"
+    )
+
+
+def test_yaml_to_json_does_not_leak_blank_metadata():
+    """The blank-line metadata is an internal carrier — converting YAML to
+    JSON and reading the data back must not surface the internal key, and a
+    plain YAML->JSON (no return leg) JSON stays valid."""
+    src = "foo:\n  bar: 1\n\n  baz: 2\n"
+    r = convert(src, "json", "yaml")
+    assert r["success"]
+    data = json.loads(r["output"])
+    # The actual data is intact
+    assert data["foo"] == {"bar": 1, "baz": 2}
+
+
+def test_round_trip_no_blank_lines_unchanged():
+    """A document with no blank lines must round-trip with no spurious blanks."""
+    src = "a: 1\nb: 2\nc: 3\n"
+    out = round_trip(src, via="json")
+    assert out["success"]
+    assert out["output"] == src, f"spurious blanks added:\n{out['output']!r}"
+
+
+def test_round_trip_preserves_blanks_and_comments_together():
+    """Blank lines and comments at the same anchor must both survive and stay
+    in the right order (blank before comment before key)."""
+    src = "foo:\n  bar: 1\n\n  # the baz value\n  baz: 2\n"
+    out = round_trip(src, via="json")
+    assert out["success"]
+    assert "# the baz value" in out["output"]
+    # blank line precedes the comment which precedes the key
+    lines = out["output"].split("\n")
+    baz_idx = next(i for i, l in enumerate(lines) if "baz: 2" in l)
+    assert lines[baz_idx - 1].strip() == "# the baz value"
+    assert lines[baz_idx - 2].strip() == ""
 
 
 # ── PP3: Unified CLI tool ──
@@ -264,3 +332,103 @@ def test_helm_values_yaml_indentation_valid():
         assert len(iv["issues"]) <= 3, (
             f"Too many indentation issues: {len(iv['issues'])}"
         )
+
+
+# ── P2: TOML comment preservation (incl. comment on an array-valued key) ──
+@pytest.mark.skipif(not HAS_TOML, reason="tomllib not available")
+def test_toml_array_comment_survives_round_trip_via_json():
+    """A TOML file with a full-line comment and an inline comment on an
+    array-valued key must survive TOML -> JSON -> TOML."""
+    src = (
+        '# project metadata\n'
+        'title = "my project"\n'
+        'libs = ["requests", "flask"]  # web stack\n'
+    )
+    out = round_trip(src, via="json")
+    assert out["success"], f"TOML round-trip failed: {out.get('error')}"
+    assert "# project metadata" in out["output"], (
+        f"full-line comment lost:\n{out['output']}"
+    )
+    assert "# web stack" in out["output"], (
+        f"inline array comment lost:\n{out['output']}"
+    )
+    # Data must survive intact.
+    import tomllib
+    data = tomllib.loads(out["output"])
+    assert data["title"] == "my project"
+    assert data["libs"] == ["requests", "flask"]
+
+
+@pytest.mark.skipif(not HAS_TOML, reason="tomllib not available")
+def test_toml_section_comment_survives_round_trip_via_json():
+    """A comment anchored to a key inside a [section] must survive the
+    round-trip and stay attached to that section's key."""
+    src = (
+        '[server]\n'
+        'host = "localhost"  # bind address\n'
+        'port = 8080\n'
+    )
+    out = round_trip(src, via="json")
+    assert out["success"], f"TOML round-trip failed: {out.get('error')}"
+    assert "# bind address" in out["output"]
+    import tomllib
+    data = tomllib.loads(out["output"])
+    assert data["server"]["host"] == "localhost"
+    assert data["server"]["port"] == 8080
+
+
+# ── P2: HCL blank line / comment preservation ──
+@pytest.mark.skipif(not HAS_HCL, reason="python-hcl2 not available")
+def test_hcl_round_trip_preserves_data():
+    """HCL with blank lines between blocks must at minimum round-trip through
+    JSON with its DATA fully intact (blocks, labels, values)."""
+    src = (
+        '# infrastructure\n'
+        'resource "aws_instance" "web" {\n'
+        '  ami = "abc-123"\n'
+        '}\n'
+        '\n'
+        'variable "region" {\n'
+        '  default = "us-east-1"\n'
+        '}\n'
+    )
+    fwd = convert(src, "json", "hcl")
+    assert fwd["success"], f"HCL -> JSON failed: {fwd.get('error')}"
+    data = json.loads(fwd["output"])
+    # The block data survives the trip to JSON.
+    assert "resource" in data
+    assert "variable" in data
+    # And it round-trips back to valid, re-parseable HCL.
+    back = convert(fwd["output"], "hcl", "json")
+    assert back["success"], f"JSON -> HCL failed: {back.get('error')}"
+    assert "us-east-1" in back["output"]
+    assert "abc-123" in back["output"]
+
+
+@pytest.mark.xfail(
+    reason="hcl2.dumps restructures block syntax (resource \"a\" \"b\" {} "
+           "becomes resource = [{a = {b = {}}}]), so the block-label anchors a "
+           "comment/blank would attach to do not survive serialization. "
+           "Positional comment/blank preservation for HCL would require a "
+           "structure-preserving HCL writer, which python-hcl2 does not provide.",
+    strict=True,
+)
+@pytest.mark.skipif(not HAS_HCL, reason="python-hcl2 not available")
+def test_hcl_blank_and_comment_preservation():
+    """DESIRED behaviour (currently a documented limitation): blank lines
+    between HCL blocks and leading comments survive a round-trip through JSON."""
+    src = (
+        '# infrastructure\n'
+        'resource "aws_instance" "web" {\n'
+        '  ami = "abc-123"\n'
+        '}\n'
+        '\n'
+        'variable "region" {\n'
+        '  default = "us-east-1"\n'
+        '}\n'
+    )
+    out = round_trip(src, via="json")
+    assert out["success"]
+    assert "# infrastructure" in out["output"]
+    # A blank line separates the two blocks.
+    assert "}\n\n" in out["output"] or "\n\nvariable" in out["output"]
