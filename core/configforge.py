@@ -722,10 +722,29 @@ def detect_format(text: str) -> str:
         if env_count > 0 and env_count >= len(lines) * 0.5:
             return "env"
 
+    # YAML: check for key: value pattern or multi-doc ---
+    # Checked BEFORE .properties so Helm values.yaml and similar documented
+    # YAML files with "host:port" patterns are not mis-classified as properties.
+    if ":" in text or text.strip().startswith("---"):
+        for line in text.strip().split("\n"):
+            line = line.strip()
+            if re.match(r"^[\w\-\"]+:\s", line) or line == "---":
+                try:
+                    if HAS_YAML:
+                        # safe_load rejects multi-doc YAML, so try safe_load_all as fallback
+                        try:
+                            yaml.safe_load(text)
+                        except yaml.composer.ComposerError:
+                            list(yaml.safe_load_all(text))
+                    return "yaml"
+                except Exception:
+                    pass
+                break
+
     # .properties: # / ! comments and key=value | key:value | key value pairs.
     # Checked BEFORE INI (which would otherwise swallow bare key=value files)
-    # but after ENV; _looks_like_properties excludes all-uppercase ENV keys so
-    # .env files are not stolen. No [section] headers allowed here.
+    # but after YAML and ENV; _looks_like_properties excludes all-uppercase ENV
+    # keys so .env files are not stolen. No [section] headers allowed here.
     if not re.search(r"^\s*\[.*\]\s*$", text, re.MULTILINE) and _looks_like_properties(text):
         return "properties"
 
@@ -755,23 +774,6 @@ def detect_format(text: str) -> str:
                 return "xml"
         except Exception:
             pass
-
-    # YAML: check for key: value pattern (colon-space) or multi-doc ---
-    if ":" in text or text.strip().startswith("---"):
-        for line in text.strip().split("\n"):
-            line = line.strip()
-            if re.match(r"^[\w\-\"]+:\s", line) or line == "---":
-                try:
-                    if HAS_YAML:
-                        # safe_load rejects multi-doc YAML, so try safe_load_all as fallback
-                        try:
-                            yaml.safe_load(text)
-                        except yaml.composer.ComposerError:
-                            list(yaml.safe_load_all(text))
-                    return "yaml"
-                except Exception:
-                    pass
-                break
 
     # CSV: use csv.Sniffer or delimiter consistency check
     lines = text.strip().split("\n")

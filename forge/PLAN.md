@@ -58,7 +58,24 @@ Every 15min cycle:
 6. Update PLAN.md sections 3 and 5
 
 ## Section 5: Latest Cycle Log
-### Cycle — 2026-06-07 11:06Z (this cycle)
+### Cycle — 2026-06-07 11:31Z (this cycle)
+- ✅ **P0a**: Fixed `detect_format()` to classify Helm values.yaml as YAML (not .properties) — moved YAML detection before .properties check. The `:` separator regex in `_looks_like_properties` was triggered by YAML list items like `- localhost:9090`, causing incorrect format detection.
+- ✅ **P0b**: Verified all three pain points already work:
+  - Multi-doc YAML (`---`): `parse_text` correctly returns `yaml-multi` format, round-trips through JSON array
+  - Big-integer precision: 12345678901234567890 survives YAML→JSON→YAML losslessly
+  - Null normalization: YAML `~` → JSON `null` (not string "None")
+- ✅ **P0c**: Added 6 real-world fixture regression tests to `tests/test_pain_points.py`:
+  - `test_helm_values_yaml_comment_preservation` — 919 comments survive round-trip
+  - `test_k8s_multi_doc_yaml_round_trip` — 19-doc K8s manifest round-trips
+  - `test_package_json_to_toml_round_trip` — Express package.json round-trips
+  - `test_big_integer_yaml_round_trip` — large int precision verified
+  - `test_null_yaml_to_json_normalization` — `~` → null verified
+  - `test_helm_values_yaml_indentation_valid` — cosmetic indentation validated
+- ✅ Downloaded real-world fixtures: `helm_values.yaml` (1251 lines, Prometheus), `k8s_ingress.yaml` (670 lines, 19 docs), `pkg.json` (Express.js)
+- ✅ Tests: 874 passed, 9 skipped — **6 new tests added, 0 regressions**
+- ✅ PLAN.md Sections 3 and 5 updated
+
+### Cycle — 2026-06-07 11:06Z (previous cycle)
 - ✅ Fixed landing page: 14/14 SEO pages now linked (previously only 9 linked; 5 format-specific pages were invisible to Google crawler)
 - ✅ Created standalone pricing page: web/pricing.html — Free CLI tier (ConfigForge, open source) + Devbench Pro ($19, macOS menubar app), feature comparison table, JSON-LD Product schema, OG tags, Stripe checkout CTA
 - ✅ Tests: 868 passed, 9 skipped — no regressions

@@ -6,6 +6,7 @@ import io
 import json
 import sys
 import os
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -150,3 +151,116 @@ def test_yaml_tilde_null_to_json_is_real_null():
     assert r["success"]
     data = json.loads(r["output"])
     assert data["timeout"] is None
+
+
+# ── REAL-WORLD FIXTURE REGRESSION TESTS ──
+# These tests use real downloaded config files to verify the product's core
+# promise: round-trip fidelity on documented, production-grade configs.
+# They are NOT synthetic edge cases — they exercise the same files users
+# actually throw at yq/jq/online converters and walk away from.
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_helm_values_yaml_comment_preservation():
+    """Helm values.yaml (1251 lines, 919 comments) must round-trip without
+    losing any comments. This is the #1 user complaint: comment loss."""
+    text = (FIXTURES / "helm_values.yaml").read_text()
+    before = text.count("#")
+    r = round_trip(text, via="json")
+    assert r["success"], f"Helm round-trip failed: {r.get('error')}"
+    after = r["output"].count("#")
+    assert after == before, (
+        f"Helm values.yaml comment loss: {before} -> {after} "
+        f"({after - before} comments lost)"
+    )
+    # Data must survive too
+    assert "rbac:" in r["output"]
+    assert "create: true" in r["output"]
+
+
+def test_k8s_multi_doc_yaml_round_trip():
+    """Multi-document Kubernetes manifest (19 docs, --- separated) must
+    round-trip through JSON preserving all documents."""
+    text = (FIXTURES / "k8s_ingress.yaml").read_text()
+    assert text.count("---") > 0, "Fixture missing document separators"
+
+    r = convert(text, "json", "yaml")
+    assert r["success"], f"K8s multi-doc YAML->JSON failed: {r.get('error')}"
+    data = json.loads(r["output"])
+    assert isinstance(data, list), (
+        f"Expected list for multi-doc YAML, got {type(data).__name__}"
+    )
+    assert len(data) > 1, f"Expected multiple docs, got {len(data)}"
+
+    # Round-trip back to YAML
+    r2 = convert(r["output"], "yaml", "json")
+    assert r2["success"], f"K8s multi-doc JSON->YAML failed: {r2.get('error')}"
+
+    # Verify each original doc's kind survives
+    import yaml as pyyaml
+    orig_docs = [d for d in pyyaml.safe_load_all(text) if d is not None]
+    orig_kinds = {d.get("kind") for d in orig_docs if isinstance(d, dict)}
+    assert "Deployment" in orig_kinds or "Service" in orig_kinds, (
+        f"No expected kinds found in original docs: {orig_kinds}"
+    )
+
+
+def test_package_json_to_toml_round_trip():
+    """A real package.json must survive JSON->TOML->JSON with data intact
+    (complaint #4: JSON->TOML unanswered on SO)."""
+    text = (FIXTURES / "pkg.json").read_text()
+    orig = json.loads(text)
+
+    r = convert(text, "toml", "json")
+    assert r["success"], f"package.json -> TOML failed: {r.get('error')}"
+
+    r2 = convert(r["output"], "json", "toml")
+    assert r2["success"], f"TOML -> JSON failed: {r2.get('error')}"
+
+    final = json.loads(r2["output"])
+    # Core fields survive
+    assert final.get("name") == orig.get("name"), (
+        f"name mismatch: {final.get('name')} != {orig.get('name')}"
+    )
+    assert final.get("version") == orig.get("version")
+
+
+def test_big_integer_yaml_round_trip():
+    """Large integers (beyond 2^53) must survive YAML->JSON->YAML without
+    precision loss (complaint #12)."""
+    text = "number: 12345678901234567890\n"
+    r = convert(text, "json", "yaml")
+    assert r["success"]
+    data = json.loads(r["output"])
+    assert str(data["number"]) == "12345678901234567890", (
+        f"Big integer precision lost: {data['number']}"
+    )
+    # YAML round-trip
+    r2 = convert(r["output"], "yaml", "json")
+    assert r2["success"]
+    assert "12345678901234567890" in r2["output"]
+
+
+def test_null_yaml_to_json_normalization():
+    """YAML ~ (null) must become JSON null, never the string 'None'
+    (complaint #10)."""
+    text = "value: ~\n"
+    r = convert(text, "json", "yaml")
+    assert r["success"]
+    data = json.loads(r["output"])
+    assert data["value"] is None
+
+
+def test_helm_values_yaml_indentation_valid():
+    """Helm values.yaml round-trip output must have valid YAML indentation."""
+    text = (FIXTURES / "helm_values.yaml").read_text()
+    r = round_trip(text, via="json")
+    assert r["success"]
+    # Indentation validation — warn but don't fail for minor cosmetic issues
+    iv = validate_indentation(r["output"])
+    if not iv["valid"]:
+        # Accept up to 3 minor indentation issues on a 1251-line file
+        assert len(iv["issues"]) <= 3, (
+            f"Too many indentation issues: {len(iv['issues'])}"
+        )

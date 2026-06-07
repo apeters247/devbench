@@ -67,7 +67,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-||| **Test results (latest: 2026-06-07T12:23Z — Devbench Build — `python3 -m pytest tests/ -q --tb=line` — 868/877, 0 failures, 9 skipped, no regressions, +fidelity harness completed)**
+|||| **Test results (latest: 2026-06-07T12:48Z — Devbench Build — `python3 -m pytest tests/ -q --tb=line` — 868/877, 0 failures, 9 skipped, no regressions, +fidelity harness 2 failures)**
 
 |||||||||| Suite | Passing | Failing | Skipped | Notes |
 ||||||||||-------|---------|---------|---------|-------|
@@ -306,7 +306,7 @@ If both workers run simultaneously and need to update the same file:
 | Metric | Current | Target |
 ||--------|---------|--------|
 || Test pass rate | 868/877 (99.0%) — stable, same baseline (16 suites, 53 .py files, 19,786 lines) | 877/877 (100%) |
-|| Real-file fidelity failures | 1 (Docker Compose: 3 comments lost in YAML→JSON→YAML round-trip through JSON intermediate) | 0 (all real files round-trip without data loss) |
+||| Real-file fidelity failures | 2 (Docker Compose: 3 comments lost, multi-doc K8s: 11 comments lost through JSON round-trip) | 0 (all real files round-trip without data loss) |
 || GitHub repo | ✅ exists at github.com/apeters247/devbench, 2 commits pushed | Public, browsable, install.sh URL resolves |
 || Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |
 | CLI tools | 9 | 9+ (can add more) |
