@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Developer tools library — 8 utilities, clipboard auto-detection, and a CLI."
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = {text = "MIT"}
 authors = [{ name = "Andrew Peters", email = "apeters247@gmail.com" }]
 keywords = ["developer-tools", "cli", "json", "base64", "jwt", "configforge"]
 classifiers = [

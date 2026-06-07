@@ -57,6 +57,34 @@ Top pain points: comment loss on round-trip, no offline converter, no unified CL
 - [x] P1: HCL block-label round-trip regression test (xfail) — documents yq#2624 gap
 - [x] P2: CSV RFC 4180 output compliance — commas/quotes in output values properly quoted
 - [x] P2: Telemetry comment fix — canonical DEVBENCH_NO_TELEMETRY named first
+- [x] P0: Folded multiline scalar preservation test (yq#439)
+- [x] P0: Bare string scalar quoting round-trip test (yq#2608)
+
+### PRIORITY 6 — Deep Audit Resolved Issues (Original 23)
+CRITICAL (3): [x] CRIT-1 HMAC secret, [x] CRIT-2 Stripe webhook, [x] CRIT-3 Duplicate renewal
+HIGH (8):
+- [x] HIGH-1 FIPS crash (core/tools.py + core/cli.py)
+- [x] HIGH-2 POST routing bug (web/license_server.py)
+- [x] HIGH-3 removeprefix() compat (web/serve.py)
+- [x] HIGH-4 Daemon thread cleanup (web/api.py)
+- [x] HIGH-5 Info disclosure (web/serve.py + web/api.py)
+- [ ] HIGH-6 Test assertion weakness (50+ weak assertions — partially fixed: 13+ replaced with _assert_graceful, remaining are low-severity individual tests)
+- [x] HIGH-7 Sleep-based server wait (tests/test_license.py)
+- [x] HIGH-8 Return code 2 vs EXIT_ERROR (core/cli.py)
+MEDIUM (9):
+- [ ] MEDIUM-1 TOCTOU race in license test port (tests/test_license.py)
+- [ ] MEDIUM-2 Malformed BOM test (tests/test_edge_cases.py)
+- [x] MEDIUM-3 output_size key (investigated — resolved in prior cycle)
+- [ ] MEDIUM-4 Comment sentinel key collision (design tradeoff — documented)
+- [x] MEDIUM-5 Negative expiry (web/license.py — fixed in prior cycle)
+- [x] MEDIUM-6 Hardcoded magic numbers (web/api.py — dynamic computation)
+- [x] MEDIUM-7 Naive datetime + Z suffix (core/models.py)
+- [x] MEDIUM-8 No request body size limits (all 3 HTTP servers)
+- [x] MEDIUM-9 Non-deterministic test assertion (tests/test_edge_cases.py)
+LOW (3):
+- [x] LOW-1 test_hash_empty_string contradiction (tests/test_core.py)
+- [x] LOW-2 Duplicate import urllib.request (core/cli.py)
+- [ ] LOW-3 Test name vs docstring contradiction (tests/test_license.py)
 
 ## Section 4: Cycle Instructions
 Every 15min cycle:
@@ -163,6 +191,25 @@ Every 15min cycle:
 - ✅ **External Review P2** (`--preserve-null-notation`): Deferred — not a quick bug fix; needs new option design across serialize/convert pipeline. Will re-evaluate when user-facing feature requests arrive.
 - ✅ **Committed 2 changes**: `5b82c80` (HCL/CSV/telemetry) + `cb19de7` (cli.py leftover + marker rotation)
 - ✅ **PLAN.md §3 updated**: Listed HCL xfail, CSV tests, telemetry fix in External Review section
+
+### Cycle — 2026-06-07 20:06Z (BUILDER: Deep Audit MEDIUM/LOW fixes + Gemini P2 + External P0 vs-yq doc)
+- ✅ **Tests**: 565 passed, 7 skipped, 2 xfailed — no regressions
+- ✅ **Distribution Gates**: GIT: ok, GITHUB: ok, WHEEL: ok (fixed pyproject.toml license format) — all passing
+- ✅ **Deep Audit MEDIUM/LOW fixes**:
+  - `core/cli.py:626` — Added `usedforsecurity=False` to hashlib.md5 (FIPS crash vector, HIGH-1 gap)
+  - `core/cli.py:653` — Removed duplicate `import urllib.request` (LOW-2)
+  - `core/tools.py` — `hash_generator` now accepts empty strings (MD5 of zero bytes is well-defined `d41d8cd9...`)
+  - `core/models.py:30` — Replaced `datetime.utcnow()` + `"Z"` with `datetime.now(timezone.utc).isoformat()` (MEDIUM-7)
+  - `web/api.py:49-50` — Replaced hardcoded MODELS_COUNT=7/TESTS_PASSING=771 with dynamic computation (MEDIUM-6)
+  - `web/api.py`, `web/license_server.py`, `web/serve.py` — Added MAX_BODY_SIZE (10MB/1MB/10MB) with 413 rejection on all 3 HTTP servers (MEDIUM-8)
+  - `web/license_server.py` — Stripped CORS wildcard from webhook endpoints (server-to-server only)
+  - `tests/test_core.py:165-168` — Fixed test_hash_empty_string assertion to match docstring (LOW-1)
+  - `tests/test_edge_cases.py:176` — Replaced non-deterministic `data == [] or data == [{}]` with standardized assertion (MEDIUM-9)
+- ✅ **Gemini Review P2**: Replaced 13+ weak `isinstance(r, dict)` / `"success" in r` assertions in `test_edge_cases.py` with semantic `_assert_graceful()` helper — checks output content, error messages, and structure
+- ✅ **Gemini Review P2**: Added content verification to `test_convert_csv_to_json` and `test_convert_xml_to_json` in `test_configforge.py`
+- ✅ **External Review P0**: Updated `forge/seo/vs-yq.md` — cited yq issues #465 (113👍), #2054, #1836, #439 as concrete evidence of ConfigForge's superior comment-preservation
+- ✅ **Fixed pre-existing WHEEL gate failure**: `pyproject.toml` had `license = "MIT"` (invalid value per setuptools) — changed to `license = {text = "MIT"}`
+- ✅ **Committed**: `65bc3fa` — Deep Audit MEDIUM/LOW fixes + Gemini P2 + External P0 + WHEEL gate fix
 
 ### Cycle — 2026-06-07 18:35Z (this cycle — Polisher)
 - ✅ **Tests**: 535 passed, 7 skipped, 1 xfailed — no regressions (same as last cycle)
