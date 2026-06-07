@@ -54,6 +54,9 @@ Top pain points: comment loss on round-trip, no offline converter, no unified CL
 - [x] P1: "YAML document from hell" edge cases — 4 tests (timestamps, globs, leading zeros)
 - [x] P1: Norway/boolean string inference — 6 tests (quoted safety, version strings)
 - [x] P2: Key-order preservation across formats — 3 tests (JSON→YAML, JSON→TOML)
+- [x] P1: HCL block-label round-trip regression test (xfail) — documents yq#2624 gap
+- [x] P2: CSV RFC 4180 output compliance — commas/quotes in output values properly quoted
+- [x] P2: Telemetry comment fix — canonical DEVBENCH_NO_TELEMETRY named first
 
 ## Section 4: Cycle Instructions
 Every 15min cycle:
@@ -64,7 +67,6 @@ Every 15min cycle:
 5. Run tests again (no regressions)
 6. Update PLAN.md sections 3 and 5
 
-## Section 5: Latest Cycle Log
 ### Cycle — 2026-06-07 15:04Z (this cycle — BUILDER: external review audit + verification)
 - ✅ **Tests**: All 535 pass, 7 skipped, 1 xfailed — no regressions
 - ✅ **Distribution Gates**: GIT: ok, GITHUB: ok, WHEEL: ok — all passing
@@ -146,7 +148,23 @@ Every 15min cycle:
 - ✅ 3 new BUILDER action items for competitor gap SEO targeting
 - ✅ Saved: external-review-20260607-1534.md
 
-### Cycle — 2026-06-07 18:35Z (current cycle — Polisher)
+## Section 5: Latest Cycle Log
+### Cycle — 2026-06-07 19:00Z (BUILDER: HCL xfail test, CSV RFC tests, telemetry cleanup)
+- ✅ **Tests**: 537 passed (+2), 7 skipped, 2 xfailed (1 new) — no regressions
+- ✅ **Distribution Gates**: GIT: ok, GITHUB: ok, WHEEL: ok — all passing
+- ✅ **Gemini Review (2026-06-07 18:00Z)** — verified all items already fixed in prior cycle:
+  - `_properties_decode` silent ValueError → now logs warning (✅ verified)
+  - Empty batch returns EXIT_SUCCESS (✅ verified at cli.py:493)
+  - Escaped quotes in `_count_delims_outside_quotes` → uses `_is_escaped()` (✅ verified)
+  - OrderedDict import at module top (✅ verified)
+  - Fixed telemetry comment: `DEVBENCH_NO_TELEMETRY` named as canonical (✅ fixed)
+- ✅ **External Review P1**: Added xfail test `test_hcl_block_labels_preserved_through_roundtrip` — documents that hcl2.dumps flattens `resource "type" "name"` into nested dict keys. Tracked as known limitation.
+- ✅ **External Review P2**: Added `test_csv_output_rfc4180_commas_in_values` and `test_csv_output_rfc4180_quotes_in_values` — both pass, confirming Python's csv.DictWriter properly RFC-quotes output.
+- ✅ **External Review P2** (`--preserve-null-notation`): Deferred — not a quick bug fix; needs new option design across serialize/convert pipeline. Will re-evaluate when user-facing feature requests arrive.
+- ✅ **Committed 2 changes**: `5b82c80` (HCL/CSV/telemetry) + `cb19de7` (cli.py leftover + marker rotation)
+- ✅ **PLAN.md §3 updated**: Listed HCL xfail, CSV tests, telemetry fix in External Review section
+
+### Cycle — 2026-06-07 18:35Z (this cycle — Polisher)
 - ✅ **Tests**: 535 passed, 7 skipped, 1 xfailed — no regressions (same as last cycle)
 - ✅ **No builder changes** — both markers at `993970d456973d936cc672216c63005071fe82bf`, no code review needed
 - ✅ **External Review (Rotation 2: GitHub competitor issues)** — written to `forge/external-review-20260607-1835.md`
