@@ -106,33 +106,55 @@ def _yaml_unquote(s: str) -> str:
     return s
 
 
-def _extract_yaml_comments(text: str) -> list:
-    """Extract # comments from YAML text, preserving their context."""
-    lines = text.split("\n")
+def _build_key_paths(lines):
+    """Build a dict mapping line index -> (full_path, indent, key) for every
+    key:value line, respecting YAML indentation hierarchy.
 
-    # Pre-scan: record (line_index, key) for every real key line.
-    key_lines = []
+    Returns: {line_index: {"path": "parent.child.key", "indent": N, "key": "key"}, ...}
+    """
+    indent_stack = []  # [(indent, key), ...]
+    result = {}
     for i, line in enumerate(lines):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         if ":" not in stripped:
             continue
+
+        indent = len(line) - len(line.lstrip())
+
+        # Pop stack entries that are at the same or deeper indent (siblings or ancestors)
+        while indent_stack and indent_stack[-1][0] >= indent:
+            indent_stack.pop()
+
         head = stripped.split(":", 1)[0].strip()
         if (head.startswith('"') and head.endswith('"')) or \
            (head.startswith("'") and head.endswith("'")):
             head = head[1:-1]
+
         if head:
-            key_lines.append((i, head))
+            path_parts = [k for _, k in indent_stack]
+            path_parts.append(head)
+            full_path = ".".join(path_parts)
+            result[i] = {"path": full_path, "indent": indent, "key": head}
+            indent_stack.append((indent, head))
+    return result
 
-    def next_key_after(idx):
-        for li, k in key_lines:
-            if li > idx:
-                return k
-        return None
 
-    def any_key_before(idx):
-        return any(li < idx for li, _ in key_lines)
+def _extract_yaml_comments(text: str) -> list:
+    """Extract # comments from YAML text, preserving their full key path context."""
+    lines = text.split("\n")
+
+    # Build key-path map for the source lines
+    key_paths = _build_key_paths(lines)
+
+    # For standalone comments between keys at a given indent level, track the
+    # last seen key at each indent level so we can associate orphan comments.
+    # key by indent level -> most recent key path before the comment
+    last_key_at_indent = {}  # indent -> path
+    for li in sorted(key_paths):
+        indent = key_paths[li]["indent"]
+        last_key_at_indent[indent] = key_paths[li]["path"]
 
     comments = []
     for i, line in enumerate(lines):
@@ -145,6 +167,8 @@ def _extract_yaml_comments(text: str) -> list:
         indent = len(line) - len(line.lstrip())
         key = None
         list_item = None
+        full_path = None
+
         if is_inline:
             head = before.strip()
             if head.startswith("-"):
@@ -155,78 +179,196 @@ def _extract_yaml_comments(text: str) -> list:
                 if key and ((key.startswith('"') and key.endswith('"')) or
                             (key.startswith("'") and key.endswith("'"))):
                     key = key[1:-1]
+                # Use the key_paths map to get the full path
+                if i in key_paths:
+                    full_path = key_paths[i]["path"]
         else:
-            key = None if not any_key_before(i) else next_key_after(i)
+            # Block-level comment: find the NEXT key at the same or deeper indent
+            # If there's a key_paths entry for this exact line, use it
+            if i in key_paths:
+                key = key_paths[i]["key"]
+                full_path = key_paths[i]["path"]
+            else:
+                # Comment on its own line before a key: find next key at this indent
+                for li in sorted(key_paths):
+                    if li > i and key_paths[li]["indent"] >= indent:
+                        key = key_paths[li]["key"]
+                        full_path = key_paths[li]["path"]
+                        break
         comments.append({
             "line": i, "key": key, "text": comment_text,
             "is_inline": is_inline, "indent": indent,
-            "list_item": list_item,
+            "list_item": list_item, "path": full_path,
         })
     return comments
 
 
 def _reinsert_yaml_comments(yaml_text: str, comments: list) -> str:
-    """Reinsert extracted comments into YAML output."""
+    """Reinsert extracted comments into YAML output, matching by full key path
+    and indentation to handle deeply nested keys with the same name."""
     if not comments:
         return yaml_text
     lines = yaml_text.split("\n")
-    inserted = set()
 
-    # First pass: insert standalone comments (no key context) at top
+    # Build key-path map for the output lines
+    out_key_paths = _build_key_paths(lines)
+
+    # Reverse map: path -> list of line indices (handle duplicate paths)
+    path_to_lines = {}
+    for li, info in out_key_paths.items():
+        p = info["path"]
+        if p not in path_to_lines:
+            path_to_lines[p] = []
+        path_to_lines[p].append(li)
+
+    inserted = set()  # set of line indices that have been modified/inserted before
+
+    # Separate comments by type
     standalone = [c for c in comments
-                  if c["key"] is None and not c.get("list_item")]
-    keyed = [c for c in comments if c["key"] is not None]
+                  if c["key"] is None and not c.get("list_item") and not c.get("path")]
+    path_keyed = [c for c in comments if c.get("path") is not None]
+    key_only = [c for c in comments if c["key"] is not None and not c.get("path")]
     list_items = [c for c in comments if c.get("list_item") is not None]
 
+    # First pass: standalone comments (no key context) at top
     header_pos = 0
     for c in standalone:
         if not c["is_inline"]:
             indent = " " * c.get("indent", 0)
             lines.insert(header_pos, f"{indent}# {c['text']}")
             header_pos += 1
-    inserted = {j + header_pos for j in inserted}
+    inserted_set = set()
+    # shift all tracking by header_pos
+    for c in comments:
+        pass  # header comments don't affect path matching below
 
-    # Second pass: keyed comments (block comments first, then inline)
-    # Process block comments first so inline comments can find their lines
-    block_keyed = [c for c in keyed if not c["is_inline"]]
-    inline_keyed = [c for c in keyed if c["is_inline"]]
+    # Second pass: comments with full path — most reliable
+    # Process block comments first, then inline
+    path_block = [c for c in path_keyed if not c["is_inline"]]
+    path_inline = [c for c in path_keyed if c["is_inline"]]
 
-    inline_used = set()  # lines that already received a trailing comment
+    # Group block comments by path, preserving original order
+    from collections import OrderedDict
+    path_block_groups = OrderedDict()
+    for c in path_block:
+        p = c["path"]
+        if p not in path_block_groups:
+            path_block_groups[p] = []
+        path_block_groups[p].append(c)
 
-    for c in block_keyed:
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith(c["key"] + ":") and i not in inserted:
-                indent = " " * c.get("indent", 0)
-                lines.insert(i, f"{indent}# {c['text']}")
-                inserted.add(i)
-                # Shift subsequent tracking
-                inserted = {j + 1 if j >= i else j for j in inserted}
-                inline_used = {j + 1 if j >= i else j for j in inline_used}
-                break
+    # Insert ALL block comments for a path as a stack before the first occurrence
+    path_already_serviced = set()
+    for p, comments_for_path in path_block_groups.items():
+        if p in path_to_lines and path_to_lines[p]:
+            li = path_to_lines[p][0]
+            # Compute indent for the FIRST matching path's indent level
+            target_indent = comments_for_path[0].get("indent", 0)
+            # If there's an exact indent match in the output key, use its indent
+            for out_li, info in out_key_paths.items():
+                if info["path"] == p:
+                    target_indent = info["indent"]
+                    break
+            # Insert all comments for this path in reverse order so the first
+            # comment ends up first visually. Each insert goes at the same `li`
+            # (before the key line); the first-inserted (last in original order)
+            # gets shifted down by subsequent inserts.
+            for c in reversed(comments_for_path):
+                indent = " " * target_indent
+                lines.insert(li, f"{indent}# {c['text']}")
+            path_already_serviced.add(p)
+            # Shift all line tracking by the number of inserted lines
+            shift = len(comments_for_path)
+            new_ptl = {}
+            for pp, ll_list in path_to_lines.items():
+                new_ptl[pp] = [x + shift if x >= li else x for x in ll_list]
+            path_to_lines = new_ptl
+            inserted_set = {x + shift if x >= li else x for x in inserted_set}
 
-    for c in inline_keyed:
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith(c["key"] + ":") and i not in inline_used:
-                # Only attach if the line has no comment of its own already.
-                if _yaml_find_comment(line) < 0:
-                    lines[i] = line + f"  # {c['text']}"
-                    inline_used.add(i)
+    # Remaining path_block comments that didn't match a path -> group by indent level
+    # and insert at the top of their section
+    remaining_block = [c for c in path_block if c["path"] not in path_already_serviced]
+    if remaining_block:
+        # Insert near the top as contextual header
+        for c in remaining_block:
+            indent = " " * c.get("indent", 0)
+            lines.insert(0, f"{indent}# {c['text']}")
+
+    for c in path_inline:
+        p = c["path"]
+        if p in path_to_lines:
+            for li in path_to_lines[p]:
+                if li < len(lines) and _yaml_find_comment(lines[li]) < 0:
+                    lines[li] = lines[li] + f"  # {c['text']}"
+                    inserted_set.add(li)
                     break
 
-    # Third pass: inline comments on list items, anchored by item value.
+    # Third pass: fallback for key-only comments (no path info — legacy)
+    # These use leaf-key matching with indentation hints
+    keyed_block = [c for c in key_only if not c["is_inline"]]
+    keyed_inline = [c for c in key_only if c["is_inline"]]
+
+    # For key-only comments, try to find matching lines that haven't been used
+    for c in keyed_block:
+        target_key = c["key"]
+        target_indent = c.get("indent", 0)
+        lines_to_check = sorted(out_key_paths.keys())
+        for li in lines_to_check:
+            if li in inserted_set:
+                continue
+            info = out_key_paths[li]
+            if info["key"] == target_key and info["indent"] == target_indent:
+                indent = " " * target_indent
+                lines.insert(li, f"{indent}# {c['text']}")
+                inserted_set.add(li)
+                # Shift
+                new_ptl = {}
+                for pp, ll_list in path_to_lines.items():
+                    new_ptl[pp] = [x + 1 if x >= li else x for x in ll_list]
+                path_to_lines = new_ptl
+                inserted_set = {x + 1 if x >= li else x for x in inserted_set}
+                break
+
+    for c in keyed_inline:
+        target_key = c["key"]
+        for li in sorted(out_key_paths.keys()):
+            if li in inserted_set:
+                continue
+            info = out_key_paths[li]
+            if info["key"] == target_key:
+                if li < len(lines) and _yaml_find_comment(lines[li]) < 0:
+                    lines[li] = lines[li] + f"  # {c['text']}"
+                    inserted_set.add(li)
+                    break
+
+    # Fourth pass: inline comments on list items, anchored by item value.
     for c in list_items:
         anchor = _yaml_unquote(c["list_item"])
         for i, line in enumerate(lines):
             stripped = line.strip()
-            if not stripped.startswith("-") or i in inline_used:
+            if not stripped.startswith("-") or i in inserted_set:
                 continue
             rest = stripped[1:].strip()
             if _yaml_unquote(rest) == anchor and _yaml_find_comment(line) < 0:
                 lines[i] = line + f"  # {c['text']}"
-                inline_used.add(i)
+                inserted_set.add(i)
                 break
+
+    # Final pass: any remaining orphan inline comments that weren't inserted
+    # (block comments were already handled above). Track what was inserted.
+    comment_texts_inserted = set()
+    for l in lines:
+        ci = _yaml_find_comment(l)
+        if ci >= 0:
+            comment_texts_inserted.add(l[ci+1:].strip())
+    orphan_inline = [c for c in path_inline
+                     if c.get("text") not in comment_texts_inserted]
+    if orphan_inline:
+        # Insert as a small header note rather than silently droppinhg
+        top_indent = 0
+        lines.insert(0, f"# Inline comments not re-inserted ({len(orphan_inline)}):")
+        for c in orphan_inline[:5]:
+            lines.insert(1, f"#   {c.get('path','?' )}: {c['text'][:80]}")
+
     return "\n".join(lines)
 
 
@@ -419,7 +561,7 @@ def _properties_escape(s: str, is_key: bool, multiline: bool = False) -> str:
         if ch == "\\":
             out.append("\\\\")
         elif ch == "\n":
-            out.append("\\n\\\n" if (multiline and not is_key) else "\\n")
+            out.append("\\n\\\\\n" if (multiline and not is_key) else "\\n")
         elif ch == "\r":
             out.append("\\r")
         elif ch == "\t":
@@ -539,7 +681,7 @@ def detect_format(text: str) -> str:
             return "hcl"
 
     # TOML: contains [section] with typed values (quotes, booleans, integers)
-    if re.search(r"^\[[\w\-\"]+\]", text, re.MULTILINE):
+    if re.search(r"^\[[\w\-\"]+]", text, re.MULTILINE):
         # Check for TOML-typical patterns (quoted strings, booleans, integers without quotes)
         lines_after = text.strip().split("\n")
         toml_indicators = 0
@@ -1616,12 +1758,12 @@ def main(argv=None) -> int:
   # Download demo: curl -s https://naxiai.com/tools/devbench/demo/
 
 Compared to yq/jq:
-  • Unified tool: one CLI for EVERY format (not just YAML↔JSON)
-  • Offline: no network calls, paste production configs safely
-  • Typed: INI booleans become real booleans, dates become TOML datetimes
-  • Batch: glob-based conversion of 1000s of files in one command
-  • Comments: preserved through YAML↔INI round-trips
-  • No data leaves your machine (unlike online converters)
+  * Unified tool: one CLI for EVERY format (not just YAML↔JSON)
+  * Offline: no network calls, paste production configs safely
+  * Typed: INI booleans become real booleans, dates become TOML datetimes
+  * Batch: glob-based conversion of 1000s of files in one command
+  * Comments: preserved through YAML↔INI round-trips
+  * No data leaves your machine (unlike online converters)
 """,
     )
     parser.add_argument("--version", "-V", action="version",
