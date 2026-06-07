@@ -561,7 +561,7 @@ def _properties_escape(s: str, is_key: bool, multiline: bool = False) -> str:
         if ch == "\\":
             out.append("\\\\")
         elif ch == "\n":
-            out.append("\\n\\\\\n" if (multiline and not is_key) else "\\n")
+            out.append("\\n\\\n" if (multiline and not is_key) else "\\n")
         elif ch == "\r":
             out.append("\\r")
         elif ch == "\t":
