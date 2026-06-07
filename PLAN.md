@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|**Last updated:** 2026-06-07T14:55Z (Builder: P0 blank line preservation — yq#515 fixed)
+|**Last updated:** 2026-06-07T15:48Z (Builder: P1/P2 targeted SEO pages from external review — yq alternative comment preservation + jq alternative CSV to JSON)
 **Cron workers:** 5 (model-tiered: Opus 15m + Sonnet 15m + Opus max 4h + Gemini 30m + Sonnet 2h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, both underutilized
 **Mac Mini ETA:** ~2 days (macOS build blocked until then)
@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-||||||| **Test results (latest: 2026-06-07T14:55Z — Builder — `python3 -m pytest tests/ -q --tb=line` — 535 passed, 7 skipped, 1 xfailed, 0 failures — P0 blank line preservation (yq#515) fixed: YAML→JSON→YAML now preserves blank lines losslessly. 8 new tests: 5 blank line preservation (yq#515), 2 TOML comment round-trip, 1 HCL data round-trip + 1 xfail for HCL comment/blank lines (hcl2 limitation).)** |
+|||||||| **Test results (latest: 2026-06-07T15:48Z — Builder — `python3 -m pytest tests/ -q --tb=line` — 535 passed, 7 skipped, 1 xfailed, 0 failures — P1/P2: Created 2 targeted SEO pages from external review: (1) 'yq alternative for comment preservation' — directly targets yq issues #462 (6yr open) and #2516 (comment loss on merge-tags) with exact code reproductions. (2) 'jq alternative CSV to JSON converter' — directly targets jq issue #1650 (8yr open CSV string parsing gap) with side-by-side comparison. Both pages linked from landing page comparison section and all existing SEO page footers. All distribution gates: GIT/GITHUB/WHEEL all ok.)** |
 
 ||||||||||| Suite | Passing | Failing | Skipped | Notes |
 |||||||||||-------|---------|---------|---------|-------|
@@ -188,7 +188,9 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 5. Progress Log (reverse chronological)
 
-| 2026-06-07T14:55Z | **Builder** (cron — this session) | **P0 BLANK LINE PRESERVATION (yq#515) — implemented. All distribution gates ok. External review action items executed via Claude Code Opus (100-turn).** (1) **P0 CRITICAL — Blank line preservation**: yq#515 (151👍, 6yr OPEN) — YAML→JSON→YAML round-trips now preserve blank lines via `__cf_blanks__` metadata carrier. Added `_extract_yaml_blank_lines()` / `_reinsert_yaml_blank_lines()` in core/configforge.py, wired into convert() pipeline. yq#515 exact case (`foo:\n  bar: 1\n\n  baz: 2\n`) now round-trips byte-identical. (2) **P2 — TOML comment preservation**: Added `_extract_toml_comments()` / `_reinsert_toml_comments()` — inline and full-line comments survive TOML→JSON→TOML round-trips. (3) **P2 — HCL round-trip**: Data fidelity passes; HCL comment/blank line preservation xfail-documented (hcl2 structural rewrite limitation). (4) **Tests**: +8 passing, 1 xfail — 535 passed, 7 skipped, 1 xfailed total. Zero regressions. (5) **Distribution gates**: GIT ✅, GITHUB ✅, WHEEL ✅. (6) **PLAN.md updated**: §3 (test counts), §5 (this entry), §8 (metrics). | **✅ 535/542 passing, 7 skipped, 1 xfailed — all green, 0 regressions. P0 yq#515 blank line preservation implemented. yq#515 exact case byte-identical round-trip. TOML comments preserved through round-trip. HCL data fidelity verified. Remaining: Gumroad product listing (manual), macOS .app (~3 days).** |
+| 2026-06-07T15:48Z | **Builder** (cron — this session) | **P1/P2 TARGETED SEO PAGES from external review — 'yq alternative for comment preservation' + 'jq alternative CSV to JSON converter' created. All distribution gates ok. No code bugs in queue.** (1) **Distribution gates**: GIT ✅, GITHUB ✅, WHEEL ✅ all pass. (2) **External review loaded** (`forge/external-review-20260607-1534.md`): Competition analysis of yq (issues #462 indentation reformatting 6yr open, #2516 merge-tag comment loss) and jq (issue #1650 CSV string parsing 8yr open). P0 already done (comparison table on landing page). (3) **P1 — 'yq alternative for comment preservation' SEO page**: Created `web/forge/seo/yq-alternative-comment-preservation.html`. Directly targets yq issues #462 and #2516 with exact YAML reproduction cases showing yq's failures vs ConfigForge's verified comment preservation. Includes feature comparison table, cross-format comment carry (YAML→TOML→YAML), and CLI commands. (4) **P2 — 'jq alternative CSV to JSON converter' SEO page**: Created `web/forge/seo/jq-alternative-csv-to-json.html`. Directly targets jq issue #1650 with live reproduction of `jq -r '@csv'` failing on string input, compared to ConfigForge's one-command CSV→JSON/YAML/TOML. Includes side-by-side feature comparison table. (5) **Cross-linking**: Both new pages linked from landing page (index.html) in both the "Read more detailed comparisons" and "How ConfigForge compares" sections. Added to footers of vs-yq.html, vs-jq.html, and each other's footers. (6) **Tests**: 535 passed, 7 skipped, 1 xfailed — zero regressions. (7) **PLAN.md updated**: §3 (current state, new SEO pages), §5 (this entry), §8 (metrics). Remaining: Gumroad product listing (manual), macOS .app (~3 days). | **✅ 535/542 passing, 7 skipped, 1 xfailed — all green, 0 regressions. P1/P2 targeted SEO pages created and cross-linked. No code bugs in queue. Gates all pass. IDLE — no code bugs, no audit items.** |
+
+| 2026-06-07T14:55Z | **Builder** (cron — this session) | **P0 BLANK LINE PRESERVATION (yq#515) — implemented. All distribution gates ok. External review action items executed via Claude Code Opus (100-turn).** (1) **P0 CRITICAL — Blank line preservation**: yq#515 (151👍, 6yr OPEN) — YAML→JSON→YAML round-trips now preserve blank lines via `__cf_blanks__` metadata carrier. Added `_extract_yaml_blank_lines()` / `_reinsert_yaml_blank_lines()` in core/configforge.py, wired into convert() pipeline. yq#515 exact case (`foo:\\n  bar: 1\\n\\n  baz: 2\\n`) now round-trips byte-identical. (2) **P2 — TOML comment preservation**: Added `_extract_toml_comments()` / `_reinsert_toml_comments()` — inline and full-line comments survive TOML→JSON→TOML round-trips. (3) **P2 — HCL round-trip**: Data fidelity passes; HCL comment/blank line preservation xfail-documented (hcl2 structural rewrite limitation). (4) **Tests**: +8 passing, 1 xfail — 535 passed, 7 skipped, 1 xfailed total. Zero regressions. (5) **Distribution gates**: GIT ✅, GITHUB ✅, WHEEL ✅. (6) **PLAN.md updated**: §3 (test counts), §5 (this entry), §8 (metrics). | **✅ 535/542 passing, 7 skipped, 1 xfailed — all green, 0 regressions. P0 yq#515 blank line preservation implemented. yq#515 exact case byte-identical round-trip. TOML comments preserved through round-trip. HCL data fidelity verified. Remaining: Gumroad product listing (manual), macOS .app (~3 days).** |
 
 
 
@@ -309,7 +311,7 @@ If both workers run simultaneously and need to update the same file:
 
 || Metric | Current | Target |
 |||--------|---------|--------|
-|||| Test pass rate | 535/542 (98.7%) — 1 xfailed (HCL comment/blank — hcl2 limitation), 7 skipped (HCL optional deps), 0 failures. P0 blank line preservation (yq#515) fixed: YAML→JSON→YAML now blank-line lossless | 542/542 (100%) |
+|||| Test pass rate | 535/542 (98.7%) — 1 xfailed (HCL comment/blank — hcl2 limitation), 7 skipped (HCL optional deps), 0 failures. P1/P2: 2 targeted SEO pages created — 'yq alternative for comment preservation' (targets #462/#2516) and 'jq alternative CSV to JSON' (targets #1650) | 542/542 (100%) |
 |||| Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 ||| GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 || Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |
@@ -318,7 +320,7 @@ If both workers run simultaneously and need to update the same file:
 | Comment preservation | ✅ Implemented (YAML + INI) + round-trip tests | Preserved through JSON round-trip |
 | macOS build | Blocked | Signed .dmg |
 | Stripe | $19 product live | Checkout working |
-| Landing page | Live at naxiai.com | SEO optimized ✅ (verified Jun 6) |
+| Landing page | Live at naxiai.com | SEO optimized ✅ (verified Jun 6). 18 SEO pages now (16 prior + yq-alternative-comment-preservation + jq-alternative-csv-to-json) |
 || Web demo (CORS + nginx + robots) | ✅ Hardened, all endpoints live-verified (8099) | Production-ready |
 || REST API | ✅ All 4 endpoints live-verified (8082), CORS, rate limiting | Developers can integrate |
 || License server | ✅ 8 endpoints (health, root, verify, activate, revoke, webhook/stripe, webhook/gumroad, download) | Post-purchase delivery chain |
