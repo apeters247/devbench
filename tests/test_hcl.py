@@ -114,6 +114,28 @@ def test_convert_json_to_hcl_roundtrip():
     assert json.loads(back["output"]) == json.loads(src)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=("hcl2.dumps flattens block labels into nested dict keys instead "
+            "of reproducing block-label syntax. "
+            "Tracked as BUILDER HCL-P1 (yq#2624 equivalent)."),
+)
+@requires_hcl
+def test_hcl_block_labels_preserved_through_roundtrip():
+    """HCL block labels (e.g. 'resource "type" "name"') must survive
+    HCL -> JSON -> HCL round-trip. Currently hcl2.dumps flattens labels
+    into nested dict keys -- this test documents the gap."""
+    src = 'resource "aws_instance" "web" {\n  ami = "ami-123"\n}\n'
+    fwd = convert(src, "json")
+    assert fwd["success"], fwd.get("error")
+    back = convert(fwd["output"], "hcl")
+    assert back["success"], back.get("error")
+    # The output HCL must preserve block labels
+    assert 'resource "aws_instance" "web" {' in back["output"], (
+        f"Block labels lost in round-trip. Got:\n{back['output']}"
+    )
+
+
 @requires_hcl
 def test_convert_hcl_to_json_strips_quotes():
     src = 'name = "web"\nport = 8080\n'

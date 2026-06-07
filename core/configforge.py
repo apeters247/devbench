@@ -70,8 +70,21 @@ import configparser
 from collections import OrderedDict
 
 
+def _is_escaped(line: str, pos: int) -> bool:
+    """Return True if char at `pos` is preceded by an odd number of backslashes,
+    i.e., the character is escaped rather than literal."""
+    if pos == 0:
+        return False
+    bs = 0
+    i = pos - 1
+    while i >= 0 and line[i] == "\\":
+        bs += 1
+        i -= 1
+    return bs % 2 == 1
+
+
 def _count_delims_outside_quotes(line: str, delim: str) -> int:
-    """Count delimiter occurrences outside of quoted strings."""
+    """Count how many `delim` characters appear outside string quotes."""
     count = 0
     in_quotes = False
     i = 0
@@ -79,7 +92,7 @@ def _count_delims_outside_quotes(line: str, delim: str) -> int:
         ch = line[i]
         if ch in ('"', "'"):
             # Skip escaped quotes — don't toggle in_quotes
-            if i > 0 and line[i - 1] == "\\":
+            if _is_escaped(line, i):
                 i += 1
                 continue
             in_quotes = not in_quotes
@@ -105,12 +118,12 @@ def _yaml_find_comment(line: str) -> int:
     for i, ch in enumerate(line):
         if ch == '"' and not in_single:
             # Skip escaped quotes (\") — don't toggle in_double
-            if i > 0 and line[i - 1] == "\\":
+            if _is_escaped(line, i):
                 continue
             in_double = not in_double
         elif ch == "'" and not in_double:
             # Skip escaped single quotes (\') — don't toggle in_single
-            if i > 0 and line[i - 1] == "\\":
+            if _is_escaped(line, i):
                 continue
             in_single = not in_single
         elif ch == "#" and not in_single and not in_double:
@@ -154,12 +167,20 @@ def _build_key_paths(lines):
         # inside the quotes.
         head = None
         if stripped[0:1] == '"':
-            close = stripped.find('"', 1)
-            if close > 0:
+            close = 1
+            while close < len(stripped):
+                if stripped[close] == '"' and not _is_escaped(stripped, close):
+                    break
+                close += 1
+            if close > 1 and close < len(stripped):
                 head = stripped[1:close]
         elif stripped[0:1] == "'":
-            close = stripped.find("'", 1)
-            if close > 0:
+            close = 1
+            while close < len(stripped):
+                if stripped[close] == "'" and not _is_escaped(stripped, close):
+                    break
+                close += 1
+            if close > 1 and close < len(stripped):
                 head = stripped[1:close]
         if head is None:
             head = stripped.split(":", 1)[0].strip()
@@ -401,7 +422,7 @@ def _reinsert_yaml_comments(yaml_text: str, comments: list) -> str:
     orphan_inline = [c for c in path_inline
                      if c.get("text") not in comment_texts_inserted]
     if orphan_inline:
-        # Insert as a small header note rather than silently droppinhg
+        # Insert as a small header note rather than silently dropping
         top_indent = 0
         lines.insert(0, f"# Inline comments not re-inserted ({len(orphan_inline)}):")
         for c in orphan_inline[:5]:
@@ -458,7 +479,6 @@ def _reinsert_yaml_blank_lines(yaml_text: str, blanks: list) -> str:
         path_to_lines.setdefault(info["path"], []).append(li)
 
     # Count blanks anchored to each path, preserving first-seen order.
-    from collections import OrderedDict
     counts = OrderedDict()
     for b in blanks:
         p = b.get("before_path")
@@ -698,7 +718,12 @@ def _properties_decode(s: str) -> str:
                     i += 6
                     continue
                 except ValueError:
-                    pass  # malformed \u — fall through to literal handling
+                    # Malformed \\uXXXX — log a warning and fall through to
+                    # literal handling so the output is still usable
+                    import logging
+                    logging.getLogger("configforge.properties").warning(
+                        "Malformed \\\\uXXXX escape: '%s' in '%s'", hex4, s
+                    )
             mapping = {"t": "\t", "n": "\n", "r": "\r", "f": "\f"}
             out.append(mapping.get(nxt, nxt))
             i += 2
@@ -1770,54 +1795,6 @@ def convert_file(input_path: str, output_path: str = None, to_fmt: str = None, *
     return result
 
 
-def batch_convert(input_glob: str, to_fmt: str, output_dir: str = None, **options) -> list:
-    """Convert all matching files in batch with progress output."""
-    import glob
-    show_progress = options.pop("show_progress", True)
-
-    files = sorted(glob.glob(input_glob))
-    total = len(files)
-    if total == 0:
-        if show_progress:
-            print(f"[batch] No files matched: {input_glob}")
-        return []
-
-    if show_progress:
-        print(f"[batch] Converting {total} file(s) matching '{input_glob}' -> {to_fmt}")
-        print(f"[batch] {'─' * 50}")
-
-    results = []
-    for idx, fpath in enumerate(files, 1):
-        out_path = None
-        if output_dir:
-            in_path = Path(fpath)
-            out_path = Path(output_dir) / f"{in_path.stem}.{to_fmt}"
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if show_progress:
-            pct = idx * 100 // total
-            bar_len = 30
-            filled = bar_len * idx // total
-            bar = '█' * filled + '░' * (bar_len - filled)
-            print(f"\r[batch] |{bar}| {idx}/{total} ({pct}%) {fpath}...   ", end="", flush=True)
-
-        result = convert_file(fpath, str(out_path) if out_path else None, to_fmt, **options)
-        result["file"] = fpath
-        results.append(result)
-
-        if show_progress:
-            if result["success"]:
-                print(f" ✓ ({result.get('output_size', 0)} bytes)")
-            else:
-                print(f" ✗ {result.get('error', 'unknown error')}")
-
-    success_count = sum(1 for r in results if r["success"])
-    if show_progress:
-        print(f"[batch] {'─' * 50}")
-        print(f"[batch] Done: {success_count}/{total} successful")
-    return results
-
-
 def batch_convert_stream(input_glob: str, to_fmt: str, output_dir: str = None, **options):
     """Generator that lazily converts matching files, yielding results one at a time.
 
@@ -1981,10 +1958,14 @@ def validate_indentation(text: str, unit: int = 2) -> dict:
 SUPPORTED_FORMATS = ["json", "yaml", "toml", "xml", "csv", "ini", "env", "hcl",
                      "properties"]
 
-# Telemetry opt-out: set DEVEBENCH_NO_TELEMETRY=1 to suppress any
-# connectivity checks. ConfigForge never sends data externally — this
-# flag exists as an explicit trust signal for compliance audits.
-_telemetry_disabled = os.environ.get("DEVEBENCH_NO_TELEMETRY", "").strip() in ("1", "true", "yes")
+# Telemetry opt-out: set DEVBENCH_NO_TELEMETRY=1 (canonical; the misspelled
+# DEVEBENCH_NO_TELEMETRY is also accepted for backward compatibility)
+# ConfigForge never sends data externally — this flag exists as an
+# explicit trust signal for compliance audits.
+_telemetry_disabled = (
+    os.environ.get("DEVBENCH_NO_TELEMETRY", "").strip() in ("1", "true", "yes")
+    or os.environ.get("DEVEBENCH_NO_TELEMETRY", "").strip() in ("1", "true", "yes")
+)
 
 
 _Version = "1.0.0"
@@ -2007,7 +1988,7 @@ def main(argv=None) -> int:
         description="Offline multi-format config converter "
                     "(JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties). "
                     "No network, no telemetry. "
-                    "Set DEVEBENCH_NO_TELEMETRY=1 for explicit assurance.",
+                    "Set DEVBENCH_NO_TELEMETRY=1 (or legacy DEVEBENCH_NO_TELEMETRY) for explicit assurance.",
         epilog="""Examples:
   # Convert Kubernetes YAML to JSON
   configforge deployment.yaml -t json

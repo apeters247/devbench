@@ -981,6 +981,34 @@ def test_roundtrip_yaml_json_yaml():
     assert convert(r1["output"], "yaml")["success"]
 
 
+def test_csv_output_rfc4180_commas_in_values():
+    """CSV output must quote fields containing commas per RFC 4180."""
+    src = json.dumps([
+        {"item": "widget", "description": "High quality, durable widget"},
+        {"item": "gadget", "description": "Simple"},
+    ])
+    r = convert(src, "csv")
+    assert r["success"], r.get("error")
+    lines = r["output"].strip().split("\n")
+    # CSV DictWriter uses CRLF; strip trailing \r from each line
+    lines = [l.rstrip("\r") for l in lines]
+    assert len(lines) == 3  # header + 2 data rows
+    assert lines[0] == "item,description"
+    assert 'widget,"High quality, durable widget"' in lines[1]
+    assert lines[2] == 'gadget,Simple'
+
+
+def test_csv_output_rfc4180_quotes_in_values():
+    """CSV output must quote fields containing double quotes per RFC 4180."""
+    src = json.dumps([
+        {"text": 'She said "hello" to me'},
+    ])
+    r = convert(src, "csv")
+    assert r["success"], r.get("error")
+    assert '"""hello"""' in r["output"] or '""hello""' in r["output"] or '"She said ""hello"" to me"' in r["output"], \
+        f"Quotes not properly escaped in CSV output: {r['output']!r}"
+
+
 def test_roundtrip_csv_json_csv():
     r1 = convert("name,age\nAlice,30\nBob,25\n", "json")
     assert r1["success"]
