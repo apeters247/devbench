@@ -142,7 +142,7 @@ The `scripts/install.sh` script can install from PyPI directly:
 python3 -m pip install devbench
 
 # Or from GitHub (current approach)
-curl -sSL https://raw.githubusercontent.com/apeters247/devbench/main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/apeters247/devbench/master/scripts/install.sh | bash
 ```
 
 ## Step 10 — Deployment

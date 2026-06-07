@@ -4,7 +4,7 @@
 # ------------------
 # One-liner install (pipe to bash):
 #
-#     curl -sSL https://raw.githubusercontent.com/apeters247/devbench/main/scripts/install.sh | bash
+#     curl -sSL https://raw.githubusercontent.com/apeters247/devbench/master/scripts/install.sh | bash
 #
 # Docker alternative (no Python / git required):
 #     curl -sSL https://naxiai.com/install.sh | bash -s -- --docker
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 REPO="${DEVBENCH_REPO:-https://github.com/apeters247/devbench.git}"
-REF="${DEVBENCH_REF:-main}"
+REF="${DEVBENCH_REF:-master}"
 HOME_DIR="${DEVBENCH_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/devbench}"
 PYTHON="${PYTHON:-python3}"
 
