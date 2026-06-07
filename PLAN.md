@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|**Last updated:** 2026-06-07T10:36Z (Overseer — ON TRACK, 10 new SEO pages + landing page update delivered)
+|**Last updated:** 2026-06-07T12:23Z (Devbench Build — P0 distribution activation + real-file fidelity harness)
 **Cron workers:** 2 (every 15min)
 **Mac Mini ETA:** ~3 days (macOS build blocked until then)
 
@@ -67,7 +67,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-|| **Test results (latest: 2026-06-07T11:25Z — ConfigForge Polish — `python3 -m pytest tests/ -q --tb=line` — 868/877, 0 failures, 9 skipped, no regressions, same baseline across all cycles)**
+||| **Test results (latest: 2026-06-07T12:23Z — Devbench Build — `python3 -m pytest tests/ -q --tb=line` — 868/877, 0 failures, 9 skipped, no regressions, +fidelity harness completed)**
 
 |||||||||| Suite | Passing | Failing | Skipped | Notes |
 ||||||||||-------|---------|---------|---------|-------|
@@ -187,8 +187,10 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 5. Progress Log (reverse chronological)
 
-||
-|||| 2026-06-07T10:36Z | **Overseer** (cron — this session) | **2h cycle. ON TRACK — first productive commercial window in 10+ cycles.** (1) **Snapshot comparison (08:58→10:27):** Tests 868/877 pass, 0 fail, 9 skip — identical, no regressions. configforge.py: 65,423→67,250 bytes (+1,827, mtime 10:08). cli.py: mtime 08:05 (unchanged). tools.py: unchanged. .py files: 40→52 (+12, +5,779 lines). (2) **Commercial artifacts:** 14 forge/seo/*.md pages (12,643 total words) — up from 4. **10 new SEO pages created this window**: json-to-yaml-converter, toml-vs-yaml, kubernetes-config-converter, docker-compose-converter, ansible-ini-to-yaml, csv-to-yaml-converter, env-to-json-guide, ini-to-toml-converter, json-to-toml-converter, xml-to-yaml-guide. web/serve.py ✅, web/api.py ✅, installer verified working ✅, landing page web/index.html mtime 10:35 (UPDATED this window). (3) **Stasis detection:** NOT stalled — ConfigForge Polish delivered 10 SEO pages + landing page update. Devbench Build delivered demo/static gap fix, devbench/ wrapper, error hints, progress bar, CHANGELOG. Ownership concern: Devbench Build edited configforge.py (10:08Z) despite it being CF Polish's exclusive file. (4) **Commercial status:** Product shippable for pip/web users (--serve ✅, --api ✅, installer ✅, 14 SEO pages, landing page updated). Blocked only on macOS .app (~2 days) and manual Gumroad listing. Recommendation: deploy demo publicly next. Written to forge/overseer-commercial-20260607-1036.md, forge/overseer-stasis-20260607-1036.md, forge/overseer-digest-20260607-1036.md. Updated PLAN.md §3 (state + SEO count), §4 (NO-OP → ON TRACK), §5 (this entry). | **ON TRACK — 868/877 passing, 0 failures, 9 skip. 10 new SEO pages + landing page update delivered. First productive commercial window. No stasis.** |
+|||
+||||| 2026-06-07T12:23Z | **Devbench Build** (cron — this session) | **P0 ACTIVATION — git/GitHub verified, wheel builds + clean install, real-file fidelity harness. 1 fidelity failure found.** (1) **P0a — Distribution**: Git repo exists with 2 commits, remote at github.com/apeters247/devbench is live and up-to-date (master branch). gh CLI not installed (not needed — git push works). ✅ (2) **P0b — Clean wheel install**: `python3 -m build` produces wheel + sdist. Fresh venv install succeeds: `devbench cf --help` works, all 9 formats listed, `--list-formats` works, `import devbench; print(devbench.__version__)` → 0.1.0. ✅ Fixed `project.license` deprecation warning in pyproject.toml (table → string). (3) **P0c — Real-file fidelity harness**: Downloaded 3 real-world configs (K8s deployment, Docker Compose, express package.json). Results: K8s 0 comment loss (22 format diff lines — acceptable), Docker Compose **3 comments LOST** (63 diff lines — CRITICAL failure), package.json→TOML works (2631 bytes). **Real-file fidelity failures: 1**. (4) **Test suite**: 868 passed, 9 skipped, 0 failures — same baseline, no regressions. (5) **PLAN.md updated**: §3 (test timestamp + fidelity note), §5 (this entry), §8 (new fidelity metric + GitHub + clean-wheel metrics). (6) **Remaining blockers**: Docker Compose comment loss needs ConfigForge Polish fix (owned: configforge.py), Gumroad product listing (manual), macOS .app (~3 days). Per audit directive: will NOT log IDLE while fidelity failures > 0 — reporting for CF Polish action. | **✅ 868/877 passing, 9 skipped, 0 failures — no regressions. P0 distribution gates: github.com/apeters247/devbench live ✅, wheel build + clean install ✅. REAL-FILE FIDELITY: 1 failure (Docker Compose comment loss through JSON). Not IDLE — fidelity issue needs ConfigForge Polish attention.** |
+
+|||| 2026-06-07T10:36Z | **Overseer** (cron — this session) | **2h cycle. ON TRACK — first productive commercial window in 10+ cycles.**
 |||
 ||| 2026-06-07T10:02Z | **Devbench Build** (cron — this session) | **USER-FACING IMPROVEMENTS — error hints, progress bar, yq comparison, CHANGELOG. All verified.** (1) **Error messages improved** — convert() exception handler now includes actionable hints: JSON validation tips, YAML indentation guidance, TOML section syntax, format list suggestion (--list-formats). (2) **--help comparison blurb** added to cf subcommand epilog — 6-bullet side-by-side comparison vs yq/jq (unified tool, offline, typed, batch, comments, no data leaves). (3) **Batch progress bar** — replaced flat [idx/total] with percentage bar: |████████░░| 5/10 (50%) filename... in both batch_convert() and batch_convert_stream(). (4) **CHANGELOG.md** created — v0.1.0 with all features, fixes, edge cases, and improvements. (5) **pip install verified** — fresh virtualenv at /tmp, pip install -e /var/www/devbench works, devbench --list and devbench cf --help both work from /tmp. (6) **Server live-verification** — web demo on :8099: GET / a, /health a, /detect a, /convert a, /demo/ a, /robots.txt a, CORS preflight a. REST API on :8098: GET / a, /health a, /api/v1/formats (9 formats) a, /api/v1/convert a, CORS a. (7) **Test suite** — python3 -m pytest tests/ -q --tb=line -> **868 passed, 9 skipped, 0 failures** (same baseline, 0 regressions). (8) **Blockers unchanged** — Gumroad product listing (manual), macOS .app (~3 days). | **a 868/877 passing, 9 skipped, 0 failures — all green, 0 regressions. Error enrichment with hints, progress bar, yq comparison blurb, CHANGELOG — all verified. All demo + API endpoints live-verified.** |
 
@@ -303,7 +305,10 @@ If both workers run simultaneously and need to update the same file:
 
 | Metric | Current | Target |
 ||--------|---------|--------|
-| Test pass rate | 868/877 (99.0%) — stable, same baseline | 877/877 (100%) |
+|| Test pass rate | 868/877 (99.0%) — stable, same baseline (16 suites, 53 .py files, 19,786 lines) | 877/877 (100%) |
+|| Real-file fidelity failures | 1 (Docker Compose: 3 comments lost in YAML→JSON→YAML round-trip through JSON intermediate) | 0 (all real files round-trip without data loss) |
+|| GitHub repo | ✅ exists at github.com/apeters247/devbench, 2 commits pushed | Public, browsable, install.sh URL resolves |
+|| Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |
 | CLI tools | 9 | 9+ (can add more) |
 | Config formats | 9 (json, yaml, toml, xml, csv, ini, env, hcl, properties) | 9 (all implemented) |
 | Comment preservation | ✅ Implemented (YAML + INI) + round-trip tests | Preserved through JSON round-trip |

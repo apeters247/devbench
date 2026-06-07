@@ -1,0 +1,116 @@
+{
+  "timestamp": "2026-06-07T12:23:18Z",
+  "suites": {
+    "test_api.py": {
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_configforge.py": {
+      "passed": 40,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_core.py": {
+      "passed": 70,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_edge_cases.py": {
+      "passed": 470,
+      "failed": 0,
+      "skipped": 9,
+      "exit": 0
+    },
+    "test_edge_cases_50.py": {
+      "passed": 52,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_edge_cases_round7.py": {
+      "passed": 50,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_hcl.py": {
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_license.py": {
+      "passed": 38,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_missed_edge_cases.py": {
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_missed_edge_cases_2.py": {
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_missed_edge_cases_3.py": {
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_missed_edge_cases_4.py": {
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_missed_edge_cases_5.py": {
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_pain_points.py": {
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_properties.py": {
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    },
+    "test_serve.py": {
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0
+    }
+  },
+  "total": {
+    "passed": 868,
+    "failed": 0,
+    "skipped": 9
+  },
+  "failures": [],
+  "files": {
+    "configforge_py_size": 67250,
+    "tools_py_size": 28566,
+    "total_py_files": 53,
+    "total_py_lines": 19786
+  },
+  "infra": {
+    "litellm_running": false
+  }
+}

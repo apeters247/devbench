@@ -3,7 +3,7 @@ Name: devbench
 Version: 0.1.0
 Summary: Developer tools library — 8 utilities, clipboard auto-detection, and a CLI.
 Author-email: Andrew Peters <apeters247@gmail.com>
-License: MIT
+License-Expression: MIT
 Project-URL: Homepage, https://github.com/apeters247/devbench
 Project-URL: Repository, https://github.com/apeters247/devbench
 Keywords: developer-tools,cli,json,base64,jwt,configforge
