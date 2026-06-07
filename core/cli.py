@@ -488,7 +488,10 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
         return 0 if success else 1
     else:
         results = _cf.batch_convert(input_glob, to_fmt, getattr(args, "output_dir", None), **options)
-        success = all(r.get("success") for r in results) if results else False
+        if not results:
+            print(f"[batch] No files matched glob: {input_glob}")
+            return 0
+        success = all(r.get("success") for r in results)
         return 0 if success else 1
 
 

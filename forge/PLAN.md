@@ -145,3 +145,18 @@ Every 15min cycle:
   - jq#1650 (OPEN 8yr): CSV string conversion unsupported
 - ✅ 3 new BUILDER action items for competitor gap SEO targeting
 - ✅ Saved: external-review-20260607-1534.md
+
+### Cycle — 2026-06-07 18:35Z (current cycle — Polisher)
+- ✅ **Tests**: 535 passed, 7 skipped, 1 xfailed — no regressions (same as last cycle)
+- ✅ **No builder changes** — both markers at `993970d456973d936cc672216c63005071fe82bf`, no code review needed
+- ✅ **External Review (Rotation 2: GitHub competitor issues)** — written to `forge/external-review-20260607-1835.md`
+  - **8 newly identified issues** (not in previous cycles):
+    - yq#2195 (OPEN): Comments lost in multi-file eval-all merge — CF handles by line-position tracking
+    - yq#2213 (OPEN): Anchor/alias indentation reformatted — CF preserves original indentation
+    - yq#2537 (OPEN Jul 2025): Big integer precision lost in YAML->JSON — CF already verified working
+    - yq#2588 (OPEN Oct 2025): TOML inline table/datetime comments lost — CF 2 regression tests exist
+    - yq#2624 (OPEN Feb 2026): HCL->JSON drops block labels — Needs investigation
+    - yq#2631 (OPEN Mar 2026): null vs tilde distinction lost on round-trip — Needs preserve-null-notation
+    - jq#2027 (OPEN Dec 2024): CSV quoted fields with commas broken — Needs RFC 4180 regression test
+    - jq#2134 (OPEN Sep 2025): INI->JSON loses section hierarchy — CF already handles this
+- ✅ **3 new BUILDER action items**: HCL label preservation (P1), null notation flag (P2), CSV RFC compliance test (P2)
