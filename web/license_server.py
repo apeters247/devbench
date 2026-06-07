@@ -331,8 +331,9 @@ class LicenseHandler(BaseHTTPRequestHandler):
             body = _read_body(self)
         sig = self.headers.get("Stripe-Signature", "")
 
-        # In development mode, accept unsigned events
-        is_dev = os.environ.get("DEVBENCH_DEV", "1") == "1"
+        # Production by default: signatures are verified unless DEVBENCH_DEV=1
+        # is explicitly set to accept unsigned events for local development.
+        is_dev = os.environ.get("DEVBENCH_DEV", "0") == "1"
         if STRIPE_WEBHOOK_SECRET and not is_dev:
             # Verify Stripe signature (simple HMAC match)
             if not _verify_stripe_sig(body or "", sig):
@@ -356,7 +357,7 @@ class LicenseHandler(BaseHTTPRequestHandler):
             self._process_checkout(session)
         elif event_type == "invoice.paid":
             session = event.get("data", {}).get("object", {})
-            self._process_checkout(session)
+            self._process_renewal(session)
         else:
             # Acknowledge but don't process unknown event types
             self._respond(*_json_response(200, {
@@ -389,6 +390,40 @@ class LicenseHandler(BaseHTTPRequestHandler):
             "expires_at": one_year,
             "delivery": "License key generated. Sent via email (configure SMTP in production).",
         }))
+
+    def _process_renewal(self, session: dict) -> None:
+        """Renew an existing license on ``invoice.paid`` (recurring payment).
+
+        The customer already received a key from the original
+        ``checkout.session.completed`` event, so minting a fresh key on every
+        renewal would leave them with a pile of duplicate licenses. Instead,
+        look up their existing license by email and extend its expiry by a
+        year. Only fall back to issuing a new key if no prior license exists.
+        """
+        customer_email = (
+            session.get("customer_email")
+            or session.get("customer_details", {}).get("email", "")
+        )
+        one_year_seconds = 365 * 86400
+
+        existing = lm.find_keys_by_email(customer_email) if customer_email else []
+        if existing:
+            latest = existing[0]
+            new_expiry = lm.extend_expiry(latest["key"], one_year_seconds)
+            self._respond(*_json_response(200, {
+                "received": True,
+                "type": "invoice.paid",
+                "license_key": latest["key"],
+                "customer_email": customer_email,
+                "customer_id": latest["customer_id"],
+                "expires_at": new_expiry,
+                "renewed": True,
+                "delivery": "Existing license renewed (expiry extended by 1 year).",
+            }))
+            return
+
+        # No prior license for this customer — issue a fresh one.
+        self._process_checkout(session)
 
     def _handle_activate(self, body_text: str | None) -> None:
         """Activate a license key on a specific machine."""
@@ -511,7 +546,7 @@ def run_server(host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> None:
     server = ThreadingHTTPServer((host, port), LicenseHandler)
     print(f"[license] server listening on http://{host}:{port}")
     print(f"[license] license DB: {DB_PATH}")
-    print(f"[license] dev mode: {os.environ.get('DEVBENCH_DEV', '1')}")
+    print(f"[license] dev mode: {os.environ.get('DEVBENCH_DEV', '0')}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -332,6 +332,67 @@ class LicenseManager:
         finally:
             conn.close()
 
+    def find_keys_by_email(self, email: str) -> list[dict[str, Any]]:
+        """Return stored license rows for ``email``, newest first.
+
+        Used to renew an existing customer's license rather than minting a
+        brand-new key on every recurring payment.
+        """
+        if not self.db_path:
+            return []
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            rows = conn.execute(
+                "SELECT license_key, email, customer_id, payment_intent, issued_at, expiry "
+                "FROM licenses WHERE email = ? ORDER BY issued_at DESC, created_at DESC",
+                (email,),
+            ).fetchall()
+            return [
+                {
+                    "key": r[0],
+                    "email": r[1],
+                    "customer_id": r[2],
+                    "payment_intent": r[3],
+                    "issued_at": r[4],
+                    "expiry": r[5],
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def extend_expiry(self, key: str, additional_seconds: int) -> int:
+        """Extend a stored license's expiry by ``additional_seconds``.
+
+        The extension is anchored to the later of the current expiry or now, so
+        renewing an already-lapsed license still grants a full extra period. A
+        stored expiry of 0 (never expires) is left untouched.
+
+        Returns the new expiry timestamp, or 0 if the key is unknown / has no
+        DB row / never expires.
+        """
+        if not self.db_path:
+            return 0
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            row = conn.execute(
+                "SELECT expiry FROM licenses WHERE license_key = ?", (key,)
+            ).fetchone()
+            if row is None:
+                return 0
+            current = row[0] or 0
+            if current == 0:
+                return 0  # never expires — nothing to extend
+            new_expiry = max(current, int(time.time())) + additional_seconds
+            conn.execute(
+                "UPDATE licenses SET expiry = ? WHERE license_key = ?",
+                (new_expiry, key),
+            )
+            conn.commit()
+            return new_expiry
+        finally:
+            conn.close()
+
     # ── Internal ─────────────────────────────────────────────────────────────
 
     def _sign(self, data: str) -> str:
@@ -427,18 +488,29 @@ class LicenseManager:
 
 
 def _default_secret() -> bytes:
-    """Derive a default secret from host info + fallback.
+    """Return the HMAC signing secret from the environment.
 
-    In production, always set a custom secret via env var.
+    The secret MUST be supplied via ``DEVBENCH_LICENSE_SECRET``. A
+    machine-derived fallback would let anyone who knows the hostname forge
+    valid license keys, so it is only permitted when ``DEVBENCH_DEV=1`` is
+    explicitly set (local development / tests). In every other case a missing
+    secret is a hard error rather than a silent downgrade to weak signing.
     """
     env_secret = os.environ.get("DEVBENCH_LICENSE_SECRET", "")
     if env_secret:
         return env_secret.encode("utf-8")
 
-    # Fallback: derive from machine info (not cryptographically strong
-    # but fine for dev/test)
-    raw = f"{os.uname().nodename}-{os.uname().machine}-ConfigForge-v1"
-    return hashlib.sha256(raw.encode()).digest()
+    if os.environ.get("DEVBENCH_DEV") == "1":
+        # Dev-only fallback: derive from machine info. NOT cryptographically
+        # strong (predictable from the hostname) — never use in production.
+        raw = f"{os.uname().nodename}-{os.uname().machine}-ConfigForge-v1"
+        return hashlib.sha256(raw.encode()).digest()
+
+    raise ValueError(
+        "DEVBENCH_LICENSE_SECRET is required to sign license keys. Set it to a "
+        "strong random secret in production. For local development only, set "
+        "DEVBENCH_DEV=1 to use an insecure machine-derived fallback secret."
+    )
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────

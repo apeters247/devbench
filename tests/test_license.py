@@ -230,12 +230,30 @@ class TestEdgeCases:
         info = lm.decode(key)
         assert info["expiry"] == 0  # No expiry
 
-    def test_default_secret_deterministic(self):
-        """Auto-derived secret should be same across instances."""
+    def test_default_secret_deterministic(self, monkeypatch):
+        """Dev fallback secret should be same across instances (DEVBENCH_DEV=1)."""
         from web.license import _default_secret
+        monkeypatch.delenv("DEVBENCH_LICENSE_SECRET", raising=False)
+        monkeypatch.setenv("DEVBENCH_DEV", "1")
         s1 = _default_secret()
         s2 = _default_secret()
         assert s1 == s2
+
+    def test_default_secret_requires_env(self, monkeypatch):
+        """Without the secret env var (and not in dev mode), signing must fail
+        loudly instead of falling back to a predictable machine-derived key."""
+        import pytest
+        from web.license import _default_secret
+        monkeypatch.delenv("DEVBENCH_LICENSE_SECRET", raising=False)
+        monkeypatch.delenv("DEVBENCH_DEV", raising=False)
+        with pytest.raises(ValueError, match="DEVBENCH_LICENSE_SECRET"):
+            _default_secret()
+
+    def test_default_secret_from_env(self, monkeypatch):
+        """An explicit secret env var is used verbatim."""
+        from web.license import _default_secret
+        monkeypatch.setenv("DEVBENCH_LICENSE_SECRET", "explicit-secret-value")
+        assert _default_secret() == b"explicit-secret-value"
 
     def test_key_is_portable_string(self):
         """Key should only contain URL-safe characters."""
@@ -267,6 +285,43 @@ class TestEdgeCases:
         lm = _make_mgr(tmp_db=False)
         key = lm.generate("a@b.com", "cus_1")
         assert lm.get_key_info(key) is None
+
+    def test_find_keys_by_email(self):
+        lm = _make_mgr(tmp_db=True)
+        k1 = lm.generate("dup@test.com", "cus_a", "pi_1", expiry=1000)
+        k2 = lm.generate("dup@test.com", "cus_a", "pi_2", expiry=2000)
+        lm.generate("other@test.com", "cus_b")
+        rows = lm.find_keys_by_email("dup@test.com")
+        keys = {r["key"] for r in rows}
+        assert keys == {k1, k2}
+        assert lm.find_keys_by_email("missing@test.com") == []
+
+    def test_extend_expiry_anchors_to_future(self):
+        """Extending an unexpired license adds to its current expiry."""
+        lm = _make_mgr(tmp_db=True)
+        far_future = int(time.time()) + 365 * 86400
+        key = lm.generate("renew@test.com", "cus_r", expiry=far_future)
+        new_expiry = lm.extend_expiry(key, 365 * 86400)
+        assert new_expiry == far_future + 365 * 86400
+        assert lm.get_key_info(key)["expiry"] == new_expiry
+
+    def test_extend_expiry_anchors_to_now_when_lapsed(self):
+        """Renewing an already-expired license grants a full extra period."""
+        lm = _make_mgr(tmp_db=True)
+        past = int(time.time()) - 10 * 86400
+        key = lm.generate("lapsed@test.com", "cus_l", expiry=past)
+        new_expiry = lm.extend_expiry(key, 365 * 86400)
+        assert new_expiry > int(time.time()) + 364 * 86400
+
+    def test_extend_expiry_never_expires_untouched(self):
+        lm = _make_mgr(tmp_db=True)
+        key = lm.generate("forever@test.com", "cus_f")  # expiry=0 (never)
+        assert lm.extend_expiry(key, 365 * 86400) == 0
+        assert lm.get_key_info(key)["expiry"] == 0
+
+    def test_extend_expiry_unknown_key(self):
+        lm = _make_mgr(tmp_db=True)
+        assert lm.extend_expiry("CF.nope.nope", 86400) == 0
 
 
 # ── License Server Endpoint Tests ───────────────────────────────────────────
