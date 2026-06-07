@@ -3,37 +3,76 @@ import Combine
 
 // MARK: - Detection Result Model
 
-struct DetectionResult: Identifiable {
-    var id: String { UUID().uuidString }
-    let type: String
-    let content: String
-    let preview: String
-    let confidence: Double
-    let suggestedTools: [String]
+/// Decodes the `devbench detect --swift` envelope:
+/// `{tool_name, output, error, detection_type, metadata}`.
+struct DetectionResult: Identifiable, Decodable {
+    var id = UUID().uuidString
+    let toolName: String
+    let output: String
+    let error: String?
+    let detectionType: String?
     let metadata: [String: String]?
 
+    /// The original input that was detected. Not part of the wire envelope —
+    /// the bridge fills it in after decoding so the UI can echo it back.
+    var sourceInput: String = ""
+
     enum CodingKeys: String, CodingKey {
-        case type, content, preview, confidence, metadata
-        case suggestedTools = "suggested_tools"
+        case toolName = "tool_name"
+        case output
+        case error
+        case detectionType = "detection_type"
+        case metadata
+    }
+
+    /// Human-readable label for the detected type.
+    var displayType: String {
+        detectionType ?? toolName
+    }
+
+    /// First-line preview of the tool output.
+    var preview: String {
+        output.split(separator: "\n").first.map(String.init) ?? output
+    }
+
+    /// The UI tool label that best matches this detection.
+    var suggestedTool: String {
+        let key = displayType.lowercased()
+        if key.contains("json") { return "JSON" }
+        if key.contains("jwt") { return "JWT" }
+        if key.contains("base64") { return "Base64" }
+        if key.contains("url") || key.contains("domain") || key.contains("link") { return "URL" }
+        if key.contains("timestamp") { return "Timestamp" }
+        if key.contains("uuid") { return "UUID" }
+        if key.contains("diff") || key.contains("patch") { return "Diff" }
+        if key.contains("yaml") || key.contains("toml") || key.contains("ini")
+            || key.contains("xml") || key.contains("csv") || key.contains("env")
+            || key.contains("config") { return "Convert" }
+        return "Auto-Detect"
     }
 
     var typeIcon: String {
-        switch type.lowercased() {
-        case "code", "swift", "python", "javascript", "typescript", "rust", "go", "java":
-            return "chevron.left.forwardslash.chevron.right"
-        case "error", "error_log", "crash":
-            return "exclamationmark.triangle.fill"
-        case "text", "plain_text":
-            return "doc.text"
-        case "json", "yaml", "toml", "config":
+        let key = displayType.lowercased()
+        if key.contains("json") || key.contains("yaml") || key.contains("toml")
+            || key.contains("config") || key.contains("ini") || key.contains("env") {
             return "curlybraces"
-        case "url", "link":
-            return "link"
-        case "diff", "patch":
-            return "doc.text.below.ecg"
-        default:
-            return "doc.questionmark"
         }
+        if key.contains("jwt") || key.contains("base64") {
+            return "key.fill"
+        }
+        if key.contains("url") || key.contains("domain") || key.contains("link") {
+            return "link"
+        }
+        if key.contains("timestamp") {
+            return "clock"
+        }
+        if key.contains("diff") || key.contains("patch") {
+            return "doc.text.below.ecg"
+        }
+        if key.contains("error") || key.contains("crash") {
+            return "exclamationmark.triangle.fill"
+        }
+        return "doc.questionmark"
     }
 }
 
@@ -53,7 +92,16 @@ struct ContentView: View {
     @State private var errorMessage: String?
     @State private var runError: String?
 
-    private let tools = ["Auto-Detect", "Format", "Lint", "Explain", "Refactor", "Document"]
+    private let tools = ["Auto-Detect", "Convert", "JSON", "Base64", "JWT", "Hash", "URL", "Timestamp", "UUID", "Diff"]
+
+    /// Map a UI tool label to the real `devbench` subcommand it runs.
+    private func subcommand(for uiTool: String) -> String {
+        switch uiTool {
+        case "Auto-Detect": return "detect"
+        case "Convert":     return "cf"
+        default:            return uiTool.lowercased()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -94,8 +142,8 @@ struct ContentView: View {
         .onReceive(clipboardMonitor.$lastDetectedContent) { result in
             if settings.autoDetectClipboard, let result = result {
                 detectionResult = result
-                inputText = result.content
-                selectedTool = result.suggestedTools.first ?? "Auto-Detect"
+                inputText = result.sourceInput
+                selectedTool = result.suggestedTool
             }
         }
     }
@@ -140,7 +188,7 @@ struct ContentView: View {
                 .font(.title3)
                 .foregroundColor(.accentColor)
             VStack(alignment: .leading, spacing: 2) {
-                Text(result.type.replacingOccurrences(of: "_", with: " ").capitalized)
+                Text(result.displayType.replacingOccurrences(of: "_", with: " ").capitalized)
                     .font(.caption).fontWeight(.semibold)
                 Text(result.preview)
                     .font(.caption2)
@@ -303,7 +351,7 @@ struct ContentView: View {
         errorMessage = nil
         runError = nil
 
-        let toolArg = selectedTool.lowercased().replacingOccurrences(of: "-", with: "_")
+        let toolArg = subcommand(for: selectedTool)
 
         Task {
             do {

@@ -94,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "detect":
         result_str = detector.detect_and_run(input_text)
+        if getattr(args, "swift", False):
+            result_str = _swiftify_detect(result_str)
     elif args.command == "cf" and (getattr(args, "list_formats", False)):
         result_str = _list_cf_formats()
     elif args.command == "cf":
@@ -148,6 +150,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # detect
     detect_p = sub.add_parser("detect", help="Auto-detect content type and apply tool")
+    detect_p.add_argument(
+        "--swift",
+        action="store_true",
+        help="Emit a Swift-friendly JSON envelope (for the macOS app bridge)",
+    )
     detect_p.add_argument("text", nargs="?", default=None, help="Text to detect")
     _add_common_args(detect_p)
 
@@ -272,6 +279,53 @@ def _emit_output(result_str: str, args: argparse.Namespace) -> None:
 
     # Default: print as-is (already JSON-ish)
     print(result_str)
+
+
+# ---------------------------------------------------------------------------
+# Swift bridge envelope
+# ---------------------------------------------------------------------------
+
+
+def _stringify(value: Any) -> str:
+    """Coerce a metadata value to a string for Swift's [String: String] decode."""
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _swiftify_detect(result_str: str) -> str:
+    """Reshape a ``detect`` result into the fixed-shape envelope the macOS app decodes.
+
+    The default ``detect`` output is intentionally left untouched (874 tests
+    depend on it). This only runs for ``devbench detect --swift`` and guarantees
+    every key Swift's ``DetectionResult`` needs is present:
+    ``{tool_name, output, error, detection_type, metadata}`` — with ``metadata``
+    always an object of string values (Swift decodes it as ``[String: String]?``).
+    """
+    try:
+        parsed = json.loads(result_str)
+    except (json.JSONDecodeError, TypeError):
+        parsed = {}
+
+    metadata = parsed.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    string_meta = {str(k): _stringify(v) for k, v in metadata.items()}
+
+    envelope = {
+        "tool_name": parsed.get("tool_name", "detect"),
+        "output": parsed.get("output", ""),
+        "error": parsed.get("error"),
+        "detection_type": parsed.get("detection_type"),
+        "metadata": string_meta,
+    }
+    return json.dumps(envelope, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------------

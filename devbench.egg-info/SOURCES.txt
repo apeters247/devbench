@@ -25,6 +25,7 @@ tests/test_license.py
 tests/test_pain_points.py
 tests/test_properties.py
 tests/test_serve.py
+tests/test_swift_bridge_contract.py
 web/api.py
 web/license.py
 web/license_server.py

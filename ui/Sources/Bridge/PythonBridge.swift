@@ -119,13 +119,17 @@ class PythonBridge: ObservableObject {
 
     // MARK: - Run Devbench Tool
 
-    /// Run a devbench tool with the given input and return the JSON-decoded output string.
+    /// Run a devbench tool with the given input and return the user-facing output.
+    ///
+    /// `detect` is run with `--swift` so the CLI emits the Swift-friendly
+    /// envelope; every tool's inner `output` field is unwrapped so the UI never
+    /// displays a double-wrapped JSON envelope.
     ///
     /// - Parameters:
-    ///   - tool: The tool name (e.g. "detect", "format", "lint", "explain")
+    ///   - tool: The CLI subcommand (e.g. "detect", "json", "base64", "cf")
     ///   - input: The input text to process
-    /// - Returns: The tool output as a string
-    /// - Throws: `PythonBridgeError` if the process fails or returns non-zero
+    /// - Returns: The tool's `output` field as a string
+    /// - Throws: `PythonBridgeError` if the process fails or the tool reports an error
     func runTool(tool: String, input: String) async throws -> String {
         guard isPythonAvailable else {
             throw PythonBridgeError.pythonNotAvailable(
@@ -133,12 +137,20 @@ class PythonBridge: ObservableObject {
             )
         }
 
-        return try await runDevbench(arguments: [tool, input])
+        let arguments: [String]
+        if tool == DevbenchTool.detect.rawValue {
+            arguments = ["detect", "--swift", input]
+        } else {
+            arguments = [tool, input]
+        }
+
+        let rawOutput = try await runDevbench(arguments: arguments)
+        return try Self.extractOutput(from: rawOutput)
     }
 
-    /// Run devbench detect and parse the JSON result
+    /// Run `devbench detect --swift` and decode the Swift-friendly envelope.
     func detect(input: String) async throws -> DetectionResult {
-        let rawOutput = try await runDevbench(arguments: ["detect", input])
+        let rawOutput = try await runDevbench(arguments: ["detect", "--swift", input])
 
         guard let data = rawOutput.data(using: .utf8) else {
             throw PythonBridgeError.invalidOutput("Could not encode output as UTF-8")
@@ -146,14 +158,32 @@ class PythonBridge: ObservableObject {
 
         let decoder = JSONDecoder()
         do {
-            let result = try decoder.decode(DetectionResult.self, from: data)
+            var result = try decoder.decode(DetectionResult.self, from: data)
+            result.sourceInput = input
             return result
         } catch {
-            // Try to parse as a simpler format
             throw PythonBridgeError.decodingError(
                 "Failed to parse detection result: \(error.localizedDescription)\nRaw: \(rawOutput.prefix(500))"
             )
         }
+    }
+
+    /// Extract the user-facing `output` field from a devbench JSON envelope.
+    ///
+    /// If the envelope reports an `error` and has no usable `output`, this
+    /// throws so the UI surfaces the failure. Non-envelope text is returned
+    /// verbatim as a fallback.
+    static func extractOutput(from raw: String) throws -> String {
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return raw
+        }
+
+        let output = obj["output"] as? String
+        if let error = obj["error"] as? String, !error.isEmpty, (output ?? "").isEmpty {
+            throw PythonBridgeError.processError(exitCode: 1, message: error)
+        }
+        return output ?? raw
     }
 
     // MARK: - Private
@@ -211,6 +241,23 @@ class PythonBridge: ObservableObject {
             }
         }
     }
+}
+
+// MARK: - Devbench Tools
+
+/// The real `devbench` CLI subcommands the app can invoke.
+enum DevbenchTool: String, CaseIterable {
+    case detect
+    case json
+    case base64
+    case jwt
+    case hash
+    case url
+    case timestamp
+    case uuid
+    case diff
+    case cf
+    case list
 }
 
 // MARK: - Errors
