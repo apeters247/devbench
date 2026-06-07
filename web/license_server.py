@@ -66,10 +66,25 @@ def _error(code: int, message: str) -> tuple[str, int, dict]:
     return _json_response(code, {"error": True, "message": message})
 
 
+# Reject request bodies larger than this to avoid trivial memory-exhaustion
+# from a huge Content-Length. 1 MB is far above any real webhook/activation
+# payload.
+MAX_BODY_SIZE = 1 * 1024 * 1024  # 1 MB
+
+
+class _BodyTooLarge(Exception):
+    """Raised when a request body exceeds MAX_BODY_SIZE."""
+
+
 def _read_body(handler: BaseHTTPRequestHandler) -> str | None:
-    length = int(handler.headers.get("Content-Length", 0))
+    try:
+        length = int(handler.headers.get("Content-Length", 0))
+    except (TypeError, ValueError):
+        length = 0
     if length == 0:
         return None
+    if length > MAX_BODY_SIZE:
+        raise _BodyTooLarge(length)
     return handler.rfile.read(length).decode("utf-8")
 
 
@@ -212,7 +227,11 @@ class LicenseHandler(BaseHTTPRequestHandler):
             self._respond(*_error(429, "Rate limit exceeded (60/min)"))
             return
 
-        body_text = _read_body(self)
+        try:
+            body_text = _read_body(self)
+        except _BodyTooLarge:
+            self._respond(*_error(413, f"Request body too large (limit is {MAX_BODY_SIZE} bytes)"))
+            return
         if body_text is None and path not in ("/webhook/stripe", "/webhook/gumroad"):
             self._respond(*_error(400, "Request body required"))
             return
@@ -476,6 +495,13 @@ class LicenseHandler(BaseHTTPRequestHandler):
     # ── Response Helper ──────────────────────────────────────────────────────
 
     def _respond(self, body: str, code: int, headers: dict) -> None:
+        # Webhook endpoints (Stripe/Gumroad) are server-to-server only and must
+        # never be browser-callable, so strip the permissive CORS header from
+        # their responses. A leaked `Access-Control-Allow-Origin: *` here would
+        # let any website read webhook responses cross-origin.
+        request_path = urllib.parse.urlparse(self.path).path.rstrip("/")
+        if request_path.startswith("/webhook/"):
+            headers = {k: v for k, v in headers.items() if k != "Access-Control-Allow-Origin"}
         self.send_response(code)
         for k, v in headers.items():
             self.send_header(k, v)

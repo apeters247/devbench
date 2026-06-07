@@ -623,7 +623,7 @@ def _run_license_activate(key: str, server_url: str, machine_id: str | None = No
         except Exception:
             import hashlib
             import socket
-            machine_id = hashlib.md5(socket.gethostname().encode()).hexdigest()[:16]
+            machine_id = hashlib.md5(socket.gethostname().encode(), usedforsecurity=False).hexdigest()[:16]
 
     url = f"{server_url.rstrip('/')}/license/activate"
     payload = json.dumps({"key": key, "machine_id": machine_id}).encode("utf-8")
@@ -650,8 +650,6 @@ def _run_license_activate(key: str, server_url: str, machine_id: str | None = No
 
 def _run_license_verify(key: str, server_url: str) -> int:
     """Verify a license key against the server."""
-    import urllib.request
-
     url = f"{server_url.rstrip('/')}/license/verify?key={urllib.parse.quote(key)}"
 
     try:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -27,7 +27,7 @@ class ToolResult(BaseModel):
         description="Additional machine-readable metadata from the tool",
     )
     timestamp: str = Field(
-        default_factory=lambda: datetime.utcnow().isoformat() + "Z",
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
         description="ISO 8601 timestamp of when this result was created",
     )
 

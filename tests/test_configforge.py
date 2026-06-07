@@ -66,10 +66,17 @@ def test_convert_env_to_json():
 def test_convert_csv_to_json():
     r = convert("name,age\nAlice,30\nBob,25", "json")
     assert r["success"]
+    parsed = json.loads(r["output"])
+    assert parsed == [
+        {"name": "Alice", "age": "30"},
+        {"name": "Bob", "age": "25"},
+    ]
 
 def test_convert_xml_to_json():
     r = convert("<root><item>hello</item></root>", "json")
     assert r["success"]
+    parsed = json.loads(r["output"])
+    assert parsed["item"] == "hello"
 
 def test_roundtrip_json():
     """Convert JSON → YAML → JSON should preserve data."""

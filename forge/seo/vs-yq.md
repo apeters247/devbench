@@ -59,7 +59,14 @@ Configuration files are documentation. The comments explaining *why* a timeout i
 
 ConfigForge preserves comments on round-trip conversions wherever the target format supports them — YAML ↔ TOML ↔ INI ↔ .env all carry their inline and block comments across. When you convert `config.yaml` to `config.toml` and back, your annotations survive.
 
-`yq` offers partial comment handling within YAML processing, but comments are easily lost during transformations and there is no comment bridge into the formats `yq` doesn't support. If keeping human context in your config files matters, this is a decisive advantage for ConfigForge.
+This isn't a theoretical advantage. `yq`'s comment handling has a long trail of open, unresolved bugs because it relies on the underlying go-yaml library's node-attached comment model, which repeatedly misplaces or drops comments. ConfigForge takes a fundamentally different approach: it maps comments to their source lines with a linear, regex-based extraction *before* parsing and re-inserts them *after* serialization, so comments are never attached to (and therefore never lost with) the YAML node graph. That design sidesteps the exact class of failures `yq` users keep reporting:
+
+- **[yq #465](https://github.com/mikefarah/yq/issues/465) — "Preserve formatting with in-place writing"** (open since 2020, **113+ reactions**, yq's highest-signal bug). In-place edits strip blank lines and reshuffle spacing around comments. ConfigForge's line-mapped model preserves blank lines and comment spacing on round-trip.
+- **[yq #2054](https://github.com/mikefarah/yq/issues/2054) — "yq is confused by the indentation of a comment."** A comment attached to one node gets misplaced onto another based on indentation. ConfigForge's comments are bound to source lines, not indentation-sensitive node positions, so they don't migrate.
+- **[yq #1836](https://github.com/mikefarah/yq/issues/1836) — "yq strips document separator when adding a comment."** Adding a head comment to a multi-document YAML file silently deletes the `---` separator. ConfigForge's comment pipeline keeps separators intact.
+- **[yq #439](https://github.com/mikefarah/yq/issues/439) — "Folded multiline scalars should stay in original format"** (open since 2020). `>` folded scalars lose their line breaks after processing. ConfigForge preserves the original scalar formatting through round-trips.
+
+`yq` offers partial comment handling within YAML processing, but as the issues above show, comments are easily lost or misplaced during transformations — and there is no comment bridge into the formats `yq` doesn't support at all. If keeping human context in your config files matters, this is a decisive advantage for ConfigForge.
 
 ## Batch Mode
 

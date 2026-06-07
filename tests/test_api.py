@@ -76,7 +76,13 @@ def test_root_summary(server):
 def test_health(server):
     status, _, data = _get(server, "/health")
     assert status == 200
-    assert data == {"status": "ok", "models_count": 7, "tests_passing": 771}
+    assert data["status"] == "ok"
+    # Counts are computed from actual project state, not hardcoded. models_count
+    # must match the real number of supported formats, and tests_passing must be
+    # a positive integer (discovered from the tests directory).
+    api = _load_api()
+    assert data["models_count"] == len(api.cf.SUPPORTED_FORMATS)
+    assert isinstance(data["tests_passing"], int) and data["tests_passing"] > 0
 
 
 def test_formats(server):

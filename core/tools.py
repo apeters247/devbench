@@ -298,10 +298,13 @@ def _check_jwt_expiry(payload: dict) -> Optional[str]:
 
 
 def hash_generator(input_text: str) -> str:
-    """Generate MD5, SHA-1, SHA-256, SHA-512 hashes of the input."""
+    """Generate MD5, SHA-1, SHA-256, SHA-512 hashes of the input.
+
+    An empty string is a valid input: it hashes to the well-defined digests of
+    zero bytes (e.g. MD5 ``d41d8cd98f00b204e9800998ecf8427e``), which users
+    legitimately need when verifying empty files.
+    """
     input_text = input_text.strip()
-    if not input_text:
-        return _err("hash_generator", "Empty input — nothing to hash.")
 
     data = input_text.encode("utf-8")
 

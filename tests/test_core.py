@@ -165,7 +165,9 @@ def test_jwt_empty_parts():
 def test_hash_empty_string():
     """Empty string should produce valid hash."""
     r = parse(hash_generator(""))
-    assert r["error"] is not None  # or hash of empty string
+    assert r["error"] is None
+    # MD5 of zero bytes is a fixed, well-known value.
+    assert "d41d8cd98f00b204e9800998ecf8427e" in r["output"]
 
 def test_hash_unicode():
     r = parse(hash_generator("日本語💻"))

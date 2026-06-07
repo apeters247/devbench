@@ -1,0 +1,28 @@
+Read the task queue files in order and implement fixes. Start by reading the current test state with "python3 -m pytest tests/ -q --tb=line | tail -5".
+
+FIXES TO IMPLEMENT (in priority order):
+
+1. Deep Audit remaining items (forge/deep-audit-20260607-1836.md):
+   a. core/cli.py line 626: hashlib.md5() lacks usedforsecurity=False — FIPS crash risk. Fix it.
+   b. core/cli.py line 25 and 653: Duplicate import urllib.request at module level AND inside _run_license_verify. Remove the inner one.
+   c. web/api.py lines 49-50: Hardcoded MODELS_COUNT=7, TESTS_PASSING=771. Replace with dynamic computation or update to match reality.
+   d. core/models.py line 30: datetime.utcnow() — use datetime.now(timezone.utc) instead.
+   e. No request body size limits on 3 HTTP servers (web/api.py, web/license_server.py, web/serve.py). Add a max_body_size cap (e.g., 5MB) and reject oversized requests with 413 status.
+   f. tests/test_core.py line 165-168: test_hash_empty_string — docstring says "Empty string should produce valid hash" but asserts r['error'] is not None. Fix the assertion to match the docstring.
+   g. tests/test_edge_cases.py line 176: non-deterministic assertion data == [] or data == [{}] — standardize to one expected representation.
+
+2. External Review P0 (forge/external-review-20260607-1942.md):
+   - Update forge/seo/vs-yq.md to specifically cite yq issues #465 (113 reactions, comment loss), #2054 (indentation-attached comments misplaced), #1836 (document separator stripped), #439 (folded scalars lose line breaks) as concrete evidence that ConfigForge's comment-preservation approach is fundamentally different and superior.
+
+3. Gemini Review rotating file spot check (forge/gemini-review-20260607-1953.md):
+   - tests/test_edge_cases.py: Replace weak 'success' in r / isinstance(r, dict) assertions with semantic checks.
+   - tests/test_configforge.py: test_convert_csv_to_json / test_convert_xml_to_json only check 'success' — add output content verification.
+
+4. Additional Medium fixes from Deep Audit:
+   - web/license_server.py: Strip CORS wildcard from webhook endpoint (should never be browser-callable).
+
+Run python3 -m pytest tests/ -q --tb=line after each change and fix any test breakage.
+Do NOT create new test files — modify existing ones.
+Do NOT use synthetic/silly edge case tests — only real user-facing scenarios.
+Keep the test count at or above 565 passing.
+Report: summary of changes, final test count, any issues encountered.

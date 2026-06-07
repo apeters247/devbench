@@ -29,6 +29,10 @@ from core import configforge as cf  # noqa: E402
 
 DEFAULT_PORT = 8080
 
+# Reject request bodies larger than this to avoid trivial memory-exhaustion
+# from a huge Content-Length. 10 MB is far above any real config payload.
+MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
+
 # ---------------------------------------------------------------------------
 # HTML page (everything inline — no external CSS/JS/fonts/assets)
 # ---------------------------------------------------------------------------
@@ -385,6 +389,16 @@ class ConfigForgeHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length > MAX_BODY_SIZE:
+            self._send_json(
+                {"error": f"Request body too large (limit is {MAX_BODY_SIZE} bytes)."},
+                status=413,
+            )
+            return
         if path in ("/detect", "/api/detect"):
             self._handle_detect()
         elif path in ("/convert", "/api/convert"):

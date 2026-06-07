@@ -45,6 +45,24 @@ def _j(text):
     return json.loads(text)
 
 
+def _assert_graceful(r):
+    """Assert convert() handled the input gracefully — no crash, well-formed result.
+
+    A graceful result is a dict with a boolean ``success`` flag. On failure it
+    must carry a non-empty ``error`` string (not a silent empty dict); on
+    success it must carry a non-empty ``output`` string. This is the semantic
+    floor for "didn't crash" tests — far stronger than ``isinstance(r, dict)``,
+    which an empty dict or error-less failure would also satisfy.
+    """
+    assert isinstance(r, dict)
+    assert isinstance(r["success"], bool)
+    if r["success"]:
+        assert isinstance(r["output"], str) and r["output"] != ""
+    else:
+        assert isinstance(r["error"], str) and r["error"] != ""
+    return r
+
+
 def _deep_dict(levels, leaf="bottom"):
     d = {}
     cur = d
@@ -212,7 +230,10 @@ def test_malformed_json_no_quotes():
 def test_malformed_yaml_tab_indent():
     """YAML with tab indentation — should not crash."""
     r = convert("key:\n\tvalue: 1\n", "json", "yaml")
-    assert isinstance(r, dict)
+    # Tab indentation is invalid YAML, so this must fail cleanly with an error
+    # message rather than crash or silently succeed.
+    _assert_graceful(r)
+    assert not r["success"]
 
 
 def test_malformed_yaml_random_garbage():
@@ -234,7 +255,9 @@ def test_malformed_xml_unclosed_tag():
 
 def test_malformed_xml_invalid_chars():
     r = convert("<root><1tag>value</1tag></root>", "json", "xml")
-    assert isinstance(r, dict)
+    # "1tag" is not a legal XML element name, so parsing must fail with an error.
+    _assert_graceful(r)
+    assert not r["success"]
 
 
 def test_malformed_csv_inconsistent_columns():
@@ -246,7 +269,12 @@ def test_malformed_csv_inconsistent_columns():
 
 def test_malformed_ini_no_section():
     r = convert("key=value\nfoo=bar\n", "json")
-    assert isinstance(r, dict)
+    # Section-less key=value lines are still parseable; the keys must survive
+    # into the JSON output rather than the result being a silent empty success.
+    _assert_graceful(r)
+    if r["success"]:
+        data = _j(r["output"])
+        assert data.get("key") == "value" and data.get("foo") == "bar"
 
 
 def test_malformed_env_no_value():
@@ -256,7 +284,12 @@ def test_malformed_env_no_value():
 
 def test_malformed_env_weird_chars_in_key():
     r = convert("BAD-KEY=value\nWEIRD!KEY=val\n", "json")
-    assert isinstance(r, dict) and "success" in r
+    # Unusual punctuation in keys must not crash; if parsed, the values must be
+    # carried through verbatim.
+    _assert_graceful(r)
+    if r["success"]:
+        data = _j(r["output"])
+        assert data.get("BAD-KEY") == "value"
 
 
 def test_random_garbage_to_all_formats():
@@ -264,8 +297,9 @@ def test_random_garbage_to_all_formats():
     garbage = "!@#$%^&*()_+{}|:<>?~`-=[]\\;',./\n\t\x00\x01\x02"
     for fmt in ALL_FORMATS:
         r = convert(garbage, fmt)
-        assert isinstance(r, dict)
-        assert "success" in r
+        # Every format must degrade gracefully — a clean error or a real output
+        # string, never a crash or a malformed result dict.
+        _assert_graceful(r)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -382,7 +416,12 @@ def test_binary_high_bytes_json():
 def test_binary_null_byte_in_csv():
     """A NUL byte inside a CSV field does not crash the parser."""
     r = convert("id,payload\n1,ab\x00cd\n", "json")
-    assert isinstance(r, dict) and "success" in r
+    # The NUL must not crash parsing; if it parses, the field value survives
+    # with the embedded byte intact.
+    _assert_graceful(r)
+    if r["success"]:
+        rows = _j(r["output"])
+        assert rows[0]["payload"] == "ab\x00cd"
 
 
 def test_binary_control_to_toml():
@@ -552,9 +591,13 @@ def test_deeply_nested_toml():
 def test_deep_500_json_no_crash():
     """500-level nested JSON -> JSON/YAML must not raise."""
     src = json.dumps(_deep_dict(500))
-    for fmt in ("json", "yaml"):
-        r = convert(src, fmt)
-        assert isinstance(r, dict) and "success" in r
+    # JSON passes data through unchanged; YAML serialization may hit Python's
+    # recursion limit. Either way the result must be well-formed — a real output
+    # on success or a clean error on failure — never an unhandled crash.
+    r_json = convert(src, "json")
+    _assert_graceful(r_json)
+    assert r_json["success"] and '"end"' in r_json["output"]
+    _assert_graceful(convert(src, "yaml"))
 
 
 def test_deep_nested_to_flat_conversion_fails():
@@ -603,12 +646,21 @@ def test_csv_empty_fields():
 
 def test_csv_tab_delimiter():
     r = convert("name\tage\tcity\nAlice\t30\tNYC\nBob\t25\tLA\n", "json")
-    assert isinstance(r, dict) and "success" in r
+    # Tab-delimited input should be auto-detected and split into columns —
+    # not treated as one giant single-column value.
+    _assert_graceful(r)
+    assert r["success"]
+    rows = _j(r["output"])
+    assert len(rows) == 2 and rows[0]["name"] == "Alice" and rows[0]["city"] == "NYC"
 
 
 def test_csv_pipe_delimiter():
     r = convert("name|age|city\nAlice|30|NYC\nBob|25|LA\n", "json")
-    assert isinstance(r, dict) and "success" in r
+    # Pipe-delimited input should likewise be auto-detected into proper columns.
+    _assert_graceful(r)
+    assert r["success"]
+    rows = _j(r["output"])
+    assert len(rows) == 2 and rows[1]["name"] == "Bob" and rows[1]["age"] == "25"
 
 
 def test_csv_trailing_newline():
@@ -668,7 +720,10 @@ def test_csv_single_dict():
 def test_csv_empty_dict_list():
     """Serialize list with empty dicts — should error gracefully."""
     r = convert(json.dumps([{}]), "csv")
-    assert not r["success"] or isinstance(r, dict)
+    # A list of key-less dicts has no columns to write, so CSV serialization
+    # must fail with an explanatory error rather than emit a blank file.
+    _assert_graceful(r)
+    assert not r["success"]
 
 
 # ════════════════════════════════════════════════════════════════
@@ -706,19 +761,30 @@ def test_xml_cdata_with_entities_and_markup():
 def test_xml_attributes():
     src = '<root><item id="1" type="active">hello</item></root>'
     r = convert(src, "json", "xml")
-    assert isinstance(r, dict)
-    if r["success"]:
-        assert r["output_format"] == "json"
+    # Element attributes must be carried into the JSON output, not dropped.
+    _assert_graceful(r)
+    assert r["success"]
+    item = _j(r["output"])["item"]
+    assert item["id"] == "1" and item["type"] == "active" and item["#text"] == "hello"
 
 
 def test_xml_self_closing():
     r = convert('<root><null/><empty attr="x"/><value>text</value></root>', "json", "xml")
-    assert isinstance(r, dict)
+    # Self-closing tags must parse: a bare one becomes null, one with an
+    # attribute keeps the attribute, and sibling text is preserved.
+    _assert_graceful(r)
+    assert r["success"]
+    data = _j(r["output"])
+    assert data["null"] is None and data["empty"]["attr"] == "x" and data["value"] == "text"
 
 
 def test_xml_processing_instructions():
     src = '<?xml version="1.0" encoding="UTF-8"?>\n<root><item>val</item></root>'
-    assert isinstance(convert(src, "json", "xml"), dict)
+    r = convert(src, "json", "xml")
+    # The XML declaration must be skipped, leaving the element content intact.
+    _assert_graceful(r)
+    assert r["success"]
+    assert _j(r["output"])["item"] == "val"
 
 
 def test_xml_duplicate_elements():
