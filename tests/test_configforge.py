@@ -3,7 +3,7 @@ import sys, os, json
 import yaml
 import tomllib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from core.configforge import convert, convert_file, batch_convert, detect_format, SUPPORTED_FORMATS
+from core.configforge import convert, convert_file, batch_convert, batch_convert_stream, detect_format, SUPPORTED_FORMATS
 
 def test_detect_json():
     assert detect_format('{"a":1}') == "json"
@@ -80,7 +80,7 @@ def test_convert_xml_to_json():
     assert parsed["item"] == "hello"
 
 def test_roundtrip_json():
-    """Convert JSON → YAML → JSON should preserve data."""
+    """Convert JSON -> YAML -> JSON should preserve data."""
     original = '{"name":"Alice","age":30,"city":"NYC"}'
     r1 = convert(original, "yaml")
     assert r1["success"]
@@ -138,7 +138,7 @@ def test_detect_unknown():
     assert detect_format("some random text") == "unknown"
 
 def test_unicode():
-    r = convert('{"café": "☕", "日本語": "テスト"}', "yaml")
+    r = convert('{"caf\u00e9": "\u2615", "\u65e5\u672c\u8a9e": "\u30c6\u30b9\u30c8"}', "yaml")
     assert r["success"]
 
 def test_deeply_nested():
@@ -153,7 +153,7 @@ def test_large_array():
     list_from_yaml = yaml.safe_load(r["output"])
     assert list_from_yaml == d
 
-# ── Feature: Type inference for INI values ──
+# -- Feature: Type inference for INI values --
 def test_ini_type_inference_int():
     """INI value '42' should parse as int, not string."""
     r = convert("[section]\ncount=42\n", "json")
@@ -225,7 +225,7 @@ def test_ini_type_inference_direct():
     assert result["data"]["section"]["val"] == 42
     assert isinstance(result["data"]["section"]["val"], int)
 
-# ── Feature: Batch glob mode ──
+# -- Feature: Batch glob mode --
 def test_batch_convert_empty_glob(tmp_path):
     """Empty glob returns empty list with no errors."""
     results = batch_convert(str(tmp_path / "nonexistent_*.json"), "yaml")
@@ -275,3 +275,59 @@ def test_batch_convert_partial_failure(tmp_path):
     failures = [r for r in results if not r["success"]]
     assert len(successes) == 1
     assert len(failures) == 1
+
+
+# -- batch_convert_stream tests --
+
+
+def test_batch_convert_stream_basic(tmp_path):
+    """Streaming batch converts matching files correctly."""
+    for i in range(3):
+        (tmp_path / f"s{i}.json").write_text(f'{{"id": {i}}}')
+    results = list(batch_convert_stream(str(tmp_path / "*.json"), "yaml", show_progress=False))
+    items = [r for r in results if "_summary" not in r]
+    assert len(items) == 3
+    assert all(r["success"] for r in items)
+    last = results[-1]
+    assert "_summary" in last
+    assert last["_summary"]["total"] == 3
+    assert last["_summary"]["success"] == 3
+
+
+def test_batch_convert_stream_empty_glob(tmp_path):
+    """Streaming batch with no matching files yields empty summary."""
+    results = list(batch_convert_stream(str(tmp_path / "nofiles*.json"), "yaml", show_progress=False))
+    assert len(results) == 1
+    r = results[0]
+    assert r.get("_empty") is True
+    assert r["_summary"]["total"] == 0
+
+
+def test_batch_convert_stream_output_dir(tmp_path):
+    """Streaming batch creates output files."""
+    (tmp_path / "a.json").write_text('{"x": 1}')
+    (tmp_path / "b.json").write_text('{"y": 2}')
+    out_dir = tmp_path / "stream_out"
+    results = list(batch_convert_stream(str(tmp_path / "*.json"), "yaml", str(out_dir), show_progress=False))
+    items = [r for r in results if "_summary" not in r]
+    assert len(items) == 2
+    assert (out_dir / "a.yaml").exists()
+    assert (out_dir / "b.yaml").exists()
+    assert yaml.safe_load((out_dir / "a.yaml").read_text()) == {"x": 1}
+
+
+def test_batch_convert_stream_partial_failure(tmp_path):
+    """Streaming batch handles mixed success/failure."""
+    (tmp_path / "good.json").write_text('{"ok": true}')
+    (tmp_path / "bad.json").write_text("{{{invalid json}}}")
+    results = list(batch_convert_stream(str(tmp_path / "*.json"), "yaml", show_progress=False))
+    items = [r for r in results if "_summary" not in r]
+    assert len(items) == 2
+    successes = [r for r in items if r["success"]]
+    failures = [r for r in items if not r["success"]]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    last = results[-1]
+    assert last["_summary"]["total"] == 2
+    assert last["_summary"]["success"] == 1
+    assert last["_summary"]["errors"] == 1

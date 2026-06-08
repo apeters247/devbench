@@ -79,7 +79,7 @@ pip install -e ".[test]"
 python -m pytest tests/ -q --tb=line
 ```
 
-Current status: **565 tests passing, 7 skipped, 2 xfailed — 0 failures.**
+Current status: **574 tests passing, 7 skipped, 2 xfailed — 0 failures.**
 
 ## Project Structure
 

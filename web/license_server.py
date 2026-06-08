@@ -35,6 +35,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from web.license import LicenseManager, LicenseError, InvalidKey, ActivationLimit
+from web.api import RateLimiter
 
 DEFAULT_PORT = 9001
 LICENSE_DB = _PROJECT_ROOT / "var" / "licenses.db"
@@ -88,23 +89,13 @@ def _read_body(handler: BaseHTTPRequestHandler) -> str | None:
     return handler.rfile.read(length).decode("utf-8")
 
 
-# ── Rate Limiter (simple in-memory per-IP) ──────────────────────────────────
+# ── Rate Limiter (thread-safe, imported from api.py) ─────────────────────────
 
-_RATE_LIMIT = 60  # requests per minute
-_RATE_WINDOW = 60  # seconds
-_rates: dict[str, list[float]] = {}
+_rate_limiter = RateLimiter(max_requests=60, window=60)
 
 
 def _check_rate(ip: str) -> bool:
-    now = time.time()
-    if ip not in _rates:
-        _rates[ip] = []
-    # Prune old entries
-    _rates[ip] = [t for t in _rates[ip] if now - t < _RATE_WINDOW]
-    if len(_rates[ip]) >= _RATE_LIMIT:
-        return False
-    _rates[ip].append(now)
-    return True
+    return _rate_limiter.allow(ip)
 
 
 # ── Request Handler ──────────────────────────────────────────────────────────

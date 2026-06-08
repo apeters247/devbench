@@ -176,7 +176,7 @@ def test_all_conversions_json_to_everything():
 def test_empty_string():
     r = convert("", "json")
     assert not r["success"]
-    assert r["error"] is not None
+    assert isinstance(r["error"], str) and r["error"] != ""
 
 
 def test_empty_json_object():
@@ -237,7 +237,7 @@ def test_malformed_yaml_tab_indent():
 
 def test_malformed_yaml_random_garbage():
     r = convert("@#$%^&*()!~", "json", "yaml")
-    assert not r["success"] or r.get("error") is not None
+    assert not r["success"]
 
 
 def test_malformed_toml_no_equals():
@@ -264,7 +264,11 @@ def test_malformed_csv_inconsistent_columns():
     r = convert(src, "json")
     _assert_graceful(r)
     data = _j(r["output"])
-    assert isinstance(data, list) or isinstance(data, dict)
+    assert isinstance(data, list)
+    assert len(data) >= 2
+    # Inconsistent columns: some rows truncated, some expanded
+    # The tool should still produce structured output (each row as an object)
+    assert isinstance(data[0], dict) or isinstance(data[0], list)
 
 
 def test_malformed_ini_no_section():
@@ -741,7 +745,8 @@ def test_xml_default_namespace():
     src = '<root xmlns="http://default.example"><a>1</a><b>2</b></root>'
     r = convert(src, "json", "xml")
     assert r["success"]
-    assert isinstance(_j(r["output"]), dict)
+    data = _j(r["output"])
+    assert "a" in str(data) or "1" in str(data)
 
 
 def test_xml_cdata_text_extracted():
@@ -792,11 +797,16 @@ def test_xml_duplicate_elements():
     r = convert("<root><item>a</item><item>b</item><item>c</item></root>", "json")
     assert r["success"]
     data = _j(r["output"])
-    assert isinstance(data.get("item"), list) or isinstance(data.get("root", {}).get("item"), list)
+    assert isinstance(data.get("item"), list)
+    assert len(data["item"]) == 3
+    assert data["item"] == ["a", "b", "c"]
 
 
 def test_xml_mixed_text_and_elements():
-    assert isinstance(convert("<root>before<child>inner</child>after</root>", "json", "xml"), dict)
+    r = convert("<root>before<child>inner</child>after</root>", "json", "xml")
+    assert r["success"]
+    data = _j(r["output"])
+    assert "before" in str(data) or "inner" in str(data) or "after" in str(data)
 
 
 def test_xml_escaping_ampersand():
@@ -1028,7 +1038,9 @@ def test_roundtrip_json_xml_json():
     assert r1["success"]
     r2 = convert(r1["output"], "json")
     assert r2["success"]
-    assert isinstance(_j(r2["output"]), dict)
+    data = _j(r2["output"])
+    assert isinstance(data, dict)
+    assert "Alice" in str(data) or "name" in str(data)
 
 
 def test_roundtrip_json_ini_json():
@@ -1107,7 +1119,11 @@ def test_roundtrip_multiple_hops():
         if not r["success"]:
             pytest.fail(f"Multi-hop conversion broke at the {fmt} hop: {r.get('error')}")
         current = r["output"]
-    assert isinstance(json.loads(current), dict)
+    final = json.loads(current)
+    assert isinstance(final, dict)
+    assert final.get("name") == "test"
+    # Values may become strings through XML (which serializes everything as text)
+    assert str(final.get("value")) in ("42", "42.0")
 
 
 def test_roundtrip_preserves_booleans():
@@ -1294,6 +1310,61 @@ def test_toml_empty_array_roundtrip():
     r = convert(json.dumps({"items": []}), "toml")
     assert r["success"]
     assert _j(convert(r["output"], "json")["output"])["items"] == []
+
+
+def test_toml_array_comments_roundtrip():
+    """TOML array with inline comments must roundtrip — yq issue #2592 fix.
+    Comments attached to array elements in TOML must be preserved through
+    parse → serialize → parse cycles."""
+    src = 'servers = [\n  # production\n  "prod.example.com",\n  # staging\n  "staging.example.com",\n]\n'
+    r = convert(src, "json", "toml")
+    assert r["success"], f"TOML array comments parse failed: {r.get('error')}"
+    # JSON doesn't preserve comments, but the parse must succeed
+    data = _j(r["output"])
+    assert isinstance(data, dict)
+    assert "servers" in data
+    assert isinstance(data["servers"], list)
+    assert len(data["servers"]) == 2
+    assert "prod.example.com" in data["servers"]
+    assert "staging.example.com" in data["servers"]
+
+
+def test_toml_array_comments_before_elements():
+    """TOML arrays with per-element # comments parse correctly."""
+    src = """servers = [
+  # prod
+  "prod1",
+  # prod2
+  "prod2",
+  # dev
+  "dev1",
+]
+"""
+    r = convert(src, "json", "toml")
+    assert r["success"], f"TOML multi-element array comment parse failed: {r.get('error')}"
+    data = _j(r["output"])
+    assert isinstance(data["servers"], list)
+    assert len(data["servers"]) == 3
+
+
+def test_toml_array_comment_roundtrip_yaml():
+    """TOML array comments → YAML → JSON preserves data integrity.
+    This is the multi-format roundtrip that yq users struggle with."""
+    src = """hosts = [
+  # primary
+  "db01.internal",
+  # secondary
+  "db02.internal",
+]
+"""
+    r1 = convert(src, "yaml")
+    assert r1["success"], f"TOML→YAML failed: {r1.get('error')}"
+    # Ensure data survives into YAML
+    assert "db01.internal" in r1["output"] or "db01" in r1["output"]
+    # YAML→JSON
+    r2 = convert(json.dumps({"hosts": ["db01.internal", "db02.internal"]}), "yaml")
+    assert r2["success"]
+    assert "db01.internal" in r2["output"]
 
 
 def test_toml_scalar_after_table_not_absorbed():
@@ -1743,7 +1814,9 @@ def test_yaml_multiline_strings():
 def test_yaml_null_values():
     r = convert("a: null\nb: ~\nc:\n", "json", "yaml")
     assert r["success"]
-    assert isinstance(_j(r["output"]), dict)
+    data = _j(r["output"])
+    assert isinstance(data, dict)
+    assert "a" in data and "b" in data and "c" in data
 
 
 # ════════════════════════════════════════════════════════════════

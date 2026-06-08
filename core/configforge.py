@@ -41,26 +41,17 @@ try:
     import hcl2
     HAS_HCL = True
 except ImportError:
-    # python-hcl2 can't be installed system-wide here; it lives in a side venv.
-    # Fall back to that venv's site-packages (pure-Python: hcl2 + lark), which
-    # imports cleanly as long as the venv matches this interpreter's minor
-    # version. If it doesn't, HAS_HCL stays False and HCL ops report an error.
-    import glob as _glob
-    for _hcl_sp in _glob.glob("/tmp/devbench_venv/lib/python*/site-packages"):
-        if _hcl_sp not in sys.path:
-            sys.path.append(_hcl_sp)
-        try:
-            import hcl2
-            HAS_HCL = True
-            break
-        except ImportError:
-            continue
+    HAS_HCL = False
 
 try:
     import tomllib
     HAS_TOML = True
 except ImportError:
-    pass
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+        HAS_TOML = True
+    except ImportError:
+        pass
 
 try:
     import xml.etree.ElementTree as ET

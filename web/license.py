@@ -155,9 +155,8 @@ class LicenseManager:
         True if valid, False otherwise.
         """
         try:
-            payload, metadata, _ = self._parse(key)
+            payload, metadata, actual_sig = self._parse(key)
             expected_sig = self._sign(payload)
-            actual_sig = self._parse(key)[2]
 
             if not hmac.compare_digest(expected_sig, actual_sig):
                 return False
@@ -192,14 +191,18 @@ class LicenseManager:
             raise InvalidKey("Invalid signature")
 
         meta = json.loads(metadata)
+        expiry = meta.get("x", 0)
+        is_expired = bool(expiry and time.time() > expiry)
+        
         return {
+            "key": key,
             "email": meta["e"],
             "customer_id": meta["c"],
             "payment_intent": meta.get("p", ""),
             "issued_at": meta["i"],
-            "expiry": meta.get("x", 0),
-            "key": key,
-            "valid": True,
+            "expiry": expiry,
+            "is_expired": is_expired,
+            "valid": not is_expired # valid if not expired
         }
 
     # ── Activation Tracking ──────────────────────────────────────────────────
@@ -229,8 +232,9 @@ class LicenseManager:
         if not self.db_path:
             return {"status": "ok", "message": "Activation not tracked", "activations": 0}
 
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = sqlite3.connect(str(self.db_path))
             # Check if this machine already activated
             cur = conn.execute(
                 "SELECT id FROM activations WHERE license_key = ? AND machine_id = ?",
@@ -258,15 +262,17 @@ class LicenseManager:
                 "activations": count + 1,
             }
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def deactivate(self, key: str, machine_id: str) -> dict[str, Any]:
         """Remove a machine activation."""
         if not self.db_path:
             return {"status": "ok", "message": "Activation not tracked"}
 
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = sqlite3.connect(str(self.db_path))
             conn.execute(
                 "DELETE FROM activations WHERE license_key = ? AND machine_id = ?",
                 (key, machine_id),
@@ -278,22 +284,25 @@ class LicenseManager:
                 "activations": self._count_activations(key),
             }
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def list_activations(self, key: str) -> list[dict[str, Any]]:
         """List all activations for a license key."""
         if not self.db_path:
             return []
 
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = sqlite3.connect(str(self.db_path))
             cur = conn.execute(
                 "SELECT machine_id, activated_at FROM activations WHERE license_key = ? ORDER BY activated_at",
                 (key,),
             )
             return [{"machine_id": r[0], "activated_at": r[1]} for r in cur.fetchall()]
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     # ── Database Management ──────────────────────────────────────────────────
 
@@ -301,8 +310,9 @@ class LicenseManager:
         """Revoke a license key by setting its expiry to now."""
         if not self.db_path:
             return False
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = sqlite3.connect(str(self.db_path))
             conn.execute(
                 "UPDATE licenses SET expiry = ? WHERE license_key = ?",
                 (int(time.time()), key),
@@ -310,14 +320,16 @@ class LicenseManager:
             conn.commit()
             return conn.total_changes > 0
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def get_key_info(self, key: str) -> dict[str, Any] | None:
         """Get stored info for a key (from DB)."""
         if not self.db_path:
             return None
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = sqlite3.connect(str(self.db_path))
             cur = conn.execute(
                 "SELECT email, customer_id, payment_intent, issued_at, expiry FROM licenses WHERE license_key = ?",
                 (key,),
@@ -334,7 +346,8 @@ class LicenseManager:
                 }
             return None
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def find_keys_by_email(self, email: str) -> list[dict[str, Any]]:
         """Return stored license rows for ``email``, newest first.
@@ -344,8 +357,9 @@ class LicenseManager:
         """
         if not self.db_path:
             return []
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = sqlite3.connect(str(self.db_path))
             rows = conn.execute(
                 "SELECT license_key, email, customer_id, payment_intent, issued_at, expiry "
                 "FROM licenses WHERE email = ? ORDER BY issued_at DESC, created_at DESC",
@@ -363,7 +377,8 @@ class LicenseManager:
                 for r in rows
             ]
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def extend_expiry(self, key: str, additional_seconds: int) -> int:
         """Extend a stored license's expiry by ``additional_seconds``.
@@ -489,6 +504,21 @@ class LicenseManager:
             return row[0] if row else 0
         finally:
             conn.close()
+
+    def _check_activation_limit(self, key: str) -> bool:
+        if not self.db_path:
+            return True  # No DB, so no activation limits apply
+
+        conn = None  # Initialize conn to None for safer error handling
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            count = self._count_activations(key)
+            return count < self.max_activations
+        except sqlite3.Error:
+            return False # Database error means we can't confirm validity
+        finally:
+            if conn:
+                conn.close()
 
 
 def _default_secret() -> bytes:
