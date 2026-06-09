@@ -1916,7 +1916,10 @@ def convert_file(input_path: str, output_path: str = None, to_fmt: str = None, *
     result = convert(content, to_fmt, input_fmt, **options)
 
     if result["success"] and output_path:
-        Path(output_path).write_text(result["output"], encoding="utf-8")
+        try:
+            Path(output_path).write_text(result["output"], encoding="utf-8")
+        except OSError as exc:
+            result = {"success": False, "error": f"Cannot write output: {exc}"}
 
     return result
 

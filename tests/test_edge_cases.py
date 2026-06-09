@@ -1762,6 +1762,42 @@ def test_convert_file_binary():
     assert not convert("\x00\x01\x02\xff", "json")["success"]
 
 
+def test_convert_file_nonwritable_output_dir(tmp_path):
+    """convert_file returns error dict (not exception) when output dir is not writable."""
+    src = tmp_path / "in.json"
+    src.write_text('{"key": "val"}')
+    bad_out = "/nonexistent_dir_xyz/out.yaml"
+    r = convert_file(str(src), bad_out)
+    assert not r["success"], "Expected failure when output dir doesn't exist"
+    assert r.get("error"), "Expected error message on write failure"
+    assert "write" in r["error"].lower() or "cannot" in r["error"].lower()
+
+
+def test_convert_file_roundtrip(tmp_path):
+    """convert_file writes output to disk and the content is correct."""
+    src = tmp_path / "cfg.yaml"
+    src.write_text("name: alice\ncount: 7\n")
+    out = tmp_path / "cfg.json"
+    r = convert_file(str(src), str(out))
+    assert r["success"], f"convert_file failed: {r.get('error')}"
+    assert out.exists(), "Output file should be created"
+    import json as _json
+    data = _json.loads(out.read_text())
+    assert data["name"] == "alice"
+    assert data["count"] == 7
+
+
+def test_convert_file_format_from_extension(tmp_path):
+    """convert_file infers output format from the output file extension."""
+    src = tmp_path / "data.json"
+    src.write_text('{"x": 1}')
+    out = tmp_path / "data.toml"
+    r = convert_file(str(src), str(out))
+    assert r["success"]
+    assert r["output_format"] == "toml"
+    assert "x" in out.read_text()
+
+
 def test_convert_with_options():
     """Convert with sort_keys puts 'a' before 'b'."""
     r = convert(json.dumps({"b": 2, "a": 1, "c": 3}), "json", sort_keys=True, indent=4)

@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|**Last updated:** 2026-06-09T04:20Z (Builder: fixed Stripe webhook signature verification — signed payload now uses `{t}.{body}` per Stripe's v1 scheme (was signing body-only, making all real Stripe webhooks fail); added 5-minute replay protection; added 9 new tests for TestStripeSignatureVerification; absorbed polisher's .env escape fix and configforge_tool error propagation; 624 passed / 7 skipped / 2 xfailed, 0 failures) |
+|**Last updated:** 2026-06-09T04:35Z (Builder: fix convert_file OSError swallowed silently — wrap write_text in try/except, return error dict instead of raising; add 3 convert_file error-path tests: nonwritable-dir, roundtrip, format-from-extension; 627 passed / 7 skipped / 2 xfailed, 0 failures) |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-Builder cycle completed (2026-06-09T04:20Z). Fixed Stripe webhook signature verification — `_verify_stripe_sig` now signs `{timestamp}.{body}` per Stripe's v1 spec (was signing body-only, so all real Stripe webhooks rejected with bad sig); added 5-minute replay protection via timestamp tolerance check. Absorbed polisher's changes: .env parser now expands `\n \r \t \" \\` inside double-quoted values (dotenv-compatible) and strips inline comments in unquoted values; `configforge_tool` now returns error early on conversion failure instead of wrapping the error dict. Added 9 tests in `TestStripeSignatureVerification`. Tests: **624 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green.
+Builder cycle completed (2026-06-09T04:35Z). Fixed `convert_file()` silent OSError — `write_text()` wrapped in try/except, returns `{"success": False, "error": ...}` instead of raising on non-writable output path. Added 3 error-path tests: nonwritable-dir, roundtrip, format-from-extension. Prior cycle (04:20Z): Stripe webhook sig fix, .env escape sequences, configforge_tool error propagation. Tests: **627 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green.
 
 ## 4. Work Queue (ordered)
 
@@ -167,6 +167,8 @@ Builder cycle completed (2026-06-09T04:20Z). Fixed Stripe webhook signature veri
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T04:35Z | **Builder** (cron — this session) | **FIXED: convert_file() silent OSError swallowed — write_text now wrapped in try/except, returns error dict on non-writable path. Added 3 error-path tests (nonwritable-dir, roundtrip, format-from-extension). Tests: 627 passed, 7 skipped, 2 xfailed — 0 failures.** | **627/634 passing, all gates green.** |
 
 | 2026-06-09T04:20Z | **Builder** (cron — this session) | **SHIPPED: Stripe webhook sig fix (replay-attack vulnerability), .env double-quoted escape sequences, configforge_tool error propagation, 9 new Stripe sig tests.** (1) `_verify_stripe_sig` — signed payload now `{t}.{body}` per Stripe v1 (was body-only, rejected all real Stripe webhooks); added 5-min timestamp tolerance for replay protection. (2) `_unescape_double_quoted()` in ENV parser — `\n \r \t \" \\` sequences expanded in double-quoted values (dotenv-compatible). (3) Inline comment stripping for unquoted ENV values. (4) `configforge_tool` — early `_err()` return on `not raw["success"]` instead of wrapping error dict in `_ok()`. (5) `TestStripeSignatureVerification` — 9 tests covering valid/invalid/tampered/expired/future scenarios. Tests: **624 passed, 7 skipped, 2 xfailed — 0 failures**. +25 tests this cycle. | **624 passed, 7 skipped, 2 xfailed — 0 failures. All gates green.** |
 
