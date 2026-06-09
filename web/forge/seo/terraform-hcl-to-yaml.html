@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Terraform HCL to YAML Converter — Convert .tf and .tfvars Files Offline</title>
+  <meta name="description" content="Convert Terraform HCL files (.tf, .tfvars) to YAML, JSON, or TOML with ConfigForge CLI. Handles resource blocks, variable declarations, and nested maps. Works offline, no data sent to the cloud.">
+  <meta property="og:title" content="Terraform HCL to YAML Converter — Offline, Batch-Ready">
+  <meta property="og:description" content="Convert Terraform HCL configs to YAML or JSON without any online tool. ConfigForge handles variable blocks, resource blocks, and .tfvars files. One command, no data leaves your machine.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/terraform-hcl-to-yaml.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Terraform HCL to YAML Converter — ConfigForge CLI">
+  <meta name="twitter:description" content="Convert .tf and .tfvars files to YAML or JSON offline. ConfigForge supports HCL alongside 10 other formats.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "Convert Terraform HCL to YAML",
+    "description": "Step-by-step guide to converting Terraform HCL files (.tf, .tfvars) to YAML, JSON, or TOML using ConfigForge CLI.",
+    "step": [
+      {
+        "@type": "HowToStep",
+        "name": "Install ConfigForge",
+        "text": "Run: pip install devbench-cf"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Convert a .tfvars file to YAML",
+        "text": "Run: devbench cf terraform.tfvars --to yaml"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Convert a Terraform resource block to JSON",
+        "text": "Run: devbench cf main.tf --to json"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Batch convert all HCL files in a directory",
+        "text": "Run: devbench cf convert --batch '*.tfvars' --to yaml --output-dir ./yaml-vars/"
+      }
+    ],
+    "tool": {
+      "@type": "HowToTool",
+      "name": "ConfigForge (devbench cf)"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>Terraform HCL to YAML Converter — Offline, No Data Sent to the Cloud</h1>
+<br />
+<p>Terraform uses HCL (HashiCorp Configuration Language) for its <code>.tf</code> and <code>.tfvars</code> config files. But modern infrastructure pipelines often need that configuration in YAML — for Helm values, ArgoCD ApplicationSets, Kubernetes ConfigMaps, or Ansible playbooks. And CI/CD pipelines frequently need Terraform outputs as JSON for <code>jq</code> processing or artifact storage.</p>
+<br />
+<p>The problem: no clean, offline tool exists to convert HCL to YAML or JSON without installing the full Terraform binary or pasting sensitive infrastructure configs into a web form.</p>
+<br />
+<p><strong>ConfigForge</strong> (the <code>cf</code> command in <a href="https://pypi.org/project/devbench-cf/">devbench</a>) converts Terraform HCL files to YAML, JSON, TOML, and 8 other formats. It runs locally, nothing leaves your machine, and it handles <code>.tfvars</code>, resource blocks, variable declarations, and nested maps.</p>
+<br />
+
+<h2>Quick Start</h2>
+<br />
+<pre><code class="language-bash"># Install
+pip install devbench-cf
+
+# Convert a .tfvars file to YAML
+devbench cf terraform.tfvars --to yaml
+
+# Convert a Terraform module to JSON
+devbench cf main.tf --to json
+
+# Batch convert all .tfvars files
+devbench cf convert --batch '*.tfvars' --to yaml --output-dir ./yaml-vars/
+
+# Read from stdin (pipe from another command)
+cat terraform.tfvars | devbench cf --to yaml
+</code></pre>
+<br />
+
+<h2>Real-World Example: .tfvars → YAML</h2>
+<br />
+<p>A typical <code>production.tfvars</code> file:</p>
+<br />
+<pre><code class="language-hcl">region       = "us-east-1"
+environment  = "production"
+instance_count = 3
+enable_monitoring = true
+
+database = {
+  engine   = "postgres"
+  version  = "15"
+  size     = "db.t3.medium"
+}
+
+allowed_cidrs = ["10.0.0.0/8", "172.16.0.0/12"]
+</code></pre>
+<br />
+<p>One command converts it to YAML:</p>
+<br />
+<pre><code class="language-bash">devbench cf production.tfvars --to yaml</code></pre>
+<br />
+<pre><code class="language-yaml">region: us-east-1
+environment: production
+instance_count: 3
+enable_monitoring: true
+database:
+  engine: postgres
+  version: '15'
+  size: db.t3.medium
+allowed_cidrs:
+- 10.0.0.0/8
+- 172.16.0.0/12
+</code></pre>
+<br />
+
+<h2>Example: Resource Block → JSON (for CI/CD pipelines)</h2>
+<br />
+<p>A Terraform resource block in <code>main.tf</code>:</p>
+<br />
+<pre><code class="language-hcl">variable "region" {
+  default = "us-east-1"
+}
+
+resource "aws_instance" "web" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+  tags = {
+    Name = "web-server"
+    Env  = "production"
+  }
+}
+</code></pre>
+<br />
+<p>Convert to JSON for <code>jq</code> processing:</p>
+<br />
+<pre><code class="language-bash">devbench cf main.tf --to json | jq '.resource[0].aws_instance.web.instance_type'
+# → "t2.micro"</code></pre>
+<br />
+
+<h2>Why Not Use Online Converters?</h2>
+<br />
+<p>Terraform files contain sensitive information: account IDs, CIDR ranges, resource names, and sometimes credentials in <code>.tfvars</code> files. Pasting this into a web converter sends your infrastructure topology to a third-party server. ConfigForge runs entirely locally — no network calls, no data retention.</p>
+<br />
+
+<h2>Why Not Use terraform or hcl2json?</h2>
+<br />
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>HCL Input</th>
+      <th>YAML Output</th>
+      <th>JSON Output</th>
+      <th>TOML Output</th>
+      <th>Offline</th>
+      <th>pip install</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>ConfigForge</strong></td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>hcl2json</td>
+      <td>✅</td>
+      <td>❌</td>
+      <td>✅</td>
+      <td>❌</td>
+      <td>✅</td>
+      <td>❌ (Go binary)</td>
+    </tr>
+    <tr>
+      <td>terraform console</td>
+      <td>✅</td>
+      <td>❌</td>
+      <td>Partial</td>
+      <td>❌</td>
+      <td>✅</td>
+      <td>❌ (Terraform binary)</td>
+    </tr>
+    <tr>
+      <td>Online HCL converters</td>
+      <td>✅</td>
+      <td>Some</td>
+      <td>Some</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>N/A</td>
+    </tr>
+    <tr>
+      <td>yq / jq</td>
+      <td>❌</td>
+      <td>✅ (YAML only)</td>
+      <td>✅ (JSON only)</td>
+      <td>❌</td>
+      <td>✅</td>
+      <td>❌</td>
+    </tr>
+  </tbody>
+</table>
+<br />
+
+<h2>Common Use Cases</h2>
+<br />
+<h3>1. Generate Helm Values from Terraform Variables</h3>
+<p>Terraform and Helm often share configuration. Convert your <code>.tfvars</code> to a Helm-compatible <code>values.yaml</code>:</p>
+<pre><code class="language-bash">devbench cf infra/variables.tfvars --to yaml > helm/values-production.yaml</code></pre>
+<br />
+
+<h3>2. Feed Terraform Outputs into Ansible</h3>
+<p>Convert Terraform output files to YAML for Ansible inventory or variable files:</p>
+<pre><code class="language-bash">terraform output -json > tf-outputs.json
+devbench cf tf-outputs.json --to yaml > ansible/group_vars/production.yml</code></pre>
+<br />
+
+<h3>3. Batch Convert All Environment Files</h3>
+<p>Convert all environment-specific <code>.tfvars</code> files at once:</p>
+<pre><code class="language-bash">devbench cf convert --batch 'environments/*.tfvars' --to yaml --output-dir ./helm/values/</code></pre>
+<br />
+
+<h3>4. Extract Values with dot-notation (--get)</h3>
+<p>Read individual values from HCL config without parsing the full file:</p>
+<pre><code class="language-bash"># Get the database engine from a .tfvars file
+devbench cf production.tfvars --get database.engine
+# → postgres
+
+# Get instance count
+devbench cf production.tfvars --get instance_count
+# → 3</code></pre>
+<br />
+
+<h3>5. Update Values In-Place (--set --in-place)</h3>
+<p>Modify Terraform variable values without hand-editing the file:</p>
+<pre><code class="language-bash"># Update a variable value in-place
+devbench cf production.tfvars --set instance_count 5 --in-place
+
+# Promote to production instance type
+devbench cf production.tfvars --set database.size db.r5.large --in-place</code></pre>
+<br />
+
+<h2>Install ConfigForge</h2>
+<br />
+<pre><code class="language-bash">pip install devbench-cf
+
+# Verify installation
+devbench cf --list-formats
+# → hcl, json, yaml, toml, xml, csv, ini, env, properties, plist, jsonc</code></pre>
+<br />
+<p>ConfigForge works on Linux, macOS, and Windows. Python 3.10–3.13.</p>
+<br />
+
+<h2>Related Tools</h2>
+<br />
+<ul>
+  <li><a href="/tools/devbench/forge/seo/kubernetes-config-converter.html">Kubernetes YAML Converter</a> — convert K8s manifests between formats</li>
+  <li><a href="/tools/devbench/forge/seo/cloudformation-yaml-converter.html">CloudFormation YAML ↔ JSON Converter</a> — AWS template format conversion</li>
+  <li><a href="/tools/devbench/forge/seo/docker-compose-converter.html">Docker Compose Converter</a> — convert Docker Compose files</li>
+  <li><a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a> — why ConfigForge beats yq for multi-format pipelines</li>
+  <li><a href="/tools/devbench/forge/seo/toml-vs-yaml.html">TOML vs YAML</a> — choosing the right format for your Terraform ecosystem</li>
+</ul>
+<br />
+
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2025 NaxiAI. <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+    </div>
+  </footer>
+</body>
+</html>

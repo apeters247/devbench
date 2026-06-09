@@ -144,6 +144,84 @@ def test_convert_hcl_to_json_strips_quotes():
     assert json.loads(r["output"]) == {"name": "web", "port": 8080}
 
 
+# ── HCL → YAML / TOML cross-format conversions ──
+
+@requires_hcl
+def test_convert_hcl_to_yaml_variable_block():
+    """HCL variable block → YAML: Terraform-style input produces valid YAML."""
+    src = 'variable "region" {\n  default = "us-east-1"\n}\n'
+    r = convert(src, "yaml", "hcl")
+    assert r["success"], r.get("error")
+    import yaml as _yaml
+    parsed = _yaml.safe_load(r["output"])
+    # hcl2 wraps block-level items in lists
+    assert isinstance(parsed["variable"], list)
+    assert parsed["variable"][0]["region"]["default"] == "us-east-1"
+
+
+@requires_hcl
+def test_convert_hcl_to_yaml_resource_block():
+    """HCL resource block → YAML: instance_type and ami survive."""
+    src = 'resource "aws_instance" "web" {\n  instance_type = "t2.micro"\n  ami = "ami-12345"\n}\n'
+    r = convert(src, "yaml", "hcl")
+    assert r["success"], r.get("error")
+    import yaml as _yaml
+    parsed = _yaml.safe_load(r["output"])
+    resource_list = parsed["resource"]
+    assert isinstance(resource_list, list)
+    web = resource_list[0]["aws_instance"]["web"]
+    assert web["instance_type"] == "t2.micro"
+    assert web["ami"] == "ami-12345"
+
+
+@requires_hcl
+def test_convert_hcl_to_toml_flat_kvs():
+    """Flat HCL key-value pairs → TOML: produces valid, reparseable TOML."""
+    src = 'name = "web"\nreplicas = 3\nenabled = true\n'
+    r = convert(src, "toml", "hcl")
+    assert r["success"], r.get("error")
+    import tomllib as _tomllib
+    parsed = _tomllib.loads(r["output"])
+    assert parsed["name"] == "web"
+    assert parsed["replicas"] == 3
+    assert parsed["enabled"] is True
+
+
+@requires_hcl
+def test_convert_hcl_to_toml_nested_block():
+    """HCL inline map → TOML table: nested keys preserved."""
+    src = 'tags = { Name = "web-server", Env = "production" }\n'
+    r = convert(src, "toml", "hcl")
+    assert r["success"], r.get("error")
+    import tomllib as _tomllib
+    parsed = _tomllib.loads(r["output"])
+    assert parsed["tags"]["Name"] == "web-server"
+    assert parsed["tags"]["Env"] == "production"
+
+
+@requires_hcl
+def test_convert_hcl_output_format_fields():
+    """convert() sets input_format=hcl and output_format=yaml correctly."""
+    src = 'enabled = true\n'
+    r = convert(src, "yaml", "hcl")
+    assert r["success"], r.get("error")
+    assert r["input_format"] == "hcl"
+    assert r["output_format"] == "yaml"
+
+
+@requires_hcl
+def test_convert_hcl_to_yaml_then_back_to_json():
+    """HCL → YAML → JSON pipeline: content survives two hops."""
+    src = 'name = "api"\nport = 8080\n'
+    yaml_r = convert(src, "yaml", "hcl")
+    assert yaml_r["success"], yaml_r.get("error")
+    json_r = convert(yaml_r["output"], "json", "yaml")
+    assert json_r["success"], json_r.get("error")
+    data = json.loads(json_r["output"])
+    assert data["name"] == "api"
+    assert data["port"] == 8080
+
+
 # ── Graceful error when the library is unavailable ──
 def test_hcl_unavailable_returns_error(monkeypatch):
     monkeypatch.setattr(cf, "HAS_HCL", False)

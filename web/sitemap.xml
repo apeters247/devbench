@@ -111,6 +111,20 @@
     <priority>0.7</priority>
   </url>
 
+  <!-- SEO — Terraform / HCL format converter -->
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/terraform-hcl-to-yaml.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <!-- SEO — JSONC / tsconfig.json / VS Code settings -->
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/jsonc-converter.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
   <!-- SEO — use-case / ecosystem pages -->
   <url>
     <loc>https://naxiai.com/tools/devbench/forge/seo/toml-vs-yaml.html</loc>

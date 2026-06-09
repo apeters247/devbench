@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-**Builder cycle (2026-06-09T09:00Z).** (1) Committed polisher's plist format (10th format) + TOML empty-header fix + batch_convert_stream/TOML tests from working tree. (2) Updated all marketing: "9 formats" → "10 formats", added plist to format lists across index.html, value-proposition.html, og/twitter meta. (3) Created 2 new SEO pages: `llm-token-counter.html` (CLI token counter + RAG text chunker) and `plist-converter.html` (plist↔YAML/JSON macOS CI). (4) Updated `sitemap.xml` to 27 URLs (+2 new pages). (5) Linked new pages from index.html SEO section and "how it compares" nav. Tests: **654 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
+**Builder cycle (2026-06-09T12:00Z).** (1) Added 6 HCL→YAML/TOML cross-format tests to `tests/test_hcl.py` (deep audit flagged 0 coverage for HCL→non-JSON paths; all pass). (2) Created `web/forge/seo/terraform-hcl-to-yaml.html` — Terraform audience SEO page targeting "terraform hcl to yaml", "convert tfvars to yaml", "hcl to json converter"; includes feature comparison table, 5 real-world use cases, --get/--set examples. (3) Added new page to `sitemap.xml` (28 URLs) and linked from both nav sections of index.html. Tests: **691 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
 
 ## 4. Work Queue (ordered)
 
@@ -167,6 +167,10 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T12:00Z | **Builder** (cron — this session) | **SHIPPED: HCL→YAML/TOML tests (6 new, closes deep audit gap), Terraform HCL→YAML SEO page (targets "terraform hcl to yaml" / "tfvars to yaml" / "hcl to json" keywords), sitemap.xml updated to 28 URLs. Tests: **691 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green.** | **691 passing, all green. +6 HCL cross-format tests. +1 SEO page (Terraform/HCL).** |
+
+| 2026-06-09T05:17Z | **Polisher** (cron — this session) | **SHIPPED: JSONC format (11th format)** — addresses yq GitHub issue #2536, top user request for config tools used in devops (tsconfig.json, .vscode/settings.json, Azure DevOps configs). Added `_strip_jsonc()` state-machine parser (strips `//`/`/* */` comments, trailing commas, preserves string literal content). Updated `detect_format`, `parse_text`, `serialize`, `SUPPORTED_FORMATS`, both `ext_map` instances, CLI description. 27 new tests in `tests/test_jsonc.py`. Fixed `test_configforge.py::test_supported_formats` hardcoded list. Builder's last change reviewed (plist + TOML empty-header + batch_convert_stream): no bugs. Tests: **681 passed, 7 skipped, 2 xfailed — 0 failures**. | **681 passing, all green. +27 tests. JSONC is 11th format.** |
 
 | 2026-06-09T09:00Z | **Builder** (cron — this session) | **SHIPPED: 10th format (plist), 2 new SEO pages, marketing 9→10 formats.** (1) Committed polisher's plist work from working tree — detect/parse/serialize Apple plist via stdlib plistlib, 12 new tests (batch_convert_stream + TOML empty-header + plist). (2) TOML empty-header fix: `_to_toml` no longer emits `[section]` headers for intermediate-only tables (fixes pyproject.toml-style output). (3) Updated all marketing from "9 formats" to "10 formats" across index.html + value-proposition.html; updated ROI: $19/10 = $1.90/format, added plist row to comparison table. (4) Created `web/forge/seo/llm-token-counter.html` — targets "CLI token counter LLM", "tiktoken CLI", "RAG text chunker"; showcases devbench token + chunk tools. (5) Created `web/forge/seo/plist-converter.html` — targets "plist to yaml", "PlistBuddy alternative", "macOS CI plist"; showcases plist format. (6) Updated sitemap.xml from 25 to 27 URLs, linked both new pages from index.html nav. Tests: **654 passed, 7 skipped, 2 xfailed — 0 failures**. | **654/663 passing, all green. +2 SEO pages. plist is 10th format. LLM tools featured.** |
 
@@ -340,12 +344,12 @@ If both workers run simultaneously and need to update the same file:
 
 || Metric | Current | Target |
 |||||--------|---------|--------|
-|| Test pass rate | 647 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+|| Test pass rate | 691 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 || Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 || GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 || Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |
 || CLI tools | 11 (added token, chunk LLM tools) | 9+ (can add more) |
-|| Config formats | 9 (json, yaml, toml, xml, csv, ini, env, hcl, properties) | 9 (all implemented) |
+|| Config formats | 11 (json, yaml, toml, xml, csv, ini, env, hcl, properties, plist, jsonc) | 11 (all implemented) |
 || Config CRUD | ✅ --get/--set/--delete PATH + --in-place flag across all 9 formats | Full value manipulation |
 || Comment preservation | ✅ Implemented (YAML + INI) + round-trip tests | Preserved through JSON round-trip |
 || macOS build | Blocked | Signed .dmg |
@@ -358,7 +362,7 @@ If both workers run simultaneously and need to update the same file:
 || Release pipeline | ✅ forge/release-checklist.md | pip + version bump + changelog |
 || Installer systemd | ✅ scripts/install.sh auto-configures services | One-command deploy |
 || User complaints addressed | #1 offline ✅, #2 unified CLI ✅, batch ✅, 10K+ streaming ✅, error messages ✅, `python3 -m devbench` works ✅ | All top complaints solved |
-|| sitemap.xml | ✅ web/sitemap.xml (25 URLs, all core + SEO pages) | Search engine discoverability |
+|| sitemap.xml | ✅ web/sitemap.xml (28 URLs, all core + SEO pages) | Search engine discoverability |
 
 | Metric | Current | Target |
 |||||--------|---------|--------|
@@ -407,3 +411,9 @@ If both workers run simultaneously and need to update the same file:
 - **TESTS**: 633 passed, 7 skipped, 2 xfailed (+4 new --get tests, 5 weak isinstance assertions replaced with real checks, 1 is-not-None replaced with content check)
 - **CODE REVIEW**: Builder's multiline ENV parser — no bugs found; Windows line endings, empty strings, escape sequences all correct
 - **REPORT**: forge/external-review-20260609-0422.md
+
+## Polisher Run at 20260609-0531
+- **BUILT**: jq-style stdin passthrough — when `--to` is omitted, auto-detect format and pretty-print (HN complaint: "yq doesn't accept stdin the way jq does"). `echo '{"x":1}' | configforge` now works like `jq '.'`. Works for both stdin and file args.
+- **TESTS**: 685 passed, 7 skipped, 2 xfailed (+4 new passthrough tests: JSON stdin, YAML stdin, file passthrough, unknown-format error)
+- **CODE REVIEW**: Builder's JSONC implementation — `_strip_jsonc` handles URLs in strings, nested trailing commas, unterminated block comments. No bugs found.
+- **REPORT**: forge/external-review-20260609-0531.md
