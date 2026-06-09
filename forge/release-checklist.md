@@ -156,6 +156,57 @@ After PyPI publish:
 
 ---
 
+---
+
+## Distribution Channel Launch Sequence
+
+Execute in this order — each channel is independent and can be done before Mac Mini arrives:
+
+### Channel 1 — PyPI (READY — do first, enables all other channels)
+```bash
+python3 -m build
+python3 -m twine upload dist/*
+# Verify: pip install devbench && devbench --version
+```
+
+### Channel 2 — Custom Homebrew Tap (READY after PyPI upload)
+```bash
+# Requires: gh CLI (brew install gh) + gh auth login
+bash scripts/create-homebrew-tap.sh 0.1.0
+# Verify: brew tap apeters247/devbench && brew install devbench
+```
+Users install with:
+```bash
+brew tap apeters247/devbench
+brew install devbench
+```
+
+### Channel 3 — Gumroad (BLOCKED on notarized macOS .app)
+- Requires Mac Mini for `xcrun notarytool submit`
+- Product listing content: `forge/gumroad-setup.md`
+- 15-20% Gatekeeper dialog drop-off without notarization — do NOT skip
+
+### Channel 4 — Mac App Store (BLOCKED on Mac Mini)
+- Requires Xcode + Apple Developer account ($99/yr)
+- Devly ($4.99) is #1 paid Dev Tool — validates the audience exists
+- Submit AFTER Gumroad is live (App Store review ~1-7 days)
+
+### Channel 5 — Reddit r/devops post (READY after any channel is live)
+- Target: r/devops, r/kubernetes, r/devops
+- Headline: "I built a CLI that preserves YAML comments through config conversion (unlike dasel)"
+- Frame as technical problem-solved, not promotion
+
+### Channel 6 — HN Show HN (READY after v0.1.0 is polished)
+- Best for GitHub stars + developer credibility
+- CI/CD use case: `pip install devbench` in a pipeline, zero deps
+
+### Channel 7 — Setapp (v0.2.0 — after Mac Mini)
+- Devly is already on Setapp — same audience confirmed
+- 70-90% revenue share (better than App Store's 70%)
+- Submit v0.2.0 (after Pro tier feature diff is defined)
+
+---
+
 ## Rollback
 
 ```bash
