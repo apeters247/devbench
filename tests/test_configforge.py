@@ -2479,3 +2479,63 @@ def test_each_json5_input(tmp_path, capsys):
     assert rc == 0
     import json
     assert set(json.loads(capsys.readouterr().out)) == {"alpha", "beta"}
+
+
+# ── configforge.main() --each parity tests ──────────────────────────────────
+
+def test_main_each_simple(tmp_path, capsys):
+    """configforge --each extracts a field from each list element."""
+    from core.configforge import main
+    src = tmp_path / "items.yaml"
+    src.write_text("- name: alpha\n  port: 8080\n- name: beta\n  port: 9090\n")
+    rc = main([str(src), "--each", "name", "--to", "json"])
+    assert rc == 0
+    import json
+    assert json.loads(capsys.readouterr().out) == ["alpha", "beta"]
+
+
+def test_main_each_with_get(tmp_path, capsys):
+    """configforge --get PATH --each KEY extracts field from nested list."""
+    from core.configforge import main
+    import json
+    src = tmp_path / "deploy.yaml"
+    src.write_text("spec:\n  containers:\n  - name: app\n    image: nginx\n  - name: sidecar\n    image: envoy\n")
+    rc = main([str(src), "--get", "spec.containers", "--each", "name", "--to", "json"])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out) == ["app", "sidecar"]
+
+
+def test_main_each_with_select(tmp_path, capsys):
+    """configforge --select --each chains filtering with field extraction."""
+    from core.configforge import main
+    import json
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: pod-a\n  status: Running\n"
+        "- name: pod-b\n  status: Pending\n"
+        "- name: pod-c\n  status: Running\n"
+    )
+    rc = main([str(src), "--select", "status=Running", "--each", "name", "--to", "json"])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out) == ["pod-a", "pod-c"]
+
+
+def test_main_each_missing_key_skipped(tmp_path, capsys):
+    """configforge --each silently omits items missing the key."""
+    from core.configforge import main
+    import json
+    src = tmp_path / "mixed.json"
+    src.write_text('[{"name": "a"}, {"port": 80}, {"name": "b"}]')
+    rc = main([str(src), "--each", "name", "--to", "json"])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out) == ["a", "b"]
+
+
+def test_main_each_not_a_list_error(tmp_path, capsys):
+    """configforge --each exits 1 when input is not a list."""
+    from core.configforge import main
+    src = tmp_path / "scalar.yaml"
+    src.write_text("name: single\n")
+    rc = main([str(src), "--each", "name"])
+    assert rc == 1
+    assert "error" in capsys.readouterr().err.lower()

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>JSON5 Converter — Convert JSON5 to JSON, YAML, TOML | ConfigForge</title>
+  <meta name="description" content="Convert JSON5 files to JSON, YAML, TOML and 9 other formats from the CLI. Handles single quotes, unquoted keys, comments, trailing commas. No Node.js required.">
+  <meta property="og:title" content="JSON5 Converter — Convert JSON5 to JSON, YAML, TOML | ConfigForge">
+  <meta property="og:description" content="Convert JSON5 (relaxed JSON with comments, single quotes, unquoted keys) to any config format. Works in CI/CD pipelines. Pure Python, no Node.js dependency.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/json5-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="JSON5 Converter CLI — JSON5 to JSON, YAML, TOML">
+  <meta name="twitter:description" content="Auto-detect and convert JSON5 config files from the command line. No json5 npm package, no Node.js. Works in any Python environment.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI JSON5 converter. Convert JSON5 (with comments, single quotes, unquoted keys, trailing commas) to JSON, YAML, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<main>
+
+<h1>JSON5 Converter — CLI Tool for JSON5 Files</h1>
+
+<p>
+  Convert JSON5 files to JSON, YAML, TOML, and 9 other formats from the command line.
+  Auto-detects JSON5 syntax: single quotes, unquoted keys, comments, trailing commas.
+  Pure Python — no Node.js, no npm packages.
+</p>
+
+<h2>What Is JSON5?</h2>
+
+<p>JSON5 is a relaxed superset of JSON popular in JavaScript tooling (ESLint configs, Babel configs, VS Code settings). It adds human-friendly features that standard JSON forbids:</p>
+
+<ul>
+  <li>Single-quoted strings: <code>'hello'</code></li>
+  <li>Unquoted object keys: <code>{ name: "value" }</code></li>
+  <li>Comments: <code>// single-line</code> and <code>/* block */</code></li>
+  <li>Trailing commas: <code>[1, 2, 3,]</code></li>
+</ul>
+
+<h2>Convert JSON5 to JSON</h2>
+
+<pre><code># Convert .json5 file to standard JSON
+devbench cf config.json5 --to json
+
+# Auto-detected from content (no --from needed)
+devbench cf .eslintrc.js --to json</code></pre>
+
+<h3>Input (<code>config.json5</code>):</h3>
+<pre><code>{
+  // Database connection settings
+  host: 'localhost',
+  port: 5432,
+  database: 'myapp',
+  options: {
+    timeout: 30,
+    retries: 3,   // trailing comma is fine
+  }
+}</code></pre>
+
+<h3>Output (<code>--to json</code>):</h3>
+<pre><code>{
+  "host": "localhost",
+  "port": 5432,
+  "database": "myapp",
+  "options": {
+    "timeout": 30,
+    "retries": 3
+  }
+}</code></pre>
+
+<h2>Convert JSON5 to YAML</h2>
+
+<pre><code>devbench cf config.json5 --to yaml</code></pre>
+
+<pre><code>host: localhost
+port: 5432
+database: myapp
+options:
+  timeout: 30
+  retries: 3</code></pre>
+
+<h2>Convert JSON5 to TOML</h2>
+
+<pre><code>devbench cf config.json5 --to toml</code></pre>
+
+<pre><code>host = "localhost"
+port = 5432
+database = "myapp"
+
+[options]
+timeout = 30
+retries = 3</code></pre>
+
+<h2>Auto-Detection</h2>
+
+<p>DevBench detects JSON5 automatically from content — no <code>--from</code> flag needed for files with JSON5 syntax:</p>
+
+<pre><code># Both work:
+devbench cf settings.json5 --to yaml
+devbench cf settings.json5 --from json5 --to yaml</code></pre>
+
+<h2>Works in CI/CD Pipelines</h2>
+
+<pre><code># Extract a value from a JSON5 config in CI
+VERSION=$(devbench cf package.json5 --get version)
+
+# Validate a JSON5 config is parseable
+devbench cf .eslintrc.json5 --validate &amp;&amp; echo "Config OK"
+
+# Convert JSON5 config to YAML for Ansible
+devbench cf app.json5 --to yaml &gt; vars/app.yml</code></pre>
+
+<h2>No Node.js Required</h2>
+
+<p>Most JSON5 tools require Node.js or the <code>json5</code> npm package. DevBench is pure Python — works in any environment:</p>
+
+<pre><code>pip install devbench
+devbench cf config.json5 --to json</code></pre>
+
+<p>No <code>npm install -g json5</code>, no Node version conflicts, no runtime dependencies beyond Python 3.10+.</p>
+
+<h2>Install</h2>
+
+<pre><code>pip install devbench
+# or
+brew install apeters247/tap/devbench</code></pre>
+
+<h2>How It Compares</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>JSON5 support</th>
+      <th>Output formats</th>
+      <th>Runtime</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>devbench</strong></td>
+      <td>Auto-detected</td>
+      <td>12 formats</td>
+      <td>Python 3.10+</td>
+    </tr>
+    <tr>
+      <td>json5 CLI</td>
+      <td>Yes</td>
+      <td>JSON only</td>
+      <td>Node.js</td>
+    </tr>
+    <tr>
+      <td>jq</td>
+      <td>No</td>
+      <td>JSON only</td>
+      <td>C binary</td>
+    </tr>
+    <tr>
+      <td>yq</td>
+      <td>No</td>
+      <td>YAML/JSON/XML</td>
+      <td>Go binary</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>More CLI Config Tools</h2>
+<ul>
+  <li><a href="jsonc-converter.html">JSONC (JSON with Comments) converter</a></li>
+  <li><a href="json-to-yaml-converter.html">JSON to YAML converter</a></li>
+  <li><a href="toml-converter.html">TOML converter</a></li>
+  <li><a href="filter-yaml-array-by-field.html">Filter YAML array by field value</a></li>
+  <li><a href="extract-field-from-yaml-list.html">Extract field from every list item (<code>--each</code>)</a></li>
+</ul>
+
+</main>
+</body>
+</html>

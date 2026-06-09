@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Extract Field from YAML List — devbench cf --each | ConfigForge</title>
+  <meta name="description" content="Extract a field from every item in a YAML, JSON, or TOML list with one flag. devbench cf pods.yaml --each metadata.name — replaces jq '[.[] | .name]' and yq '.[].name'.">
+  <meta property="og:title" content="Extract Field from YAML List — devbench cf --each | ConfigForge">
+  <meta property="og:description" content="Pull a single field from every element in a config array. Works on YAML, JSON, TOML and 8 more formats. Combine with --select to filter first. Replaces jq array iteration.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/extract-field-from-yaml-list.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Extract Field from YAML List — devbench cf --each">
+  <meta name="twitter:description" content="Get all container names, pod names, service ports from a YAML list. Simpler than jq '[.[] | .name]' — one flag, no syntax.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config array field extractor. Pull a field from every list element across YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC, JSON5.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<main>
+
+<h1>Extract a Field from Every Item in a YAML List — <code>devbench cf --each</code></h1>
+
+<p>
+  Pull a single key from every element of a config array in any format.
+  One flag replaces jq array iteration expressions and yq map operations.
+</p>
+
+<h2>The Problem: jq Array Iteration Is Verbose</h2>
+
+<p>Extracting all container names with jq:</p>
+<pre><code>kubectl get pods -o json | jq '[.items[].spec.containers[].name]'</code></pre>
+
+<p>With yq:</p>
+<pre><code>yq '.spec.containers[].name' deploy.yaml</code></pre>
+
+<p>Both work, but you need to remember the syntax for each tool, and neither handles TOML, INI, or .env files.</p>
+
+<h2>The Solution: <code>devbench cf --each</code></h2>
+
+<pre><code># Get all container names from a deployment
+devbench cf deploy.yaml --get spec.containers --each name
+
+# Output (JSON by default):
+["app", "sidecar", "proxy"]</code></pre>
+
+<p><code>--each KEY</code> extracts KEY from every element of a list. Items missing the key are silently omitted. Output is a list in any format you choose.</p>
+
+<h2>Works on Every Format</h2>
+
+<p>Unlike jq (JSON only) or yq (YAML only), <code>--each</code> works on all 12 supported formats:</p>
+
+<pre><code># From TOML
+devbench cf services.toml --each name --to json
+
+# From JSON
+devbench cf package.json --get dependencies --each name --to yaml
+
+# From CSV (list of records)
+devbench cf hosts.csv --each hostname --to json</code></pre>
+
+<h2>Chain with --select to Filter First</h2>
+
+<p>The real power comes from chaining <code>--select</code> and <code>--each</code>:</p>
+
+<pre><code># Get names of only Running pods
+devbench cf pods.yaml --select status=Running --each metadata.name
+
+# Get images of containers matching a name pattern (with --get to navigate first)
+devbench cf deploy.yaml --get spec.containers --select name=nginx --each image</code></pre>
+
+<p>This replaces:</p>
+<pre><code># jq equivalent (much harder to remember)
+jq '[.[] | select(.status == "Running") | .metadata.name]' pods.json
+
+# yq equivalent
+yq '.[] | select(.status == "Running") | .metadata.name' pods.yaml</code></pre>
+
+<h2>Dot-Notation for Nested Fields</h2>
+
+<p>KEY supports dot-notation for nested paths:</p>
+
+<pre><code># Extract nested ports from a service list
+devbench cf services.yaml --each spec.ports.0.port
+
+# Extract nested metadata names from a list of k8s resources
+devbench cf resources.yaml --each metadata.name</code></pre>
+
+<h2>Real-World Examples</h2>
+
+<h3>Kubernetes: List all container images in a deployment</h3>
+<pre><code>devbench cf deploy.yaml --get spec.template.spec.containers --each image</code></pre>
+
+<h3>Docker Compose: Get all service names</h3>
+<pre><code># Compose files use a map, not a list — navigate first
+devbench cf docker-compose.yaml --keys</code></pre>
+
+<h3>GitHub Actions: Extract all step names from a workflow</h3>
+<pre><code>devbench cf .github/workflows/ci.yml --get jobs.build.steps --each name</code></pre>
+
+<h3>Terraform: Get all resource names from a plan (JSON)</h3>
+<pre><code>terraform show -json | devbench cf - --get resource_changes --each address</code></pre>
+
+<h3>Script: Get all service names and iterate in bash</h3>
+<pre><code>for svc in $(devbench cf services.yaml --each name --to json | jq -r '.[]'); do
+  echo "Deploying $svc"
+done</code></pre>
+
+<h2>Install</h2>
+
+<pre><code>pip install devbench
+# or
+brew install apeters247/tap/devbench</code></pre>
+
+<h2>How It Compares</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Extract names from YAML list</th>
+      <th>Formats</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>devbench</strong></td>
+      <td><code>--each name</code></td>
+      <td>12 formats</td>
+    </tr>
+    <tr>
+      <td>jq</td>
+      <td><code>[.[] | .name]</code></td>
+      <td>JSON only</td>
+    </tr>
+    <tr>
+      <td>yq</td>
+      <td><code>.[].name</code></td>
+      <td>YAML/JSON</td>
+    </tr>
+    <tr>
+      <td>dasel</td>
+      <td><code>.-[*].name</code></td>
+      <td>YAML/JSON/TOML/CSV</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>More CLI Config Tools</h2>
+<ul>
+  <li><a href="filter-yaml-array-by-field.html">Filter YAML array by field value (<code>--select</code>)</a></li>
+  <li><a href="get-default-value-cli.html">Get config value with fallback default (<code>--get --default</code>)</a></li>
+  <li><a href="assert-config-value.html">Assert config values in CI/CD (<code>--assert</code>)</a></li>
+  <li><a href="json-to-yaml-converter.html">JSON to YAML converter</a></li>
+  <li><a href="toml-converter.html">TOML converter</a></li>
+</ul>
+
+</main>
+</body>
+</html>

@@ -3153,6 +3153,16 @@ Compared to yq/jq:
                              "'replace' (default) replaces the base list with the overlay list; "
                              "'append' appends the overlay list to the base list "
                              "(useful for Kubernetes env-vars, volumes, containers).")
+    parser.add_argument("--each", metavar="KEY", default=None, dest="each_key",
+                        help="Extract KEY from each element of a list and output the resulting list. "
+                             "Equivalent to jq '[.[] | .key]' or yq '.[].key'. "
+                             "KEY uses dot-notation (e.g. metadata.name, spec.ports.0.port). "
+                             "Items missing the key are omitted. "
+                             "Combine with --get to navigate to the list first, "
+                             "or with --select to filter before extracting. "
+                             "Exit 0=ok, 1=input is not a list. "
+                             "Example: configforge deploy.yaml --get spec.containers --each name  "
+                             "         configforge pods.yaml --select status=Running --each metadata.name")
     parser.add_argument("--select", metavar="FIELD=VALUE", default=None, dest="select_expr",
                         help="Filter a list: keep items where FIELD equals VALUE. "
                              "Use FIELD!=VALUE to negate. Exit 0=matches, 1=no matches. "
@@ -3201,6 +3211,80 @@ Compared to yq/jq:
         data = parsed.get("data", parsed)
         for k in _list_keys(data, recursive=args.recursive):
             print(k)
+        return 0
+
+    if args.each_key:
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        detected_fmt = parsed.get("format", "yaml")
+        if args.get:
+            try:
+                data = _get_by_path(data, args.get)
+            except (KeyError, IndexError) as exc:
+                default = getattr(args, "get_default", None)
+                if default is not None:
+                    sys.stdout.write(default + "\n")
+                    return 0
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        # Apply --select filter before --each if both are present
+        if args.select_expr:
+            expr = args.select_expr
+            if "!=" in expr:
+                field_sel, raw_val = expr.split("!=", 1)
+                negate_sel = True
+            elif "=" in expr:
+                field_sel, raw_val = expr.split("=", 1)
+                negate_sel = False
+            else:
+                print(f"error: invalid --select expression {expr!r}; "
+                      "expected FIELD=VALUE or FIELD!=VALUE", file=sys.stderr)
+                return 1
+            coerced_sel = _coerce_set_value(raw_val)
+            def _sel_matches(item):
+                if not isinstance(item, dict):
+                    return False
+                try:
+                    return (_get_by_path(item, field_sel) == coerced_sel) != negate_sel
+                except (KeyError, IndexError, TypeError):
+                    return False
+            if isinstance(data, list):
+                data = [item for item in data if _sel_matches(item)]
+        if not isinstance(data, list):
+            print("error: --each requires a list; input is not a list "
+                  "(use --get PATH to navigate to one)", file=sys.stderr)
+            return 1
+        results = []
+        for item in data:
+            try:
+                val = _get_by_path(item, args.each_key)
+                results.append(val)
+            except (KeyError, IndexError, TypeError):
+                pass
+        to_fmt_each = args.to or detected_fmt
+        compact = getattr(args, "compact", False)
+        if to_fmt_each in ("yaml", "yml"):
+            import yaml as _yaml
+            output_text = _yaml.dump(results, default_flow_style=False,
+                                     allow_unicode=True, indent=args.indent)
+        elif to_fmt_each in ("json", "jsonc"):
+            output_text = (json.dumps(results, separators=(",", ":"))
+                           if compact else json.dumps(results, indent=args.indent)) + "\n"
+        else:
+            try:
+                output_text = serialize(results, to_fmt_each, **options)
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        if not output_text.endswith("\n"):
+            output_text += "\n"
+        sys.stdout.write(output_text)
         return 0
 
     if args.select_expr:

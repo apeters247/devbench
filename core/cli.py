@@ -3003,7 +3003,7 @@ def _run_cf_template(args) -> int:
 _CF_FLAGS = (
     "--to --from --get --default --set --append --delete --rename --merge --list-merge "
     "--in-place -i --backup --diff --validate --count --type --keys "
-    "--recursive -R --pick --select --grep --grep-case-sensitive "
+    "--recursive -R --pick --select --each --grep --grep-case-sensitive "
     "--flatten --unflatten --sep --env-expand "
     "--batch --stream --output-dir --sort-keys --sort-keys-reverse --indent "
     "--flatten-xml --no-comments --yaml12 --template-safe "
@@ -3077,7 +3077,9 @@ _devbench_complete() {{
                 --merge|--diff|--output-dir)
                     COMPREPLY=( $(compgen -f -- "$cur") )
                     return 0 ;;
-                --port|--api-port|--get|--set|--delete|--count|--type|--pick|--grep|--append)
+                --port|--api-port|--get|--set|--delete|--count|--type|--pick|--grep|--append|\
+                --each|--select|--default|--rename|--assert|--mask|--mask-value|--path-exists|\
+                --backup|--sep|--indent)
                     return 0 ;;
             esac
             if [[ "$cur" == -* ]]; then
@@ -3154,6 +3156,7 @@ _devbench() {{
                         '--get=[Get value at dotted path]:path:' \\
                         '--default=[Fallback when --get path is missing]:value:' \\
                         '--select=[Filter list by FIELD=VALUE or FIELD!=VALUE condition]:expr:' \\
+                        '--each=[Extract KEY from each list element]:key:' \\
                         '--set=[Set value: --set PATH VALUE]:path value:' \\
                         '--append=[Append value: --append PATH VALUE]:path value:' \\
                         '--delete=[Delete value at path]:path:' \\
@@ -3260,30 +3263,36 @@ complete -c devbench -n __devbench_seen_cf -l to   -d 'Output format' -r -f -a "
 complete -c devbench -n __devbench_seen_cf -l from -d 'Input format'  -r -f -a "$_db_formats"
 
 # cf: CRUD flags
-complete -c devbench -n __devbench_seen_cf -l get    -d 'Get value at dotted path'  -r
-complete -c devbench -n __devbench_seen_cf -l set    -d 'Set value at dotted path'  -r
-complete -c devbench -n __devbench_seen_cf -l append -d 'Append value at path'      -r
-complete -c devbench -n __devbench_seen_cf -l delete -d 'Delete value at path'      -r
-complete -c devbench -n __devbench_seen_cf -l merge  -d 'Merge overlay file'        -r -F
-complete -c devbench -n __devbench_seen_cf -l list-merge -d 'List merge strategy'   -r -f -a 'replace merge append'
-complete -c devbench -n __devbench_seen_cf -l diff   -d 'Structural diff vs file'   -r -F
+complete -c devbench -n __devbench_seen_cf -l get     -d 'Get value at dotted path'  -r
+complete -c devbench -n __devbench_seen_cf -l default -d 'Fallback when --get path is missing'  -r
+complete -c devbench -n __devbench_seen_cf -l set     -d 'Set value at dotted path'  -r
+complete -c devbench -n __devbench_seen_cf -l append  -d 'Append value at path'      -r
+complete -c devbench -n __devbench_seen_cf -l delete  -d 'Delete value at path'      -r
+complete -c devbench -n __devbench_seen_cf -l rename  -d 'Rename key: OLD_PATH NEW_PATH'  -r
+complete -c devbench -n __devbench_seen_cf -l merge   -d 'Merge overlay file'        -r -F
+complete -c devbench -n __devbench_seen_cf -l list-merge -d 'List merge strategy'    -r -f -a 'replace merge append'
+complete -c devbench -n __devbench_seen_cf -l diff    -d 'Structural diff vs file'   -r -F
 
 # cf: query / search flags
 complete -c devbench -n __devbench_seen_cf -l validate             -d 'Validate config is parseable'
 complete -c devbench -n __devbench_seen_cf -l count                -d 'Count items at path'            -r
+complete -c devbench -n __devbench_seen_cf -l type                 -d 'JSON Schema type of value at path'  -r
 complete -c devbench -n __devbench_seen_cf -l keys                 -d 'List top-level config keys'
 complete -c devbench -n __devbench_seen_cf -l recursive            -d 'Recursive glob / --keys'
 complete -c devbench -n __devbench_seen_cf -s R                    -d 'Recursive glob / --keys'
 complete -c devbench -n __devbench_seen_cf -l pick                 -d 'Project specific fields'         -r
+complete -c devbench -n __devbench_seen_cf -l select               -d 'Filter list by FIELD=VALUE or FIELD!=VALUE'  -r
+complete -c devbench -n __devbench_seen_cf -l each                 -d 'Extract KEY from each list element'  -r
 complete -c devbench -n __devbench_seen_cf -l grep                 -d 'Search keys/values by regex'     -r
 complete -c devbench -n __devbench_seen_cf -l grep-case-sensitive  -d 'Case-sensitive --grep'
 
 # cf: transform flags
-complete -c devbench -n __devbench_seen_cf -l flatten    -d 'Flatten nested keys to dotted notation'
-complete -c devbench -n __devbench_seen_cf -l unflatten  -d 'Expand dotted keys back to nested'
-complete -c devbench -n __devbench_seen_cf -l sep        -d 'Key separator' -r -f -a '. __'
-complete -c devbench -n __devbench_seen_cf -l env-expand -d 'Expand ${{VAR}} env references'
-complete -c devbench -n __devbench_seen_cf -l sort-keys  -d 'Sort keys alphabetically'
+complete -c devbench -n __devbench_seen_cf -l flatten          -d 'Flatten nested keys to dotted notation'
+complete -c devbench -n __devbench_seen_cf -l unflatten        -d 'Expand dotted keys back to nested'
+complete -c devbench -n __devbench_seen_cf -l sep              -d 'Key separator' -r -f -a '. __'
+complete -c devbench -n __devbench_seen_cf -l env-expand       -d 'Expand ${{VAR}} env references'
+complete -c devbench -n __devbench_seen_cf -l sort-keys        -d 'Sort keys alphabetically'
+complete -c devbench -n __devbench_seen_cf -l sort-keys-reverse -d 'Sort keys in reverse alphabetical order'
 
 # cf: batch flags
 complete -c devbench -n __devbench_seen_cf -l batch      -d 'Treat input as glob pattern'
