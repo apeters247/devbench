@@ -60,6 +60,13 @@ Top pain points: comment loss on round-trip, no offline converter, no unified CL
 - [x] P0: Folded multiline scalar preservation test (yq#439)
 - [x] P0: Bare string scalar quoting round-trip test (yq#2608)
 
+### PRIORITY 5b — Advanced CLI Transform Flags
+- [x] --sort-keys — alphabetical key sorting across all formats
+- [x] --flatten — collapse nested config to dotted-key pairs (configures sep, composes with --to)
+- [x] --unflatten — expand flat dotted keys to nested config (inverse of --flatten)
+- [x] --sep SEP — custom separator for --flatten/--unflatten (default: '.')
+- [x] 18 new tests: unit (configforge._unflatten_dict) + CLI (round-trip, deep nesting, custom sep, list passthrough, collision error)
+
 ### PRIORITY 6 — Deep Audit Resolved Issues (Original 23)
 CRITICAL (3): [x] CRIT-1 HMAC secret, [x] CRIT-2 Stripe webhook, [x] CRIT-3 Duplicate renewal
 HIGH (8):
@@ -177,6 +184,16 @@ Every 15min cycle:
 - ✅ Saved: external-review-20260607-1534.md
 
 ## Section 5: Latest Cycle Log
+### Cycle — 2026-06-09 (BUILDER: --flatten / --unflatten config transform flags)
+- ✅ **Tests**: 888 passed (+16 net), 7 skipped, 2 xfailed — no regressions
+- ✅ **Shipped**: `--flatten` and `--unflatten` flags for `devbench cf`
+  - `--flatten`: collapses nested dicts to dotted-key pairs (`{a: {b: 1}}` → `{"a.b": 1}`)
+  - `--unflatten`: expands flat dotted keys back to nested dict (round-trip inverse)
+  - `--sep SEP`: custom separator (default `.`; use `__` for shell-safe names like `DATABASE__HOST`)
+  - Composes with `--to`, `--sort-keys`, `--in-place`, `--backup`; error on key collision
+  - Added `_unflatten_dict()` to configforge.py; 18 new tests in test_core.py
+  - Competitive gap vs yq (no native flatten/unflatten as simple flags)
+
 ### Cycle — 2026-06-07 19:00Z (BUILDER: HCL xfail test, CSV RFC tests, telemetry cleanup)
 - ✅ **Tests**: 537 passed (+2), 7 skipped, 2 xfailed (1 new) — no regressions
 - ✅ **Distribution Gates**: GIT: ok, GITHUB: ok, WHEEL: ok — all passing

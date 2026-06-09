@@ -105,6 +105,10 @@ def main(argv: list[str] | None = None) -> int:
         return _run_cf_count(args)
     if args.command == "cf" and getattr(args, "pick", None):
         return _run_cf_pick(args)
+    if args.command == "cf" and getattr(args, "flatten", False):
+        return _run_cf_flatten(args)
+    if args.command == "cf" and getattr(args, "unflatten", False):
+        return _run_cf_unflatten(args)
 
     # license commands (server starts before reading stdin)
     if args.command == "license":
@@ -296,6 +300,20 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "         devbench cf '*.yaml' --batch --grep 'password'")
             tool_p.add_argument("--grep-case-sensitive", action="store_true", dest="grep_case_sensitive",
                                 help="Make --grep case-sensitive (default: case-insensitive)")
+            tool_p.add_argument("--flatten", action="store_true",
+                                help="Flatten nested config to dotted-key pairs. "
+                                     "Example: {a: {b: 1}} → {'a.b': 1}. "
+                                     "Composes with --to for output format. "
+                                     "Use --sep to change separator (default: '.'). "
+                                     "Example: devbench cf config.yaml --flatten --to json")
+            tool_p.add_argument("--unflatten", action="store_true",
+                                help="Expand flat dotted-key pairs to a nested config (inverse of --flatten). "
+                                     "Example: {'a.b': 1} → {a: {b: 1}}. "
+                                     "Use --sep to match the separator used during flatten (default: '.'). "
+                                     "Example: devbench cf flat.json --unflatten --to yaml")
+            tool_p.add_argument("--sep", default=".", metavar="SEP",
+                                help="Key separator for --flatten / --unflatten (default: '.'). "
+                                     "Example: --sep __ for shell-friendly var names like DATABASE__HOST")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -1700,6 +1718,128 @@ def _run_cf_grep(args) -> int:
         print(f"no matches for {pattern_str!r}", file=sys.stderr)
         return EXIT_ERROR
 
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# cf --flatten / --unflatten: dotted-key transform
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_flatten(args) -> int:
+    """Flatten nested config to dotted-key pairs.
+
+    Converts {a: {b: 1, c: 2}} to {'a.b': 1, 'a.c': 2} using the separator
+    specified via --sep (default '.'). Lists are kept as values at their
+    dotted path. The result is serialized with --to (or the detected input
+    format). Composes with --sort-keys, --in-place, --backup, etc.
+    """
+    from . import configforge as _cf
+
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(
+            content,
+            fmt=None if from_fmt == "auto" else from_fmt,
+            **_cf_parse_opts(args),
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+    detected_fmt = parsed.get("format", "yaml")
+    sep = getattr(args, "sep", ".")
+
+    flat = _cf._flatten_dict(data, sep=sep)
+    if not isinstance(flat, dict):
+        print("error: input must be a config object (dict) to flatten", file=sys.stderr)
+        return EXIT_ERROR
+
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    if not to_fmt:
+        print("error: cannot determine output format; use --to", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        output_text = _cf.serialize(flat, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+
+    if getattr(args, "in_place", False):
+        if file_path is None:
+            print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+            return EXIT_ERROR
+        if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
+            return EXIT_ERROR
+    else:
+        sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
+def _run_cf_unflatten(args) -> int:
+    """Expand flat dotted-key config back to a nested dict.
+
+    Inverse of _run_cf_flatten: {'a.b': 1, 'a.c': 2} → {a: {b: 1, c: 2}}.
+    Use --sep to specify the separator that was used when flattening.
+    Raises an error if key collisions are detected (a key is both a scalar
+    and a dict prefix — unresolvable ambiguity).
+    """
+    from . import configforge as _cf
+
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(
+            content,
+            fmt=None if from_fmt == "auto" else from_fmt,
+            **_cf_parse_opts(args),
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+    detected_fmt = parsed.get("format", "yaml")
+    sep = getattr(args, "sep", ".")
+
+    try:
+        nested = _cf._unflatten_dict(data, sep=sep)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    if not to_fmt:
+        print("error: cannot determine output format; use --to", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        output_text = _cf.serialize(nested, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+
+    if getattr(args, "in_place", False):
+        if file_path is None:
+            print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+            return EXIT_ERROR
+        if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
+            return EXIT_ERROR
+    else:
+        sys.stdout.write(output_text)
     return EXIT_SUCCESS
 
 

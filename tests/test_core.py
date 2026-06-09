@@ -1394,3 +1394,209 @@ def test_cf_grep_nested_config(tmp_path, capsys):
     assert rc == 0
     assert "db.primary.host" in out
     assert "db.replica.host" in out
+
+
+# ---------------------------------------------------------------------------
+# cf --flatten / --unflatten
+# ---------------------------------------------------------------------------
+
+
+def test_cf_flatten_basic_yaml_to_json(tmp_path, capsys):
+    f = tmp_path / "nested.yaml"
+    f.write_text("database:\n  host: localhost\n  port: 5432\napp:\n  name: myapp\n")
+    from core.cli import main
+    import json
+    rc = main(["cf", str(f), "--flatten", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["database.host"] == "localhost"
+    assert data["database.port"] == 5432
+    assert data["app.name"] == "myapp"
+    assert "database" not in data  # top-level key must be gone
+
+
+def test_cf_flatten_deep_nesting(tmp_path, capsys):
+    f = tmp_path / "deep.yaml"
+    f.write_text("a:\n  b:\n    c:\n      d: value\n")
+    from core.cli import main
+    import json
+    rc = main(["cf", str(f), "--flatten", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data == {"a.b.c.d": "value"}
+
+
+def test_cf_flatten_preserves_lists(tmp_path, capsys):
+    f = tmp_path / "list.yaml"
+    f.write_text("servers:\n  - host: a\n  - host: b\nname: cluster\n")
+    from core.cli import main
+    import json
+    rc = main(["cf", str(f), "--flatten", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["name"] == "cluster"
+    assert isinstance(data["servers"], list)
+    assert len(data["servers"]) == 2
+
+
+def test_cf_flatten_custom_sep(tmp_path, capsys):
+    f = tmp_path / "nested.yaml"
+    f.write_text("database:\n  host: localhost\n  port: 5432\n")
+    from core.cli import main
+    import json
+    rc = main(["cf", str(f), "--flatten", "--sep", "__", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert "database__host" in data
+    assert "database__port" in data
+    assert "database.host" not in data
+
+
+def test_cf_flatten_outputs_yaml(tmp_path, capsys):
+    f = tmp_path / "nested.json"
+    f.write_text('{"a": {"b": 1, "c": 2}}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--flatten", "--to", "yaml"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "a.b:" in out
+    assert "a.c:" in out
+
+
+def test_cf_flatten_json_input(tmp_path, capsys):
+    f = tmp_path / "in.json"
+    f.write_text('{"x": {"y": {"z": "deep"}}, "top": 42}')
+    from core.cli import main
+    import json
+    rc = main(["cf", str(f), "--flatten", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["x.y.z"] == "deep"
+    assert data["top"] == 42
+
+
+def test_cf_unflatten_basic_json_to_yaml(tmp_path, capsys):
+    f = tmp_path / "flat.json"
+    f.write_text('{"database.host": "localhost", "database.port": 5432, "app.name": "myapp"}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--unflatten", "--to", "yaml"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "database:" in out
+    assert "host: localhost" in out
+    assert "port: 5432" in out
+    assert "app:" in out
+    assert "name: myapp" in out
+
+
+def test_cf_unflatten_custom_sep(tmp_path, capsys):
+    f = tmp_path / "flat.json"
+    f.write_text('{"database__host": "localhost", "database__port": 5432}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--unflatten", "--sep", "__", "--to", "yaml"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "database:" in out
+    assert "host: localhost" in out
+
+
+def test_cf_flatten_unflatten_round_trip(tmp_path, capsys):
+    original = tmp_path / "original.yaml"
+    original.write_text(
+        "database:\n  host: localhost\n  port: 5432\n"
+        "  credentials:\n    user: admin\n    password: secret\n"
+        "app:\n  name: myapp\n  debug: true\n"
+    )
+    from core.cli import main
+    import json
+
+    # Flatten to JSON
+    rc = main(["cf", str(original), "--flatten", "--to", "json"])
+    flat_json = capsys.readouterr().out
+    assert rc == 0
+
+    # Write flat JSON to temp file
+    flat_file = tmp_path / "flat.json"
+    flat_file.write_text(flat_json)
+
+    # Unflatten back to YAML
+    rc = main(["cf", str(flat_file), "--unflatten", "--to", "yaml"])
+    restored = capsys.readouterr().out
+    assert rc == 0
+
+    # Round-trip must preserve all values
+    assert "host: localhost" in restored
+    assert "port: 5432" in restored
+    assert "user: admin" in restored
+    assert "password: secret" in restored
+    assert "name: myapp" in restored
+    assert "debug: true" in restored
+
+
+def test_cf_unflatten_collision_error(tmp_path, capsys):
+    f = tmp_path / "collision.json"
+    # "a" is both a scalar value AND used as a prefix — unresolvable
+    f.write_text('{"a": 1, "a.b": 2}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--unflatten", "--to", "yaml"])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "collision" in err.lower() or "error" in err.lower()
+
+
+def test_cf_flatten_single_level_passthrough(tmp_path, capsys):
+    f = tmp_path / "flat.yaml"
+    f.write_text("host: localhost\nport: 5432\nname: myapp\n")
+    from core.cli import main
+    import json
+    rc = main(["cf", str(f), "--flatten", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data == {"host": "localhost", "port": 5432, "name": "myapp"}
+
+
+def test_cf_unflatten_deep_nesting(tmp_path, capsys):
+    f = tmp_path / "deep.json"
+    f.write_text('{"a.b.c.d": "value"}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--unflatten", "--to", "yaml"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "a:" in out
+    assert "b:" in out
+    assert "c:" in out
+    assert "d: value" in out
+
+
+def test_configforge_unflatten_dict_basic():
+    from core.configforge import _unflatten_dict
+    flat = {"a.b": 1, "a.c": 2, "d": 3}
+    result = _unflatten_dict(flat)
+    assert result == {"a": {"b": 1, "c": 2}, "d": 3}
+
+
+def test_configforge_unflatten_dict_deep():
+    from core.configforge import _unflatten_dict
+    flat = {"x.y.z": "deep"}
+    result = _unflatten_dict(flat)
+    assert result == {"x": {"y": {"z": "deep"}}}
+
+
+def test_configforge_unflatten_dict_custom_sep():
+    from core.configforge import _unflatten_dict
+    flat = {"a__b": 1, "a__c": 2}
+    result = _unflatten_dict(flat, sep="__")
+    assert result == {"a": {"b": 1, "c": 2}}
+
+
+def test_configforge_unflatten_dict_collision_raises():
+    from core.configforge import _unflatten_dict
+    import pytest
+    with pytest.raises(ValueError, match="collision"):
+        _unflatten_dict({"a": 1, "a.b": 2})

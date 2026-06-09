@@ -1452,6 +1452,14 @@ def _hcl_requote(obj):
 
 def parse_text(text: str, fmt: str = None, **options) -> dict:
     """Parse text into a Python dict. Auto-detects format if not specified."""
+    result = _parse_text_impl(text, fmt=fmt, **options)
+    if options.get("env_expand", False) and isinstance(result.get("data"), (dict, list)):
+        result = dict(result, data=_expand_env_vars(result["data"]))
+    return result
+
+
+def _parse_text_impl(text: str, fmt: str = None, **options) -> dict:
+    """Internal implementation — use parse_text() externally."""
     if not fmt or fmt == "auto":
         fmt = detect_format(text)
 
@@ -1732,6 +1740,31 @@ def _sort_keys_recursive(data):
     return data
 
 
+def _expand_env_vars(data):
+    """Recursively substitute ${VAR} and $VAR references in all string values.
+
+    Only string values are substituted — keys, numbers, booleans are unchanged.
+    Missing env vars are left as-is (not replaced with empty string) so that
+    partially-expanded configs don't silently lose data.
+    """
+    import os, re as _re
+    _pat = _re.compile(r'\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)')
+
+    def _sub(s):
+        def _replace(m):
+            name = m.group(1) or m.group(2)
+            return os.environ[name] if name in os.environ else m.group(0)
+        return _pat.sub(_replace, s)
+
+    if isinstance(data, dict):
+        return {k: _expand_env_vars(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_expand_env_vars(item) for item in data]
+    if isinstance(data, str):
+        return _sub(data)
+    return data
+
+
 def _split_path(path: str) -> list:
     r"""Split a dot-notation path on unescaped dots only.
 
@@ -1961,6 +1994,40 @@ def _flatten_dict(data, parent_key="", sep="."):
         else:
             items[new_key] = v
     return items
+
+
+def _unflatten_dict(data: dict, sep: str = ".") -> dict:
+    """Expand flat dotted-key pairs back to a nested dict.
+
+    Inverse of _flatten_dict:
+      {"a.b.c": 1, "a.b.d": 2} → {"a": {"b": {"c": 1, "d": 2}}}
+
+    Lists at a given path are kept as-is (not expanded further).
+    Raises ValueError if a key collision is detected (e.g. "a" is both a scalar
+    and a dict prefix — unresolvable ambiguity)."""
+    if not isinstance(data, dict):
+        return data
+    result: dict = {}
+    for key, value in data.items():
+        parts = str(key).split(sep)
+        d = result
+        for i, part in enumerate(parts[:-1]):
+            if part in d:
+                if not isinstance(d[part], dict):
+                    conflict = sep.join(parts[: i + 1])
+                    raise ValueError(
+                        f"key collision: '{conflict}' is both a scalar and a dict prefix"
+                    )
+            else:
+                d[part] = {}
+            d = d[part]
+        leaf = parts[-1]
+        if leaf in d and isinstance(d[leaf], dict):
+            raise ValueError(
+                f"key collision: '{key}' is both a value key and a dict prefix"
+            )
+        d[leaf] = value
+    return result
 
 
 def _format_get_output(val, raw: bool = False) -> str:
