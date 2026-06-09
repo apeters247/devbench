@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Merge YAML Files from the Command Line — Deep Merge, List Strategies | devbench cf</title>
+  <meta name="description" content="Merge two YAML files from the command line with devbench cf --merge. Supports three list strategies: replace, append (extend lists), and merge (positional deep-merge). Works with JSON, TOML, and all config formats. pip install devbench.">
+  <meta property="og:title" content="Merge YAML Files CLI — replace / append / merge list strategies">
+  <meta property="og:description" content="devbench cf --merge overlay.yaml --list-merge merge — combine YAML files without replacing nested lists. Deep-merge Kubernetes containers by position.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/merge-yaml-files-cli.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Merge YAML Files CLI — 3 List Strategies">
+  <meta name="twitter:description" content="Deep-merge YAML files from the command line. Override nested keys without blowing away whole lists. Works cross-format: YAML, JSON, TOML.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "11-format config file converter and 9 developer tools. Merge YAML files with deep-merge, list append, or positional list merge. Works offline.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>Merge YAML Files from the Command Line</h1>
+<br />
+<p>Merging two YAML files sounds easy until you hit lists: should <code>containers: [app, sidecar]</code> in the overlay <em>replace</em> the base list, <em>extend</em> it, or <em>partially override</em> individual items? <strong>devbench cf --merge</strong> lets you choose explicitly.</p>
+<br />
+<pre><code class="language-bash">devbench cf base.yaml --merge overlay.yaml
+devbench cf base.yaml --merge overlay.yaml --list-merge append
+devbench cf base.yaml --merge overlay.yaml --list-merge merge
+</code></pre>
+<br />
+
+<h2>Three List Strategies</h2>
+<br />
+<table>
+<thead>
+<tr><th>Strategy</th><th>What happens to lists</th><th>Best for</th></tr>
+</thead>
+<tbody>
+<tr><td><code>replace</code> (default)</td><td>Overlay list replaces base list entirely</td><td>Simple config overrides, feature flags</td></tr>
+<tr><td><code>append</code></td><td>Overlay list appended to base list</td><td>Adding env vars, volumes, firewall rules</td></tr>
+<tr><td><code>merge</code></td><td>Positional deep-merge (overlay[0] merges into base[0])</td><td>Patching Kubernetes containers without repeating every field</td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Strategy 1: replace (default)</h2>
+<br />
+<p>Dict keys are deep-merged; lists are replaced wholesale. This is the safe default when the overlay should win completely.</p>
+<br />
+<pre><code class="language-yaml"># base.yaml
+database:
+  host: localhost
+  port: 5432
+  replicas: 2
+</code></pre>
+<br />
+<pre><code class="language-yaml"># overlay.yaml
+database:
+  host: db.prod.example.com
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf base.yaml --merge overlay.yaml</code></pre>
+<br />
+<pre><code class="language-yaml">database:
+  host: db.prod.example.com
+  port: 5432
+  replicas: 2
+</code></pre>
+<br />
+<p>Nested dict keys from the overlay override base values; keys present only in base are kept.</p>
+<br />
+
+<h2>Strategy 2: append</h2>
+<br />
+<p>The overlay list is concatenated onto the base list. Useful for adding Kubernetes env vars or volumes without duplicating the whole base list in your overlay file.</p>
+<br />
+<pre><code class="language-yaml"># base.yaml
+env:
+  - name: APP_ENV
+    value: production
+  - name: LOG_LEVEL
+    value: info
+</code></pre>
+<br />
+<pre><code class="language-yaml"># overlay.yaml
+env:
+  - name: DEBUG
+    value: "true"
+  - name: FEATURE_FLAG_X
+    value: "1"
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf base.yaml --merge overlay.yaml --list-merge append</code></pre>
+<br />
+<pre><code class="language-yaml">env:
+  - name: APP_ENV
+    value: production
+  - name: LOG_LEVEL
+    value: info
+  - name: DEBUG
+    value: 'true'
+  - name: FEATURE_FLAG_X
+    value: '1'
+</code></pre>
+<br />
+
+<h2>Strategy 3: merge (positional deep-merge)</h2>
+<br />
+<p>Each overlay list item is deep-merged into the corresponding base item by position. Items in the overlay beyond the base list length are appended. This solves the yq pain point where you want to update just the image of a container without repeating every other field.</p>
+<br />
+<pre><code class="language-yaml"># base.yaml
+containers:
+  - name: app
+    image: myapp:v1
+    env:
+      - name: APP_ENV
+        value: production
+    resources:
+      limits:
+        cpu: "500m"
+        memory: 512Mi
+  - name: sidecar
+    image: envoy:1.25
+</code></pre>
+<br />
+<pre><code class="language-yaml"># overlay.yaml — only update the app image
+containers:
+  - image: myapp:v2
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf base.yaml --merge overlay.yaml --list-merge merge</code></pre>
+<br />
+<pre><code class="language-yaml">containers:
+  - name: app
+    image: myapp:v2        # updated
+    env:
+      - name: APP_ENV
+        value: production  # preserved
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi      # preserved
+  - name: sidecar
+    image: envoy:1.25      # unchanged
+</code></pre>
+<br />
+<p>The <code>merge</code> strategy works recursively — nested dicts inside list items are also deep-merged, so you can patch a single key deep in a list element without repeating the entire element.</p>
+<br />
+
+<h2>Cross-Format Merging</h2>
+<br />
+<p>The base and overlay can be in different formats. devbench auto-detects both:</p>
+<br />
+<pre><code class="language-bash"># Merge a TOML overlay onto a YAML base; output stays YAML
+devbench cf base.yaml --merge overlay.toml
+
+# Merge JSON overlay onto TOML base; output stays TOML
+devbench cf base.toml --merge overlay.json
+
+# Override format explicitly
+devbench cf base.yaml --merge overlay.json --to yaml
+</code></pre>
+<br />
+
+<h2>Merging Into CI/CD Pipelines</h2>
+<br />
+<pre><code class="language-bash"># Patch a Kubernetes deployment without modifying the base file
+devbench cf k8s/base/deployment.yaml \
+  --merge k8s/overlays/production/deployment.yaml \
+  --list-merge merge \
+  | kubectl apply -f -
+
+# Override dev config with secrets from env
+devbench cf config.dev.yaml --merge config.secrets.yaml > config.merged.yaml
+</code></pre>
+<br />
+<pre><code class="language-yaml"># GitHub Actions example
+- name: Merge environment-specific config
+  run: |
+    pip install devbench
+    devbench cf config.base.yaml \
+      --merge config.${{ matrix.env }}.yaml \
+      --list-merge append \
+      -t json > config.json
+</code></pre>
+<br />
+
+<h2>Inspect Without Merging</h2>
+<br />
+<pre><code class="language-bash"># Diff two YAML files before merging
+devbench cf base.yaml --diff overlay.yaml
+
+# Structural diff as JSON (CI-friendly)
+devbench cf base.yaml --diff overlay.yaml --raw
+</code></pre>
+<br />
+
+<h2>Install</h2>
+<br />
+<pre><code class="language-bash">pip install devbench
+devbench cf --help
+</code></pre>
+<br />
+<p>Works on Python 3.10–3.13. Fully offline — no telemetry, no external API calls. Supports 11 formats: JSON, YAML, TOML, XML, CSV, INI, .env, HCL, Java .properties, Apple plist, JSONC.</p>
+<br />
+
+<h2>Quick Reference</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>Command</th></tr>
+</thead>
+<tbody>
+<tr><td>Basic deep merge</td><td><code>devbench cf base.yaml --merge overlay.yaml</code></td></tr>
+<tr><td>Append env vars / volumes</td><td><code>devbench cf base.yaml --merge overlay.yaml --list-merge append</code></td></tr>
+<tr><td>Positional patch lists</td><td><code>devbench cf base.yaml --merge overlay.yaml --list-merge merge</code></td></tr>
+<tr><td>Cross-format merge</td><td><code>devbench cf base.yaml --merge overlay.json</code></td></tr>
+<tr><td>Merge to specific format</td><td><code>devbench cf base.yaml --merge overlay.toml --to json</code></td></tr>
+<tr><td>Diff before merging</td><td><code>devbench cf base.yaml --diff overlay.yaml</code></td></tr>
+<tr><td>Merge in-place</td><td><code>devbench cf base.yaml --merge overlay.yaml --in-place</code></td></tr>
+</tbody>
+</table>
+<br />
+
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 NaxiAI. <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+    </div>
+  </footer>
+</body>
+</html>

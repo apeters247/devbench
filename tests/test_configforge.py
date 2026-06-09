@@ -954,6 +954,84 @@ def test_merge_list_append(tmp_path, capsys):
     assert result["env"][1]["name"] == "DEBUG"
 
 
+def test_merge_list_merge_positional(tmp_path, capsys):
+    """--list-merge=merge deep-merges list items by position (partial override).
+
+    The key use case: update only the image of the first container without
+    replacing the whole containers list — yq#2390 pain point.
+    """
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text(
+        "containers:\n"
+        "  - name: app\n"
+        "    image: myapp:v1\n"
+        "    env:\n"
+        "      - name: APP_ENV\n"
+        "        value: production\n"
+        "  - name: sidecar\n"
+        "    image: nginx:1.25\n"
+    )
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text(
+        "containers:\n"
+        "  - image: myapp:v2\n"
+    )
+    rc = main([str(base), "--merge", str(overlay), "--list-merge", "merge"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    containers = result["containers"]
+    # overlay only updated image of first container — name and env preserved
+    assert len(containers) == 2
+    assert containers[0]["name"] == "app"
+    assert containers[0]["image"] == "myapp:v2"
+    assert containers[0]["env"][0]["name"] == "APP_ENV"
+    # second container unchanged
+    assert containers[1]["name"] == "sidecar"
+    assert containers[1]["image"] == "nginx:1.25"
+
+
+def test_merge_list_merge_extra_items_appended(tmp_path, capsys):
+    """--list-merge=merge appends overlay items beyond the base list length."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("ports:\n  - 80\n  - 443\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("ports:\n  - 8080\n  - 8443\n  - 9090\n")
+    rc = main([str(base), "--merge", str(overlay), "--list-merge", "merge"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["ports"] == [8080, 8443, 9090]
+
+
+def test_merge_list_merge_nested_dicts(tmp_path, capsys):
+    """--list-merge=merge recursively merges nested dicts inside list items."""
+    from core.configforge import main
+    base = tmp_path / "base.json"
+    base.write_text(
+        '{"services": [{"name": "api", "config": {"timeout": 30, "retries": 3}}, '
+        '{"name": "worker", "config": {"timeout": 60}}]}'
+    )
+    overlay = tmp_path / "overlay.json"
+    overlay.write_text(
+        '{"services": [{"config": {"timeout": 45}}]}'
+    )
+    rc = main([str(base), "--merge", str(overlay), "--list-merge", "merge"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    services = result["services"]
+    # config.timeout updated, retries preserved
+    assert services[0]["name"] == "api"
+    assert services[0]["config"]["timeout"] == 45
+    assert services[0]["config"]["retries"] == 3
+    # second service unchanged
+    assert services[1]["name"] == "worker"
+    assert services[1]["config"]["timeout"] == 60
+
+
 def test_merge_json_files(tmp_path, capsys):
     """--merge works on JSON base and JSON overlay."""
     from core.configforge import main

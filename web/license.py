@@ -234,7 +234,7 @@ class LicenseManager:
 
         conn = None # Initialize conn to None for safer error handling
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self._connect()
             # Check if this machine already activated
             cur = conn.execute(
                 "SELECT id FROM activations WHERE license_key = ? AND machine_id = ?",
@@ -272,7 +272,7 @@ class LicenseManager:
 
         conn = None # Initialize conn to None for safer error handling
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self._connect()
             conn.execute(
                 "DELETE FROM activations WHERE license_key = ? AND machine_id = ?",
                 (key, machine_id),
@@ -294,7 +294,7 @@ class LicenseManager:
 
         conn = None # Initialize conn to None for safer error handling
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self._connect()
             cur = conn.execute(
                 "SELECT machine_id, activated_at FROM activations WHERE license_key = ? ORDER BY activated_at",
                 (key,),
@@ -312,7 +312,7 @@ class LicenseManager:
             return False
         conn = None # Initialize conn to None for safer error handling
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self._connect()
             conn.execute(
                 "UPDATE licenses SET expiry = ? WHERE license_key = ?",
                 (int(time.time()), key),
@@ -329,7 +329,7 @@ class LicenseManager:
             return None
         conn = None # Initialize conn to None for safer error handling
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self._connect()
             cur = conn.execute(
                 "SELECT email, customer_id, payment_intent, issued_at, expiry FROM licenses WHERE license_key = ?",
                 (key,),
@@ -359,7 +359,7 @@ class LicenseManager:
             return []
         conn = None # Initialize conn to None for safer error handling
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self._connect()
             rows = conn.execute(
                 "SELECT license_key, email, customer_id, payment_intent, issued_at, expiry "
                 "FROM licenses WHERE email = ? ORDER BY issued_at DESC, created_at DESC",
@@ -392,7 +392,7 @@ class LicenseManager:
         """
         if not self.db_path:
             return 0
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._connect()
         try:
             row = conn.execute(
                 "SELECT expiry FROM licenses WHERE license_key = ?", (key,)
@@ -446,10 +446,21 @@ class LicenseManager:
         _, metadata = body.split(":", 1)
         return payload_b64, metadata, sig
 
+    def _connect(self) -> sqlite3.Connection:
+        """Open a SQLite connection with WAL mode and a generous timeout.
+
+        WAL mode allows concurrent reads while a write is in progress, which
+        prevents "database is locked" errors under ThreadingHTTPServer load.
+        timeout=30 lets queued writers wait rather than immediately failing.
+        """
+        conn = sqlite3.connect(str(self.db_path), timeout=30, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
     def _init_db(self) -> None:
         """Create SQLite tables if they don't exist."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._connect()
         try:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS licenses (
@@ -482,7 +493,7 @@ class LicenseManager:
         payment_intent: str,
         expiry: int,
     ) -> None:
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._connect()
         try:
             conn.execute(
                 "INSERT OR IGNORE INTO licenses (license_key, email, customer_id, payment_intent, issued_at, expiry) VALUES (?, ?, ?, ?, ?, ?)",
@@ -495,7 +506,7 @@ class LicenseManager:
     def _count_activations(self, key: str) -> int:
         if not self.db_path:
             return 0
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._connect()
         try:
             row = conn.execute(
                 "SELECT COUNT(*) FROM activations WHERE license_key = ?",
@@ -511,7 +522,7 @@ class LicenseManager:
 
         conn = None  # Initialize conn to None for safer error handling
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = self._connect()
             count = self._count_activations(key)
             return count < self.max_activations
         except sqlite3.Error:

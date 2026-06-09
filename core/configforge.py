@@ -2062,6 +2062,17 @@ def _deep_merge(base, overlay, list_mode: str = "replace"):
     if isinstance(base, list) and isinstance(overlay, list):
         if list_mode == "append":
             return list(base) + list(overlay)
+        if list_mode == "merge":
+            # Deep-merge corresponding items by position; append extras from overlay.
+            # Useful for Kubernetes containers/env where positional list items
+            # should be partially overridden without replacing the whole list.
+            result = list(base)
+            for i, item in enumerate(overlay):
+                if i < len(result):
+                    result[i] = _deep_merge(result[i], item, list_mode)
+                else:
+                    result.append(item)
+            return result
         return list(overlay)
     return overlay
 
@@ -3148,11 +3159,12 @@ Compared to yq/jq:
                              "controlled by --list-merge. Output format defaults to the "
                              "base input format.  Use --in-place to overwrite the base file.")
     parser.add_argument("--list-merge", metavar="MODE", dest="list_merge",
-                        default="replace", choices=["replace", "append"],
+                        default="replace", choices=["replace", "append", "merge"],
                         help="How to merge lists when using --merge: "
                              "'replace' (default) replaces the base list with the overlay list; "
-                             "'append' appends the overlay list to the base list "
-                             "(useful for Kubernetes env-vars, volumes, containers).")
+                             "'append' appends the overlay list to the base list; "
+                             "'merge' deep-merges corresponding items by position "
+                             "(useful for Kubernetes containers with partial overrides).")
     parser.add_argument("--each", metavar="KEY", default=None, dest="each_key",
                         help="Extract KEY from each element of a list and output the resulting list. "
                              "Equivalent to jq '[.[] | .key]' or yq '.[].key'. "

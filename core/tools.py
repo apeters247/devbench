@@ -298,12 +298,13 @@ def _check_jwt_expiry(payload: dict) -> Optional[str]:
 
 
 def hash_generator(input_text: str) -> str:
-    """Generate MD5, SHA-1, SHA-256, SHA-512 hashes of the input.
+    """Generate MD5, SHA-1, SHA-256, SHA-512, Blake2b, and CRC32 hashes of the input.
 
     An empty string is a valid input: it hashes to the well-defined digests of
     zero bytes (e.g. MD5 ``d41d8cd98f00b204e9800998ecf8427e``), which users
     legitimately need when verifying empty files.
     """
+    import zlib
     input_text = input_text.strip()
 
     data = input_text.encode("utf-8")
@@ -320,6 +321,8 @@ def hash_generator(input_text: str) -> str:
         "SHA-1": hashlib.sha1(data, usedforsecurity=False).hexdigest(),
         "SHA-256": hashlib.sha256(data).hexdigest(),
         "SHA-512": hashlib.sha512(data).hexdigest(),
+        "Blake2b": hashlib.blake2b(data).hexdigest(),
+        "CRC32": f"{zlib.crc32(data) & 0xffffffff:08x}",
     }
 
     lines = [

@@ -319,8 +319,8 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--merge", metavar="OVERLAY", default=None,
                                 help="Deep-merge OVERLAY file onto the base input. Output defaults to base format.")
             tool_p.add_argument("--list-merge", metavar="MODE", dest="list_merge", default="replace",
-                                choices=["replace", "append"],
-                                help="How to merge lists when using --merge: replace (default) overwrites; append extends.")
+                                choices=["replace", "append", "merge"],
+                                help="How to merge lists when using --merge: replace (default) overwrites; append extends; merge deep-merges corresponding items by position.")
             tool_p.add_argument("--diff", metavar="FILE", default=None,
                                 help="Structural diff: compare the base input against FILE across any format. "
                                      "Exit 0 = identical, exit 1 = differences. "
@@ -3066,7 +3066,7 @@ _devbench_complete() {{
                     COMPREPLY=( $(compgen -W "skip comment empty error" -- "$cur") )
                     return 0 ;;
                 --list-merge)
-                    COMPREPLY=( $(compgen -W "replace merge append" -- "$cur") )
+                    COMPREPLY=( $(compgen -W "replace append merge" -- "$cur") )
                     return 0 ;;
                 --indent)
                     COMPREPLY=( $(compgen -W "2 4 8" -- "$cur") )
@@ -3162,7 +3162,7 @@ _devbench() {{
                         '--delete=[Delete value at path]:path:' \\
                         '--rename=[Rename key: OLD_PATH NEW_PATH]:old_path new_path:' \\
                         '--merge=[Merge overlay file]:file:_files' \\
-                        '--list-merge=[List merge strategy]:mode:(replace merge append)' \\
+                        '--list-merge=[List merge strategy]:mode:(replace append merge)' \\
                         '--diff=[Structural diff against file]:file:_files' \\
                         '--validate[Validate config is parseable]' \\
                         '--count=[Count items at path]:path:' \\
@@ -3270,7 +3270,7 @@ complete -c devbench -n __devbench_seen_cf -l append  -d 'Append value at path' 
 complete -c devbench -n __devbench_seen_cf -l delete  -d 'Delete value at path'      -r
 complete -c devbench -n __devbench_seen_cf -l rename  -d 'Rename key: OLD_PATH NEW_PATH'  -r
 complete -c devbench -n __devbench_seen_cf -l merge   -d 'Merge overlay file'        -r -F
-complete -c devbench -n __devbench_seen_cf -l list-merge -d 'List merge strategy'    -r -f -a 'replace merge append'
+complete -c devbench -n __devbench_seen_cf -l list-merge -d 'List merge strategy'    -r -f -a 'replace append merge'
 complete -c devbench -n __devbench_seen_cf -l diff    -d 'Structural diff vs file'   -r -F
 
 # cf: query / search flags

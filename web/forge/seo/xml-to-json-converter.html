@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>XML to JSON Converter CLI — Offline, Attribute Handling, Batch | devbench cf</title>
+  <meta name="description" content="Convert XML to JSON from the command line. devbench cf handles XML attributes, namespaces, CDATA sections, and mixed content. Batch convert thousands of XML files. Works fully offline. pip install devbench.">
+  <meta property="og:title" content="XML to JSON CLI Converter — Offline, Attribute-Aware">
+  <meta property="og:description" content="devbench cf input.xml -t json — convert XML to JSON with attribute handling. Batch mode, stdin piping, YAML and TOML output too.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/xml-to-json-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="XML to JSON CLI — Offline Batch Converter">
+  <meta name="twitter:description" content="Convert XML to JSON, YAML, or TOML from the terminal. devbench cf handles XML attributes and CDATA. No internet required.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "11-format config file converter including XML. Convert XML to JSON, YAML, TOML with attribute handling, batch mode, stdin piping. Offline.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>XML to JSON Converter — Command-Line, Offline, Attribute-Aware</h1>
+<br />
+<p>Converting XML to JSON is deceptively complex: attributes, namespaces, CDATA sections, and text nodes all need conventions. <strong>devbench cf</strong> uses a consistent attribute encoding (prefixed with <code>@</code>) so the output is predictable and round-trip-safe.</p>
+<br />
+<pre><code class="language-bash"># Convert XML to JSON
+devbench cf input.xml -t json
+
+# Convert XML to YAML
+devbench cf input.xml -t yaml
+
+# Pipe from stdin
+cat input.xml | devbench cf -f xml -t json
+
+# Compact/minified JSON
+devbench cf input.xml -t json --compact
+</code></pre>
+<br />
+
+<h2>How Attributes Are Handled</h2>
+<br />
+<p>XML attributes and child elements coexist in the same namespace. devbench encodes attributes with an <code>@</code> prefix to distinguish them from child elements:</p>
+<br />
+<pre><code class="language-xml">&lt;?xml version="1.0"?&gt;
+&lt;server host="db.example.com" port="5432"&gt;
+  &lt;database&gt;myapp_prod&lt;/database&gt;
+  &lt;ssl enabled="true"/&gt;
+&lt;/server&gt;
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf config.xml -t json</code></pre>
+<br />
+<pre><code class="language-json">{
+  "server": {
+    "@host": "db.example.com",
+    "@port": "5432",
+    "database": "myapp_prod",
+    "ssl": {
+      "@enabled": "true"
+    }
+  }
+}
+</code></pre>
+<br />
+<p>Attribute values are always strings in XML, so they remain strings in the JSON output. If you need integer coercion, pipe the result through <code>jq</code> or use <code>devbench cf</code> again with <code>--set</code>.</p>
+<br />
+
+<h2>XML to YAML</h2>
+<br />
+<p>Converting to YAML preserves the same attribute encoding and is often more readable for config files:</p>
+<br />
+<pre><code class="language-bash">devbench cf config.xml -t yaml</code></pre>
+<br />
+<pre><code class="language-yaml">server:
+  '@host': db.example.com
+  '@port': '5432'
+  database: myapp_prod
+  ssl:
+    '@enabled': 'true'
+</code></pre>
+<br />
+
+<h2>Batch XML to JSON Conversion</h2>
+<br />
+<p>For converting entire directories of XML files:</p>
+<br />
+<pre><code class="language-bash"># Convert all XML files in current directory
+devbench cf "*.xml" --batch -t json
+
+# Recursive
+devbench cf "**/*.xml" --batch -t json
+
+# With output directory (preserves tree structure)
+devbench cf "data/**/*.xml" --batch -t json --output-dir ./json-out/
+
+# Stream mode — constant memory for thousands of files
+devbench cf "**/*.xml" --batch -t json --stream
+</code></pre>
+<br />
+<p>Batch mode gives you per-file error reporting. Malformed XML files log an error to stderr and are skipped; the rest continue converting.</p>
+<br />
+
+<h2>Extract Values from XML</h2>
+<br />
+<p>Use <code>--get</code> to extract a specific path after parsing:</p>
+<br />
+<pre><code class="language-bash"># Get a specific element value
+devbench cf config.xml --get server.database
+
+# Get an attribute
+devbench cf config.xml --get 'server.@host'
+
+# Get with fallback
+devbench cf config.xml --get server.timeout --default 30
+
+# Convert and extract in one step
+devbench cf config.xml --get server -t json
+</code></pre>
+<br />
+
+<h2>Maven pom.xml — Extract Dependencies</h2>
+<br />
+<pre><code class="language-bash"># Extract all dependencies from a Maven pom.xml
+devbench cf pom.xml --get project.dependencies.dependency -t json
+
+# Count dependencies
+devbench cf pom.xml --get project.dependencies.dependency --count
+
+# Find dependencies matching groupId
+devbench cf pom.xml --get project.dependencies.dependency \
+  --select groupId=org.springframework -t yaml
+</code></pre>
+<br />
+
+<h2>Android / iOS plist and Manifest Files</h2>
+<br />
+<pre><code class="language-bash"># Convert Android AndroidManifest.xml to JSON for CI processing
+devbench cf AndroidManifest.xml -t json --compact
+
+# Convert Apple plist XML to YAML
+devbench cf Info.plist -t yaml
+
+# Extract version string from iOS plist
+devbench cf Info.plist --get 'plist.dict.CFBundleShortVersionString'
+</code></pre>
+<br />
+
+<h2>Install</h2>
+<br />
+<pre><code class="language-bash">pip install devbench
+
+# Verify XML support
+devbench cf --list-formats
+</code></pre>
+<br />
+<p>Works on Python 3.10–3.13. Fully offline — no telemetry, no external API calls. Supports 11 formats bidirectionally: JSON, YAML, TOML, XML, CSV, INI, .env, HCL, Java .properties, Apple plist, JSONC.</p>
+<br />
+
+<h2>Quick Reference</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>Command</th></tr>
+</thead>
+<tbody>
+<tr><td>XML to JSON</td><td><code>devbench cf input.xml -t json</code></td></tr>
+<tr><td>XML to YAML</td><td><code>devbench cf input.xml -t yaml</code></td></tr>
+<tr><td>XML to TOML</td><td><code>devbench cf input.xml -t toml</code></td></tr>
+<tr><td>Pipe from stdin</td><td><code>cat f.xml | devbench cf -f xml -t json</code></td></tr>
+<tr><td>Compact JSON</td><td><code>devbench cf input.xml -t json --compact</code></td></tr>
+<tr><td>Batch convert</td><td><code>devbench cf "*.xml" --batch -t json</code></td></tr>
+<tr><td>Extract element</td><td><code>devbench cf input.xml --get root.child</code></td></tr>
+<tr><td>Extract attribute</td><td><code>devbench cf input.xml --get 'root.@attr'</code></td></tr>
+<tr><td>Auto-detect format</td><td><code>devbench cf input.xml -t json</code></td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Compared to xmllint and python -c</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>xmllint / python one-liner</th><th>devbench cf</th></tr>
+</thead>
+<tbody>
+<tr><td>XML → JSON</td><td>No built-in; needs xmltodict + Python glue</td><td><code>devbench cf f.xml -t json</code></td></tr>
+<tr><td>XML → YAML</td><td>Multi-step: xmltodict → PyYAML</td><td><code>devbench cf f.xml -t yaml</code></td></tr>
+<tr><td>Extract element</td><td>xpath query + xmllint</td><td><code>devbench cf f.xml --get path.to.element</code></td></tr>
+<tr><td>Batch convert</td><td>Shell loop + error handling</td><td><code>devbench cf "*.xml" --batch -t json</code></td></tr>
+<tr><td>Cross-format diff</td><td>Not possible directly</td><td><code>devbench cf a.xml --diff b.json</code></td></tr>
+</tbody>
+</table>
+<br />
+
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 NaxiAI. <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+    </div>
+  </footer>
+</body>
+</html>

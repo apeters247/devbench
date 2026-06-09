@@ -281,4 +281,16 @@
     <priority>0.8</priority>
   </url>
 
+  <!-- SEO — new features -->
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/merge-yaml-files-cli.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/xml-to-json-converter.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
 </urlset>
