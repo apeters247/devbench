@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flatten YAML to Environment Variables — ConfigForge</title>
+  <meta name="description" content="Convert nested YAML or JSON configs to flat key=value environment variables with one command. ConfigForge --flatten exports any config to .env format or shell-ready key=value pairs — no jq or awk required.">
+  <meta name="keywords" content="flatten yaml to env vars, yaml to environment variables, export yaml to env, yaml flatten nested, kubernetes configmap to env, docker env from yaml, flatten json to env, yaml to dotenv, convert yaml to .env file, spring boot yaml to properties flatten">
+  <meta property="og:title" content="Flatten YAML / JSON to Environment Variables — ConfigForge">
+  <meta property="og:description" content="Export nested config files to flat key=value env vars in one command. Works across YAML, JSON, TOML, INI, and 7 more formats.">
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="https://naxiai.com/tools/devbench/forge/seo/flatten-yaml-to-env.html">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "How to Flatten YAML and JSON Config Files to Environment Variables",
+    "description": "ConfigForge --flatten converts nested YAML/JSON configs to flat dot-notation key=value pairs suitable for .env files, Kubernetes ConfigMaps, and shell scripts.",
+    "author": {"@type": "Organization", "name": "Naxiai"},
+    "datePublished": "2026-06-09"
+  }
+  </script>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:860px;margin:0 auto;padding:2rem 1.5rem;color:#1a1a2e;line-height:1.7}
+    h1{font-size:2rem;margin-bottom:.5rem}
+    h2{font-size:1.4rem;margin-top:2.5rem;border-bottom:2px solid #e8e8f0;padding-bottom:.4rem}
+    h3{font-size:1.1rem;color:#333}
+    pre{background:#1a1a2e;color:#a8e6cf;padding:1.2rem 1.5rem;border-radius:8px;overflow-x:auto;font-size:.88rem;line-height:1.5}
+    code{background:#f0f0f8;padding:.15em .4em;border-radius:4px;font-size:.9em;font-family:'SF Mono',Monaco,monospace}
+    .badge{display:inline-block;background:#4CAF50;color:#fff;padding:.25rem .7rem;border-radius:20px;font-size:.8rem;font-weight:600;margin-right:.4rem}
+    table{border-collapse:collapse;width:100%;margin:1.5rem 0}
+    th,td{border:1px solid #ddd;padding:.6rem 1rem;text-align:left}
+    th{background:#f8f8ff;font-weight:600}
+    .checkmark{color:#4CAF50;font-weight:700}
+    .cross{color:#e74c3c;font-weight:700}
+    .cta{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:2rem;border-radius:12px;margin-top:3rem;text-align:center}
+    .cta a{color:#fff;text-decoration:none;font-weight:700;border:2px solid #fff;padding:.6rem 1.5rem;border-radius:6px;display:inline-block;margin-top:.8rem}
+    .tip{background:#fff8e1;border-left:4px solid #ffc107;padding:1rem 1.2rem;border-radius:0 8px 8px 0;margin:1.5rem 0}
+    .note{background:#e3f2fd;border-left:4px solid #2196F3;padding:1rem 1.2rem;border-radius:0 8px 8px 0;margin:1.5rem 0}
+  </style>
+</head>
+<body>
+
+<h1>Flatten YAML / JSON to Environment Variables</h1>
+<p>
+  <span class="badge">ConfigForge 1.0</span>
+  <span class="badge">11 formats</span>
+  <span class="badge">--flatten / --unflatten</span>
+</p>
+<p>
+  Kubernetes, Docker Compose, and most container platforms accept environment variables — but your
+  team's config files are nested YAML. The typical solution is a fragile shell script with
+  <code>yq</code>, <code>jq</code>, and <code>awk</code> pipelines that break every time the
+  config structure changes.
+</p>
+<p>
+  <strong>ConfigForge <code>--flatten</code></strong> converts any nested config to flat
+  dot-notation key=value pairs in one command — ready for <code>.env</code> files, Kubernetes
+  ConfigMaps, Docker Compose <code>env_file</code>, or <code>export</code> in shell scripts.
+  <code>--unflatten</code> reverses the operation.
+</p>
+
+<h2>Quick Start</h2>
+<pre># Install
+pip install devbench
+
+# Flatten a nested YAML config to dot-notation key=value
+devbench cf config.yaml --flatten
+
+# Save as a .env file
+devbench cf config.yaml --flatten --to env > .env
+
+# Flatten JSON to YAML key=value (for Kubernetes ConfigMaps)
+devbench cf app.json --flatten --to yaml
+
+# Unflatten a .env back to nested YAML
+devbench cf app.env --unflatten --to yaml</pre>
+
+<h2>Example: Nested YAML to Flat Env Vars</h2>
+
+<pre># Input: config.yaml
+database:
+  host: postgres.internal
+  port: 5432
+  credentials:
+    user: appuser
+    password: secret123
+redis:
+  host: redis.internal
+  port: 6379
+  ttl: 3600</pre>
+
+<pre># devbench cf config.yaml --flatten
+database.host=postgres.internal
+database.port=5432
+database.credentials.user=appuser
+database.credentials.password=secret123
+redis.host=redis.internal
+redis.port=6379
+redis.ttl=3600</pre>
+
+<pre># devbench cf config.yaml --flatten --to env
+DATABASE_HOST=postgres.internal
+DATABASE_PORT=5432
+DATABASE_CREDENTIALS_USER=appuser
+DATABASE_CREDENTIALS_PASSWORD=secret123
+REDIS_HOST=redis.internal
+REDIS_PORT=6379
+REDIS_TTL=3600</pre>
+
+<div class="tip">
+  <strong>Tip:</strong> Use <code>--to env</code> to get uppercase env var names (shell-compatible).
+  Use <code>--flatten</code> without <code>--to</code> to get dot-notation (suitable for Spring Boot, ConfigMaps).
+</div>
+
+<h2>Real-World Use Cases</h2>
+
+<h3>1. Kubernetes ConfigMap from Application Config</h3>
+<pre># Generate a Kubernetes ConfigMap from your app's YAML config
+devbench cf app-config.yaml --flatten --to yaml \
+  | kubectl create configmap app-config --from-env-file=/dev/stdin
+
+# Or export as a ConfigMap manifest
+cat > configmap.yaml &lt;&lt; EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+$(devbench cf app-config.yaml --flatten | sed 's/^/  /')
+EOF</pre>
+
+<h3>2. Docker Compose env_file Generation</h3>
+<pre># Generate .env from docker-compose.dev.yaml environment section
+devbench cf docker-compose.yaml --get services.app.environment \
+  | devbench cf - --flatten --to env > .env
+
+# Load into the current shell session
+eval "$(devbench cf config.yaml --flatten --to env | sed 's/^/export /')"</pre>
+
+<h3>3. Spring Boot: YAML to .properties</h3>
+<pre># Spring Boot accepts both application.yaml and application.properties
+# --flatten converts nested YAML to the flat .properties format directly
+devbench cf src/main/resources/application.yaml --flatten --to properties \
+  > src/main/resources/application.properties
+
+# Input YAML:                  Output .properties:
+# spring:                      spring.datasource.url=jdbc:postgresql://...
+#   datasource:                spring.datasource.username=appuser
+#     url: jdbc:...            server.port=8080
+#     username: appuser
+# server:
+#   port: 8080</pre>
+
+<h3>4. CI/CD: Inject Config as Environment Variables</h3>
+<pre># GitHub Actions: load config vars into the step environment
+- name: Load config
+  run: |
+    devbench cf config/staging.yaml --flatten --to env >> $GITHUB_ENV
+
+# Now all nested config keys are available as env vars in subsequent steps:
+# DATABASE_HOST, REDIS_PORT, etc.</pre>
+
+<h3>5. Terraform: Variables File from YAML</h3>
+<pre># Convert team's YAML config to Terraform .tfvars format
+devbench cf infra-config.yaml --flatten --to toml > terraform.tfvars
+
+# Or extract just the infrastructure section
+devbench cf infra-config.yaml --get infrastructure --flatten --to env \
+  > .terraform.env</pre>
+
+<h3>6. Unflatten: Restore Nested Structure</h3>
+<pre># You have a flat .env — convert back to nested YAML for readability
+devbench cf production.env --unflatten --to yaml
+
+# Input .env:               Output YAML:
+# DATABASE_HOST=db.host     database:
+# DATABASE_PORT=5432          host: db.host
+# REDIS_HOST=cache.host       port: 5432
+# REDIS_PORT=6379           redis:
+#                             host: cache.host
+#                             port: 6379</pre>
+
+<h2>Output Formats</h2>
+
+<h3><code>--flatten</code> (default: dot-notation)</h3>
+<pre>database.host=postgres.internal
+database.port=5432
+database.credentials.user=appuser</pre>
+
+<h3><code>--flatten --to env</code> (uppercase env vars)</h3>
+<pre>DATABASE_HOST=postgres.internal
+DATABASE_PORT=5432
+DATABASE_CREDENTIALS_USER=appuser</pre>
+
+<h3><code>--flatten --to yaml</code> (flat YAML — for ConfigMaps)</h3>
+<pre>database.host: postgres.internal
+database.port: 5432
+database.credentials.user: appuser</pre>
+
+<h2>Flags</h2>
+
+<table>
+  <tr><th>Flag</th><th>Description</th></tr>
+  <tr><td><code>--flatten</code></td><td>Flatten nested config to dot-notation key=value pairs</td></tr>
+  <tr><td><code>--unflatten</code></td><td>Restore nested structure from flat dot-notation input</td></tr>
+  <tr><td><code>--to FORMAT</code></td><td>Output format: <code>env</code> (uppercase), <code>yaml</code>, <code>json</code>, <code>toml</code>, <code>properties</code></td></tr>
+  <tr><td><code>--get PATH</code></td><td>Extract a subsection before flattening</td></tr>
+  <tr><td><code>--in-place</code></td><td>Write result back to the input file</td></tr>
+  <tr><td><code>--batch</code></td><td>Flatten all files matching a glob</td></tr>
+</table>
+
+<h2>How It Compares to Alternatives</h2>
+
+<table>
+  <tr>
+    <th>Tool</th>
+    <th>Input formats</th>
+    <th>Flatten</th>
+    <th>Unflatten</th>
+    <th>TOML output</th>
+    <th>Batch</th>
+  </tr>
+  <tr>
+    <td><strong>ConfigForge --flatten</strong></td>
+    <td class="checkmark">11 formats</td>
+    <td class="checkmark">✓ dot-notation</td>
+    <td class="checkmark">✓ --unflatten</td>
+    <td class="checkmark">✓</td>
+    <td class="checkmark">✓</td>
+  </tr>
+  <tr>
+    <td>yq + jq pipeline</td>
+    <td>YAML / JSON only</td>
+    <td>✓ (complex expr)</td>
+    <td class="cross">✗</td>
+    <td class="cross">✗</td>
+    <td class="cross">✗</td>
+  </tr>
+  <tr>
+    <td>python-dotenv</td>
+    <td class="cross">.env only</td>
+    <td class="cross">✗</td>
+    <td class="cross">✗</td>
+    <td class="cross">✗</td>
+    <td class="cross">✗</td>
+  </tr>
+  <tr>
+    <td>dasel</td>
+    <td>5 formats</td>
+    <td class="cross">✗ no flatten mode</td>
+    <td class="cross">✗</td>
+    <td class="cross">✗ drops TOML comments</td>
+    <td class="cross">✗</td>
+  </tr>
+</table>
+
+<div class="note">
+  <strong>yq flattening requires a complex expression:</strong><br>
+  <code>yq eval '. | to_entries | map(select(.value | type == "string")) | from_entries' config.yaml</code><br>
+  This only works one level deep and silently drops nested keys. ConfigForge handles
+  arbitrary nesting depth and round-trips correctly with <code>--unflatten</code>.
+</div>
+
+<h2>Shell Script Examples</h2>
+
+<pre># Export all config vars into the current shell
+source &lt;(devbench cf config.yaml --flatten --to env | sed 's/^/export /')
+
+# Generate a Kubernetes Secret from config values
+kubectl create secret generic app-secrets \
+  $(devbench cf secrets.yaml --flatten --to env \
+    | sed 's/\(.*\)=\(.*\)/--from-literal=\1=\2/')
+
+# Compare flattened configs to find divergence
+devbench cf staging.yaml --flatten > /tmp/staging.flat
+devbench cf production.yaml --flatten > /tmp/production.flat
+diff /tmp/staging.flat /tmp/production.flat
+
+# Or use ConfigForge --diff for structured output:
+devbench cf staging.yaml --diff production.yaml
+
+# Batch flatten all YAML configs in a directory
+devbench cf 'configs/*.yaml' --batch --flatten --to env --output-dir ./env-files/</pre>
+
+<h2>GitHub Actions Integration</h2>
+
+<pre>name: Deploy with Config
+on: [push]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install devbench
+
+      - name: Load environment config
+        run: |
+          # Flatten staging config to GitHub Actions env
+          devbench cf config/staging.yaml --flatten --to env >> $GITHUB_ENV
+
+      - name: Deploy
+        run: |
+          # Config vars are now available: $DATABASE_HOST, $REDIS_PORT, etc.
+          echo "Deploying to $DATABASE_HOST"</pre>
+
+<h2>Install</h2>
+<pre>pip install devbench
+
+# All 11 formats including HCL, plist, JSONC
+pip install devbench[all]</pre>
+
+<div class="cta">
+  <h3 style="margin:0 0 .5rem">ConfigForge — Config Conversion &amp; Transformation</h3>
+  <p style="margin:.5rem 0">$19 one-time &middot; Offline &middot; 11 formats &middot; flatten, diff, grep, pick, validate &amp; more</p>
+  <a href="https://naxiai.com/tools/devbench/">Get ConfigForge &rarr;</a>
+</div>
+
+<h2>More ConfigForge Tools</h2>
+<ul>
+  <li><a href="diff-config-files.html">Compare two config files (--diff)</a></li>
+  <li><a href="grep-config-files.html">Search config files with regex (--grep)</a></li>
+  <li><a href="extract-yaml-field.html">Extract specific YAML fields (--pick)</a></li>
+  <li><a href="validate-config-ci.html">Validate config files in CI/CD (--validate)</a></li>
+  <li><a href="../seo/vs-yq.html">ConfigForge vs yq comparison</a></li>
+  <li><a href="../seo/vs-dasel.html">ConfigForge vs dasel comparison</a></li>
+</ul>
+
+</body>
+</html>

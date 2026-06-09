@@ -20,6 +20,7 @@ output.txt
 stderr.txt
 stdout.txt
 test_*
+!tests/test_*.py
 tools/
 
 # Forge working directory (AI agent output)

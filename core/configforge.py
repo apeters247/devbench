@@ -27,6 +27,7 @@ _BLANK_META_KEY = f"{_CF_PREFIX}blanks__"
 
 # ── Optional imports (graceful fallback) ──
 HAS_YAML = False
+HAS_RUAMEL_YAML = False
 HAS_TOML = False
 HAS_XML = False
 HAS_HCL = False
@@ -34,6 +35,12 @@ HAS_HCL = False
 try:
     import yaml
     HAS_YAML = True
+except ImportError:
+    pass
+
+try:
+    from ruamel.yaml import YAML as RuamelYAML
+    HAS_RUAMEL_YAML = True
 except ImportError:
     pass
 

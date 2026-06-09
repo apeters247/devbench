@@ -1803,3 +1803,32 @@ def test_check_env_fish_completion_includes_flag(capsys):
     main(["completion", "fish"])
     out = capsys.readouterr().out
     assert "check-env" in out
+
+
+def test_yaml_sort_keys_known_limitation_anchors_lost():
+    """Known limitation: YAML anchors/aliases are lost when sort_keys=True.
+
+    This matches yq#2086 behavior. When PyYAML parses and sorts, it expands
+    anchors inline. Future: use ruamel.yaml for better preservation.
+    """
+    from core.configforge import convert
+
+    yaml_with_anchor = """defaults: &defaults
+  timeout: 30
+  retries: 3
+
+service1:
+  <<: *defaults
+  name: Service 1
+"""
+    result = convert(yaml_with_anchor, "yaml", "yaml", sort_keys=True)
+    assert result["success"]
+
+    # Expected behavior: anchors are expanded/lost (known limitation)
+    output = result["output"]
+    assert "&defaults" not in output, "Anchors are lost (known limitation - see gh issue #2086)"
+
+    # But the data is correct (just not preserved as a reference)
+    assert "service1:" in output
+    assert "timeout: 30" in output  # Values are present, just not via anchor
+    assert "retries: 3" in output

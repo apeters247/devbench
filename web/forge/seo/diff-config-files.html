@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diff / Compare YAML, JSON &amp; TOML Config Files — ConfigForge</title>
+  <meta name="description" content="Compare two config files across any format — YAML vs JSON, TOML vs INI, and more. ConfigForge --diff understands structure, not just text, so renamed keys and reformatted values don't create false diffs.">
+  <meta name="keywords" content="diff yaml files cli, compare yaml json files, compare two yaml files command line, yaml diff tool, config file comparison, diff toml files, compare kubernetes manifests, yaml diff structured, json diff tool, compare config files bash">
+  <meta property="og:title" content="Diff Config Files Across Formats — ConfigForge">
+  <meta property="og:description" content="Structural diff for YAML, JSON, TOML, INI, ENV, HCL, plist, and more. Compare configs across formats — not just text line diffs.">
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="https://naxiai.com/tools/devbench/forge/seo/diff-config-files.html">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "How to Diff and Compare YAML, JSON, and TOML Config Files from the CLI",
+    "description": "ConfigForge --diff performs structural comparison across 11 config formats, catching differences that text-based diff tools miss.",
+    "author": {"@type": "Organization", "name": "Naxiai"},
+    "datePublished": "2026-06-09"
+  }
+  </script>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:860px;margin:0 auto;padding:2rem 1.5rem;color:#1a1a2e;line-height:1.7}
+    h1{font-size:2rem;margin-bottom:.5rem}
+    h2{font-size:1.4rem;margin-top:2.5rem;border-bottom:2px solid #e8e8f0;padding-bottom:.4rem}
+    h3{font-size:1.1rem;color:#333}
+    pre{background:#1a1a2e;color:#a8e6cf;padding:1.2rem 1.5rem;border-radius:8px;overflow-x:auto;font-size:.88rem;line-height:1.5}
+    code{background:#f0f0f8;padding:.15em .4em;border-radius:4px;font-size:.9em;font-family:'SF Mono',Monaco,monospace}
+    .badge{display:inline-block;background:#4CAF50;color:#fff;padding:.25rem .7rem;border-radius:20px;font-size:.8rem;font-weight:600;margin-right:.4rem}
+    table{border-collapse:collapse;width:100%;margin:1.5rem 0}
+    th,td{border:1px solid #ddd;padding:.6rem 1rem;text-align:left}
+    th{background:#f8f8ff;font-weight:600}
+    .checkmark{color:#4CAF50;font-weight:700}
+    .cross{color:#e74c3c;font-weight:700}
+    .cta{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:2rem;border-radius:12px;margin-top:3rem;text-align:center}
+    .cta a{color:#fff;text-decoration:none;font-weight:700;border:2px solid #fff;padding:.6rem 1.5rem;border-radius:6px;display:inline-block;margin-top:.8rem}
+    .tip{background:#fff8e1;border-left:4px solid #ffc107;padding:1rem 1.2rem;border-radius:0 8px 8px 0;margin:1.5rem 0}
+    .note{background:#e3f2fd;border-left:4px solid #2196F3;padding:1rem 1.2rem;border-radius:0 8px 8px 0;margin:1.5rem 0}
+    .added{color:#2e7d32;font-weight:600}
+    .removed{color:#c62828;font-weight:600}
+    .changed{color:#e65100;font-weight:600}
+  </style>
+</head>
+<body>
+
+<h1>Diff Config Files Across Formats from the CLI</h1>
+<p>
+  <span class="badge">ConfigForge 1.0</span>
+  <span class="badge">11 formats</span>
+  <span class="badge">structural diff</span>
+</p>
+<p>
+  Text-based <code>diff</code> compares lines. Config files aren't documents — they're structured data.
+  A YAML file with different indentation, a JSON file with reordered keys, or two files in entirely
+  different formats (YAML vs TOML) will show hundreds of spurious text differences even when the
+  <em>data</em> is identical.
+</p>
+<p>
+  <strong>ConfigForge <code>--diff</code></strong> parses both files first, normalizes them to
+  dot-notation key paths, then compares the data structures. You see only real changes — added keys,
+  removed keys, and value changes — not formatting noise.
+</p>
+
+<h2>Quick Start</h2>
+<pre># Install
+pip install devbench
+
+# Compare two YAML files structurally
+devbench cf deploy-v1.yaml --diff deploy-v2.yaml
+
+# Compare a YAML file against its JSON equivalent (cross-format!)
+devbench cf config.yaml --diff config.json
+
+# CI/CD: exit 0 if identical, exit 1 if different
+devbench cf staging.yaml --diff production.yaml || echo "Environments differ"
+
+# Machine-readable output for scripting
+devbench cf base.yaml --diff override.yaml --raw</pre>
+
+<h2>Why <code>diff</code> Falls Short for Config Files</h2>
+
+<p>Standard Unix <code>diff</code> compares text line-by-line. For config files this causes three problems:</p>
+
+<ul>
+  <li><strong>Formatting differences masquerade as data differences</strong> — a YAML file reindented by your editor shows 50 changed lines even if no value changed.</li>
+  <li><strong>Key reordering is invisible</strong> — moving a key block to a different position in a JSON file makes <code>diff</code> report every line changed, even though the data is identical.</li>
+  <li><strong>Cross-format comparison is impossible</strong> — <code>diff staging.yaml production.json</code> always shows 100% different, even if the data matches perfectly.</li>
+</ul>
+
+<p>ConfigForge solves all three by parsing first, then comparing data structures.</p>
+
+<h2>Real-World Use Cases</h2>
+
+<h3>1. Kubernetes Staging vs Production Audit</h3>
+<pre># Find what's different between staging and production manifests
+devbench cf k8s/staging/deploy.yaml --diff k8s/production/deploy.yaml
+
+# Output:
+# ~ spec.replicas: 2 -> 5
+# ~ spec.template.spec.containers[0].resources.limits.memory: 512Mi -> 2Gi
+# ~ spec.template.spec.containers[0].image: nginx:1.24 -> nginx:1.25
+
+# Fail CI if environments diverge unexpectedly
+devbench cf staging.yaml --diff production.yaml --raw \
+  | jq '.identical' | grep -q true || exit 1</pre>
+
+<h3>2. Cross-Format Infrastructure Comparison</h3>
+<pre># Your team uses YAML but a vendor sends JSON — compare directly
+devbench cf my-config.yaml --diff vendor-config.json
+
+# Compare Terraform HCL outputs vs expected JSON
+devbench cf expected.json --diff actual.hcl
+
+# No other tool can do this — yq is YAML-only, jq is JSON-only</pre>
+
+<h3>3. PR / Code Review for Config Changes</h3>
+<pre># Compare HEAD vs main branch configs in CI
+git show main:config.yaml > /tmp/base.yaml
+devbench cf /tmp/base.yaml --diff config.yaml
+
+# Output only the changed keys (not the identical ones)
+devbench cf old.yaml --diff new.yaml --raw | jq '.changed'</pre>
+
+<h3>4. Docker Compose Version Comparison</h3>
+<pre># Compare docker-compose files across environments
+devbench cf docker-compose.dev.yaml --diff docker-compose.prod.yaml
+
+# Typical output:
+# ~ services.app.environment.DEBUG: true -> false
+# ~ services.app.replicas: 1 -> 3
+# + services.nginx (new service in prod)
+# - services.mailhog (dev-only service removed)</pre>
+
+<h3>5. Ansible Playbook Drift Detection</h3>
+<pre># Detect configuration drift in Ansible vars files
+for env in dev staging prod; do
+  echo "=== $env vs baseline ==="
+  devbench cf vars/baseline.yaml --diff vars/$env.yaml
+done</pre>
+
+<h2>Output Formats</h2>
+
+<h3>Human-readable (default)</h3>
+<pre>$ devbench cf deploy-v1.yaml --diff deploy-v2.yaml
+<span style="color:#a8e6cf">- metadata.labels.version: 'v1'          # removed
++ spec.template.spec.initContainers      # added
+~ spec.replicas: 2 -> 5                  # changed
+~ spec.template.spec.containers[0].image: nginx:1.24 -> nginx:1.25</span></pre>
+
+<table>
+  <tr><th>Symbol</th><th>Meaning</th></tr>
+  <tr><td><code class="added">+</code></td><td>Key/section added in the second file</td></tr>
+  <tr><td><code class="removed">-</code></td><td>Key/section removed (present in first, absent in second)</td></tr>
+  <tr><td><code class="changed">~</code></td><td>Value changed — shows old <code>-&gt;</code> new</td></tr>
+</table>
+
+<h3>JSON output (<code>--raw</code>)</h3>
+<pre>$ devbench cf v1.yaml --diff v2.yaml --raw
+{
+  "identical": false,
+  "formats": ["yaml", "yaml"],
+  "added": ["spec.template.spec.initContainers"],
+  "removed": ["metadata.labels.version"],
+  "changed": {
+    "spec.replicas": {"from": 2, "to": 5},
+    "spec.template.spec.containers[0].image": {
+      "from": "nginx:1.24",
+      "to": "nginx:1.25"
+    }
+  }
+}</pre>
+
+<div class="tip">
+  <strong>CI/CD tip:</strong> <code>--diff</code> exits 0 when files are identical, 1 when they differ.
+  Use this as a gate: <code>devbench cf expected.yaml --diff actual.yaml || { echo "Config drift detected"; exit 1; }</code>
+</div>
+
+<h2>Flags</h2>
+
+<table>
+  <tr><th>Flag</th><th>Description</th></tr>
+  <tr><td><code>--diff FILE</code></td><td>File to compare against (any supported format)</td></tr>
+  <tr><td><code>--raw</code></td><td>JSON output — identical, formats, added, removed, changed</td></tr>
+  <tr><td><code>--from FORMAT</code></td><td>Force first file's format (default: auto-detect)</td></tr>
+</table>
+
+<p><strong>Exit codes:</strong> 0 = identical, 1 = differences found — same semantics as Unix <code>diff</code>.</p>
+
+<h2>How It Compares to Alternatives</h2>
+
+<table>
+  <tr>
+    <th>Tool</th>
+    <th>Cross-format</th>
+    <th>Structural</th>
+    <th>Key reorder safe</th>
+    <th>JSON output</th>
+    <th>CI exit codes</th>
+  </tr>
+  <tr>
+    <td><strong>ConfigForge --diff</strong></td>
+    <td class="checkmark">✓ all 11 formats</td>
+    <td class="checkmark">✓ dot-notation</td>
+    <td class="checkmark">✓</td>
+    <td class="checkmark">✓ --raw</td>
+    <td class="checkmark">✓ 0/1</td>
+  </tr>
+  <tr>
+    <td>Unix diff</td>
+    <td class="cross">✗ text only</td>
+    <td class="cross">✗ line-based</td>
+    <td class="cross">✗</td>
+    <td class="cross">✗</td>
+    <td class="checkmark">✓</td>
+  </tr>
+  <tr>
+    <td>yq (YAML)</td>
+    <td class="cross">✗ YAML/JSON only</td>
+    <td class="cross">✗ no native diff</td>
+    <td class="cross">✗</td>
+    <td class="checkmark">✓</td>
+    <td class="cross">✗ no diff command</td>
+  </tr>
+  <tr>
+    <td>jq (JSON)</td>
+    <td class="cross">✗ JSON only</td>
+    <td class="cross">✗ no native diff</td>
+    <td class="checkmark">✓ (sort_keys)</td>
+    <td class="checkmark">✓</td>
+    <td class="cross">✗ no diff command</td>
+  </tr>
+  <tr>
+    <td>dasel</td>
+    <td>5 formats</td>
+    <td class="cross">✗ no diff mode</td>
+    <td class="cross">✗</td>
+    <td class="checkmark">✓</td>
+    <td class="cross">✗</td>
+  </tr>
+</table>
+
+<div class="note">
+  <strong>ConfigForge is the only CLI tool with native cross-format structural diff.</strong>
+  yq, jq, and dasel all lack a <code>--diff</code> mode. The common workaround — convert both to
+  JSON then pipe to <code>jq</code> — loses type information and fails on TOML, INI, and ENV formats.
+</div>
+
+<h2>Shell Script Examples</h2>
+
+<pre># Gate: fail CI if staging and production configs diverge
+devbench cf staging/config.yaml --diff production/config.yaml
+if [ $? -ne 0 ]; then
+  echo "ERROR: staging and production configs differ — review before deploy"
+  exit 1
+fi
+
+# Count how many keys changed between versions
+CHANGES=$(devbench cf v1.yaml --diff v2.yaml --raw \
+  | jq '.changed | length')
+echo "$CHANGES keys changed"
+
+# Alert if a specific critical key changed
+devbench cf old.yaml --diff new.yaml --raw \
+  | jq '.changed | has("database.primary.host")' | grep -q true \
+  && echo "WARNING: database host changed — verify connection strings"
+
+# Generate a changelog from config differences
+devbench cf config-1.0.yaml --diff config-1.1.yaml --raw \
+  | jq -r '.changed | to_entries[] | "  ~ \(.key): \(.value.from) -> \(.value.to)"'</pre>
+
+<h2>GitHub Actions Integration</h2>
+
+<pre>name: Config Drift Check
+on: [pull_request]
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+
+      - run: pip install devbench
+
+      - name: Check config drift
+        run: |
+          git show HEAD~1:config/production.yaml > /tmp/prev.yaml
+          devbench cf /tmp/prev.yaml --diff config/production.yaml --raw \
+            | tee diff-report.json
+          # Fail if critical keys changed
+          jq -e '.identical or (.changed | keys | map(select(startswith("database."))) | length == 0)' \
+            diff-report.json</pre>
+
+<h2>Install</h2>
+<pre>pip install devbench
+
+# All 11 formats including HCL, plist, JSONC
+pip install devbench[all]</pre>
+
+<div class="cta">
+  <h3 style="margin:0 0 .5rem">ConfigForge — Structural Config Diff &amp; Conversion</h3>
+  <p style="margin:.5rem 0">$19 one-time &middot; Offline &middot; 11 formats &middot; diff, grep, pick, validate &amp; more</p>
+  <a href="https://naxiai.com/tools/devbench/">Get ConfigForge &rarr;</a>
+</div>
+
+<h2>More ConfigForge Tools</h2>
+<ul>
+  <li><a href="grep-config-files.html">Search config files with regex (--grep)</a></li>
+  <li><a href="extract-yaml-field.html">Extract specific YAML fields (--pick)</a></li>
+  <li><a href="validate-config-ci.html">Validate config files in CI/CD (--validate)</a></li>
+  <li><a href="flatten-yaml-to-env.html">Flatten YAML to environment variables (--flatten)</a></li>
+  <li><a href="../seo/vs-yq.html">ConfigForge vs yq comparison</a></li>
+</ul>
+
+</body>
+</html>
