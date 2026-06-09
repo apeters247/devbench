@@ -184,13 +184,13 @@ def test_hash_empty_string():
 def test_hash_unicode():
     r = parse(hash_generator("日本語💻"))
     assert r["error"] is None
-    assert len(r["output"]) > 0
+    assert "MD5" in r["output"] and "SHA" in r["output"]
 
 def test_hash_long_input():
     data = "x" * 1000000  # 1MB
     r = parse(hash_generator(data))
     assert r["error"] is None
-    assert len(r["output"]) > 0
+    assert "MD5" in r["output"] and "SHA" in r["output"]
 
 
 # ═══════════════════════════════════════════════
@@ -458,7 +458,7 @@ def test_run_tool_detection():
     from core.detector import detect_and_run
     r = json.loads(detect_and_run('[1,2,3]'))
     assert r.get("tool_name") == "json_formatter"
-    assert r.get("detection_type") is not None
+    assert r.get("detection_type") == "JSON detected"
 
 def test_run_tool_all_names():
     all_tools = ["json", "base64", "jwt", "hash", "url", "timestamp", "uuid", "diff"]

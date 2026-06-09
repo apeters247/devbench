@@ -1,1 +1,3 @@
-/var/www/devbench/forge/external-review-20260609-0907.md
+forge/external-review-20260609-1013.md
+BUILT: --yaml12 strict-bool mode (YAML 1.2 boolean rules: yes/no/on/off stay as strings)
+TESTS: 749 passed / 7 skipped / 2 xfailed

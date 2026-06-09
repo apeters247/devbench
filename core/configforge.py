@@ -496,6 +496,29 @@ def _yaml_error_message(exc: "yaml.YAMLError", text: str) -> str:
     return f"YAML parse error{context}: {raw}{excerpt}"
 
 
+def _make_yaml12_loader():
+    """Return a SafeLoader subclass with YAML 1.2 boolean rules.
+
+    YAML 1.1 (PyYAML's default) treats yes/no/on/off as booleans — the
+    "Norway problem" that bites DevOps users who write `allow_postgres: no`
+    and get False in JSON. YAML 1.2 only recognises true/false (any case).
+    This loader implements the stricter rule so yes/no/on/off stay as strings.
+    """
+    class YAML12Loader(yaml.SafeLoader):
+        pass
+
+    YAML12Loader.yaml_implicit_resolvers = {
+        ch: [(t, r) for t, r in resolvers if t != "tag:yaml.org,2002:bool"]
+        for ch, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+    }
+    YAML12Loader.add_implicit_resolver(
+        "tag:yaml.org,2002:bool",
+        re.compile(r"^(?:true|false)$", re.IGNORECASE),
+        list("tTfF"),
+    )
+    return YAML12Loader
+
+
 def _extract_yaml_blank_lines(text: str) -> list:
     """Extract blank-line positions from YAML text, anchored to the full key
     path of the NEXT key line that follows each blank.
@@ -1306,14 +1329,16 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
     elif fmt == "yaml" and HAS_YAML:
         # Handle multi-document YAML (--- separator)
         multi_doc = options.get("multi_doc", True)
+        yaml12 = options.get("yaml12", False)
+        loader_cls = _make_yaml12_loader() if yaml12 else yaml.SafeLoader
         try:
             if multi_doc and text.count("---") > 0:
-                docs = list(yaml.safe_load_all(text))
+                docs = list(yaml.load_all(text, Loader=loader_cls))
                 docs = [d for d in docs if d is not None]
                 if len(docs) == 1:
                     return {"data": docs[0], "format": "yaml"}
                 return {"data": docs, "format": "yaml-multi"}
-            return {"data": yaml.safe_load(text), "format": "yaml"}
+            return {"data": yaml.load(text, Loader=loader_cls), "format": "yaml"}
         except yaml.YAMLError as e:
             raise ValueError(_yaml_error_message(e, text)) from e
 
@@ -2489,6 +2514,9 @@ Compared to yq/jq:
                         help="Flatten nested XML into dotted keys.")
     parser.add_argument("--no-comments", action="store_true",
                         help="Do not preserve comments.")
+    parser.add_argument("--yaml12", action="store_true",
+                        help="Use YAML 1.2 boolean rules: only true/false are booleans. "
+                             "Treats yes/no/on/off as plain strings (prevents the Norway problem).")
     parser.add_argument("--sort-keys", action="store_true", help="Sort keys in output.")
     parser.add_argument("--no-infer-dates", action="store_true",
                         help="Keep ISO-8601 date strings as strings (TOML).")
@@ -2532,6 +2560,7 @@ Compared to yq/jq:
         "sort_keys": args.sort_keys,
         "infer_dates": not args.no_infer_dates,
         "null_handling": args.null_handling,
+        "yaml12": args.yaml12,
     }
 
     if args.batch:

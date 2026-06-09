@@ -2,34 +2,35 @@
 # frozen_string_literal: true
 
 # Devbench — Developer utilities CLI + ConfigForge config converter
-# Homebrew formula for `brew install devbench`
+# Homebrew formula for `brew tap apeters247/devbench && brew install devbench`
 #
-# Usage:
-#   brew tap apeters247/devbench
-#   brew install devbench
-#
-# Or with a custom formula URL:
-#   brew install https://raw.githubusercontent.com/apeters247/devbench/master/Formula/devbench.rb
+# To update this formula after a new release:
+#   1. Publish to PyPI: python3 -m twine upload dist/*
+#   2. Grab the new SHA256: curl -sL https://pypi.org/pypi/devbench/json | jq -r '.releases["VERSION"][].digests.sha256'
+#   3. Update `url` and `sha256` below
+#   4. Commit and push (brew auto-discovers updates from this file)
 
 class Devbench < Formula
-  desc "8 essential developer tools + ConfigForge config file conversion in your terminal"
-  homepage "https://github.com/apeters247/devbench"
+  desc "9 developer tools + ConfigForge: 11-format config converter with comment preservation"
+  homepage "https://naxiai.com/tools/devbench/"
   url "https://github.com/apeters247/devbench/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000" # Placeholder — set during release
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000" # update after tagging release
   license "MIT"
-  revision 1
 
   depends_on "python@3.12"
 
   def install
-    # Install the Python package into the prefix
-    system "python3", "-m", "pip", "install", "--prefix=#{prefix}", "--no-deps", "."
-    # Create a wrapper to ensure the right Python is used
-    bin.install_symlink libexec/"bin/devbench" => "devbench"
+    venv = virtualenv_create(libexec, "python3.12")
+    venv.pip_install_and_link buildpath
   end
 
   test do
-    system "#{bin}/devbench", "--version"
+    assert_match version.to_s, shell_output("#{bin}/devbench --version")
     system "#{bin}/devbench", "cf", "--help"
+    # Quick round-trip smoke test
+    (testpath/"test.yaml").write "key: value\n"
+    output = shell_output("#{bin}/devbench cf --from yaml --to json #{testpath}/test.yaml")
+    assert_match '"key"', output
+    assert_match '"value"', output
   end
 end

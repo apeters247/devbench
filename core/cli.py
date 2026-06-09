@@ -76,6 +76,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "batch", False):
         return _run_cf_batch(args)
 
+    # cf CRUD / merge ops — read input themselves (file path or stdin)
+    if args.command == "cf" and getattr(args, "get", None):
+        return _run_cf_get(args)
+    if args.command == "cf" and getattr(args, "set_kv", None):
+        return _run_cf_set(args)
+    if args.command == "cf" and getattr(args, "delete", None):
+        return _run_cf_delete(args)
+    if args.command == "cf" and getattr(args, "merge", None):
+        return _run_cf_merge(args)
+
     # license commands (server starts before reading stdin)
     if args.command == "license":
         lc = getattr(args, "license_command", None)
@@ -200,6 +210,19 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--no-infer-dates", action="store_true", help="Keep ISO-8601 date strings as strings (TOML)")
             tool_p.add_argument("--null-handling", default="skip", choices=["skip", "comment", "empty", "error"],
                                 help="How to represent null/None in TOML (default: skip)")
+            tool_p.add_argument("--get", metavar="PATH", default=None,
+                                help="Extract a value by dot-notation path (e.g. server.port). Prints scalar or JSON for dicts/lists.")
+            tool_p.add_argument("--set", metavar=("PATH", "VALUE"), nargs=2, dest="set_kv",
+                                help="Set a value by dot-notation path. Value parsed as JSON (booleans, numbers, null); strings need no quoting.")
+            tool_p.add_argument("--in-place", "-i", action="store_true", dest="in_place",
+                                help="Write --set/--delete/--merge result back to the source file (requires a file path argument, not stdin).")
+            tool_p.add_argument("--delete", metavar="PATH", default=None,
+                                help="Delete a key by dot-notation path. Output defaults to input format.")
+            tool_p.add_argument("--merge", metavar="OVERLAY", default=None,
+                                help="Deep-merge OVERLAY file onto the base input. Output defaults to base format.")
+            tool_p.add_argument("--list-merge", metavar="MODE", dest="list_merge", default="replace",
+                                choices=["replace", "append"],
+                                help="How to merge lists when using --merge: replace (default) overwrites; append extends.")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -873,6 +896,215 @@ def _run_batch(args: argparse.Namespace) -> int:
 
     print(json.dumps(output, indent=2, ensure_ascii=False) if args.json else output["output"])
     return EXIT_ERROR if errors > 0 else EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# cf CRUD / merge helpers
+# ---------------------------------------------------------------------------
+
+
+def _cf_read_file_or_content(args):
+    """Return (content: str, file_path: Path|None) for CRUD ops.
+
+    If args.text looks like an existing file path, read it.
+    Otherwise treat it as raw content (or read stdin if absent).
+    Returns (None, None) on I/O error (error already printed).
+    """
+    text_arg = getattr(args, "text", None)
+    if text_arg is not None:
+        p = Path(text_arg)
+        if p.is_file():
+            try:
+                return p.read_text(encoding="utf-8"), p
+            except OSError as e:
+                print(f"error: {e}", file=sys.stderr)
+                return None, None
+        return text_arg, None
+    if not sys.stdin.isatty():
+        try:
+            return sys.stdin.read().strip(), None
+        except OSError:
+            pass
+    return "", None
+
+
+def _cf_serialize_options(args) -> dict:
+    opts: dict = {}
+    if hasattr(args, "indent"):
+        opts["indent"] = args.indent
+    if getattr(args, "sort_keys", False):
+        opts["sort_keys"] = True
+    if getattr(args, "no_comments", False):
+        opts["preserve_comments"] = False
+    return opts
+
+
+def _run_cf_get(args) -> int:
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if "error" in parsed:
+        print(f"error: {parsed['error']}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    try:
+        val = _cf._get_by_path(data, args.get)
+    except (KeyError, IndexError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if isinstance(val, (dict, list)):
+        sys.stdout.write(json.dumps(val, indent=2, ensure_ascii=False) + "\n")
+    elif val is None:
+        sys.stdout.write("null\n")
+    else:
+        sys.stdout.write(str(val) + "\n")
+    return EXIT_SUCCESS
+
+
+def _run_cf_set(args) -> int:
+    from . import configforge as _cf
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    path, raw_value = args.set_kv
+    value = _cf._coerce_set_value(raw_value)
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if "error" in parsed:
+        print(f"error: {parsed['error']}", file=sys.stderr)
+        return EXIT_ERROR
+    detected_fmt = parsed.get("format")
+    data = parsed.get("data", parsed)
+    try:
+        _cf._set_by_path(data, path, value)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    if not to_fmt:
+        print("error: cannot determine output format; use --to", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        output_text = _cf.serialize(data, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    if getattr(args, "in_place", False):
+        if file_path is None:
+            print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+            return EXIT_ERROR
+        file_path.write_text(output_text, encoding="utf-8")
+    else:
+        sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
+def _run_cf_delete(args) -> int:
+    from . import configforge as _cf
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if "error" in parsed:
+        print(f"error: {parsed['error']}", file=sys.stderr)
+        return EXIT_ERROR
+    detected_fmt = parsed.get("format")
+    data = parsed.get("data", parsed)
+    try:
+        _cf._delete_by_path(data, args.delete)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    if not to_fmt:
+        print("error: cannot determine output format; use --to", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        output_text = _cf.serialize(data, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    if getattr(args, "in_place", False):
+        if file_path is None:
+            print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+            return EXIT_ERROR
+        file_path.write_text(output_text, encoding="utf-8")
+    else:
+        sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
+def _run_cf_merge(args) -> int:
+    from . import configforge as _cf
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        base_parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if "error" in base_parsed:
+        print(f"error: {base_parsed['error']}", file=sys.stderr)
+        return EXIT_ERROR
+    detected_fmt = base_parsed.get("format")
+    base_data = base_parsed.get("data", base_parsed)
+    try:
+        overlay_text = Path(args.merge).read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"error: cannot read overlay file: {e}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        overlay_parsed = _cf.parse_text(overlay_text)
+    except ValueError as exc:
+        print(f"error reading overlay: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if "error" in overlay_parsed:
+        print(f"error reading overlay: {overlay_parsed['error']}", file=sys.stderr)
+        return EXIT_ERROR
+    overlay_data = overlay_parsed.get("data", overlay_parsed)
+    list_mode = getattr(args, "list_merge", "replace")
+    merged = _cf._deep_merge(base_data, overlay_data, list_mode=list_mode)
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    if not to_fmt:
+        print("error: cannot determine output format; use --to", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        output_text = _cf.serialize(merged, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    if getattr(args, "in_place", False):
+        if file_path is None:
+            print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+            return EXIT_ERROR
+        file_path.write_text(output_text, encoding="utf-8")
+    else:
+        sys.stdout.write(output_text)
+    return EXIT_SUCCESS
 
 
 # ---------------------------------------------------------------------------

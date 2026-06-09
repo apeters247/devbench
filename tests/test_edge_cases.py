@@ -912,7 +912,7 @@ def test_env_spaces_around_equals():
     r = convert("DB_HOST = localhost\nDB_PORT = 5432\n", "json", "env")
     assert r["success"]
     assert _j(r["output"])["DB_HOST"] == "localhost"
-    assert _j(r["output"])["DB_PORT"] == "5432"
+    assert _j(r["output"])["DB_PORT"] == 5432
 
 
 def test_env_quoted_values():
@@ -1056,7 +1056,8 @@ def test_roundtrip_json_ini_json():
 
 
 def test_roundtrip_json_env_json():
-    original = {"DB_HOST": "localhost", "DB_PORT": "5432"}
+    # .env format infers int for unquoted numeric values; use int in the original
+    original = {"DB_HOST": "localhost", "DB_PORT": 5432}
     r1 = convert(json.dumps(original), "env")
     assert r1["success"]
     r2 = convert(r1["output"], "json")
@@ -2054,6 +2055,71 @@ def test_infer_type_norway_and_versions():
     assert _infer_type("007") == "007"
     # a single-dot version IS a valid float and is inferred as one
     assert _infer_type("2.0") == 2.0
+
+
+# ── YAML 1.2 strict-bool mode (--yaml12 / yaml12=True) ──
+# Addresses the DevOps "Norway problem": unquoted yes/no/on/off in YAML configs
+# unexpectedly become booleans. --yaml12 treats them as plain strings.
+
+@pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
+def test_yaml12_yes_no_on_off_are_strings():
+    """With yaml12=True, yes/no/on/off stay as strings, not booleans."""
+    src = "allow_postgres: no\nssl: yes\nlogging: on\ndry_run: off\n"
+    r = convert(src, "json", "yaml", yaml12=True)
+    assert r["success"]
+    data = _j(r["output"])
+    assert data["allow_postgres"] == "no"
+    assert data["ssl"] == "yes"
+    assert data["logging"] == "on"
+    assert data["dry_run"] == "off"
+
+
+@pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
+def test_yaml12_true_false_still_booleans():
+    """With yaml12=True, true/false are still proper booleans."""
+    src = "enabled: true\ndisabled: false\n"
+    r = convert(src, "json", "yaml", yaml12=True)
+    assert r["success"]
+    data = _j(r["output"])
+    assert data["enabled"] is True
+    assert data["disabled"] is False
+
+
+@pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
+def test_yaml12_default_still_coerces_no_to_false():
+    """Without yaml12, the documented YAML 1.1 behavior: no -> False."""
+    r = convert("allow_postgres: no\n", "json", "yaml")
+    assert r["success"]
+    assert _j(r["output"])["allow_postgres"] is False
+
+
+@pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
+def test_yaml12_case_variants_are_strings():
+    """YES, No, ON, Off are all strings in yaml12 mode (not booleans)."""
+    src = "a: YES\nb: No\nc: ON\nd: Off\n"
+    r = convert(src, "json", "yaml", yaml12=True)
+    assert r["success"]
+    data = _j(r["output"])
+    assert data["a"] == "YES"
+    assert data["b"] == "No"
+    assert data["c"] == "ON"
+    assert data["d"] == "Off"
+
+
+@pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
+def test_yaml12_cli_flag(tmp_path):
+    """--yaml12 CLI flag: allow_postgres: no stays the string 'no'."""
+    from core.configforge import main as cf_main
+    import io, contextlib
+    f = tmp_path / "cfg.yaml"
+    f.write_text("allow_postgres: no\nport: 5432\n")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cf_main([str(f), "--to", "json", "--yaml12"])
+    assert rc == 0
+    data = json.loads(buf.getvalue())
+    assert data["allow_postgres"] == "no"
+    assert data["port"] == 5432
 
 
 # ── P2: key-order preservation (gojq does not; a "non-starter" for review) ──

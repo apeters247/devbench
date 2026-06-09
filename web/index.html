@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- SEO Meta -->
-  <title>Devbench — Developer Tools + ConfigForge Multi-Format Config Converter (10 Formats, 100% Offline)</title>
+  <title>Devbench — Developer Tools + ConfigForge Multi-Format Config Converter (11 Formats, 100% Offline)</title>
   <meta name="description" content="Devbench gives you essential developer tools right in your macOS menubar plus ConfigForge CLI: JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties/plist converter, JSON formatter, base64 encoder, UUID generator, timestamp converter, LLM token counter, and more. ConfigForge is the only config converter that preserves comments — offline, private, fast.">
   <meta name="keywords" content="devbench, developer tools, mac menubar, macos utility, config file converter, yaml to json converter, json to yaml, toml converter, configforge, config converter that preserves comments, comment preservation, json formatter, base64, uuid generator, timestamp converter, clipboard tools, developer productivity">
   <meta name="author" content="NaxiAI">
@@ -146,6 +146,14 @@
           TOML, XML, CSV, INI, .env, HCL, .properties, plist, and JSONC — all 11 formats
           bidirectionally, 100% offline) — right in your macOS menubar. One click away, always.
         </p>
+
+        <!-- Competitive moat pills -->
+        <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:0.5rem;margin:1.25rem 0 1.5rem;" role="list" aria-label="Key differentiators">
+          <span role="listitem" style="display:inline-flex;align-items:center;gap:0.4rem;background:rgba(78,205,196,0.12);border:1px solid rgba(78,205,196,0.3);color:#4ecdc4;border-radius:6px;padding:0.35rem 0.8rem;font-size:0.82rem;font-weight:600;">&#10003; TOML write — yq can't do this</span>
+          <span role="listitem" style="display:inline-flex;align-items:center;gap:0.4rem;background:rgba(78,205,196,0.12);border:1px solid rgba(78,205,196,0.3);color:#4ecdc4;border-radius:6px;padding:0.35rem 0.8rem;font-size:0.82rem;font-weight:600;">&#10003; Comments survive — dasel drops them</span>
+          <span role="listitem" style="display:inline-flex;align-items:center;gap:0.4rem;background:rgba(78,205,196,0.12);border:1px solid rgba(78,205,196,0.3);color:#4ecdc4;border-radius:6px;padding:0.35rem 0.8rem;font-size:0.82rem;font-weight:600;">&#10003; 100% offline — secrets stay local</span>
+          <span role="listitem" style="display:inline-flex;align-items:center;gap:0.4rem;background:rgba(108,140,255,0.12);border:1px solid rgba(108,140,255,0.3);color:#6c8cff;border-radius:6px;padding:0.35rem 0.8rem;font-size:0.82rem;font-weight:600;">&#10003; One-time purchase — no subscriptions ever</span>
+        </div>
 
         <div class="hero-actions" style="justify-content: center;">
           <a href="#pricing" class="btn btn-primary">
@@ -357,6 +365,11 @@
             <li>Free updates for life</li>
           </ul>
 
+          <p style="font-size:0.84rem;margin:1rem 0;padding:0.7rem 0.9rem;background:rgba(78,205,196,0.07);border:1px solid rgba(78,205,196,0.2);border-radius:6px;text-align:left;line-height:1.5;">
+            <strong style="color:#4ecdc4;">One-time purchase. No subscription surprises.</strong>
+            Some developer tools have switched to subscriptions after launch and locked out buyers who paid a one-time price. We won't. One payment means permanent access — forever.
+          </p>
+
           <div class="buy-links">
             <a href="https://checkout.stripe.com/c/pay/cs_live_a1LIkWbuu8T6WilF04DOIq8CoO0nio7dRHSMhDvlKWYIqBH1zHiKKUZBwq" class="btn btn-primary" id="buy-stripe" target="_blank" rel="noopener">
               <svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l3-3 4 4 4-4"/></svg>
@@ -431,7 +444,7 @@
           ConfigForge vs Other Tools: Side-by-Side
         </h2>
         <p class="section-subtitle">
-          See how ConfigForge stacks up against yq, jq, and online converters.
+          See how ConfigForge stacks up against yq, dasel, and online converters.
         </p>
 
         <div style="overflow-x:auto;">
@@ -440,8 +453,8 @@
               <tr style="border-bottom:2px solid var(--primary);">
                 <th style="padding:12px 8px;text-align:left;">Feature</th>
                 <th style="padding:12px 8px;text-align:center;color:var(--primary);font-weight:700;">ConfigForge</th>
-                <th style="padding:12px 8px;text-align:center;">yq</th>
-                <th style="padding:12px 8px;text-align:center;">jq</th>
+                <th style="padding:12px 8px;text-align:center;">yq<br><span style="font-size:0.75rem;color:#888;font-weight:400;">14k &#9733;</span></th>
+                <th style="padding:12px 8px;text-align:center;">dasel<br><span style="font-size:0.75rem;color:#888;font-weight:400;">8k &#9733;</span></th>
                 <th style="padding:12px 8px;text-align:center;">Online Converters</th>
               </tr>
             </thead>
@@ -449,48 +462,48 @@
               <tr style="border-bottom:1px solid #333;">
                 <td style="padding:10px 8px;"><strong>Formats supported</strong></td>
                 <td style="padding:10px 8px;text-align:center;color:#4ecdc4;font-weight:700;">11 (bidirectional)</td>
-                <td style="padding:10px 8px;text-align:center;">2</td>
-                <td style="padding:10px 8px;text-align:center;">1</td>
+                <td style="padding:10px 8px;text-align:center;">7 usable</td>
+                <td style="padding:10px 8px;text-align:center;">8</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">Usually 1-2</td>
               </tr>
               <tr style="border-bottom:1px solid #333;">
                 <td style="padding:10px 8px;"><strong>JSON ↔ YAML</strong></td>
                 <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
                 <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌ (JSON only)</td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
                 <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
               </tr>
               <tr style="border-bottom:1px solid #333;">
                 <td style="padding:10px 8px;"><strong>TOML / XML / CSV / INI / .env</strong></td>
                 <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ All 5</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Partial</td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Most</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>TOML write output</strong><br><span style="font-size:0.78rem;color:#888;">(yq cannot write TOML)</span></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+                <td style="padding:10px 8px;text-align:center;color:#e74c3c;font-size:0.82rem;">❌ yq reads TOML<br>but cannot write it</td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Rarely</td>
               </tr>
               <tr style="border-bottom:1px solid #333;">
                 <td style="padding:10px 8px;"><strong>HCL (Terraform)</strong></td>
                 <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
-              </tr>
-              <tr style="border-bottom:1px solid #333;">
-                <td style="padding:10px 8px;"><strong>Java .properties</strong></td>
                 <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
               </tr>
               <tr style="border-bottom:1px solid #333;">
-                <td style="padding:10px 8px;"><strong>Bidirectional conversion</strong></td>
-                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ All pairs</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Limited</td>
+                <td style="padding:10px 8px;"><strong>Java .properties / plist / JSONC</strong></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ All 3</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Limited</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
               </tr>
               <tr style="border-bottom:1px solid #333;">
                 <td style="padding:10px 8px;"><strong>Batch directory mode</strong></td>
-                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Native</td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Native + streaming</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Shell loops</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Shell loops</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
@@ -498,15 +511,15 @@
               <tr style="border-bottom:1px solid #333;">
                 <td style="padding:10px 8px;"><strong>Comment preservation</strong></td>
                 <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Round-trip</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ Partial</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌ N/A</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">⚠️ YAML only; lost via JSON</td>
+                <td style="padding:10px 8px;text-align:center;color:#e74c3c;font-size:0.82rem;">❌ <em>"discarded on write"</em><br><span style="font-size:0.75rem;">— dasel docs</span></td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌ Stripped</td>
               </tr>
               <tr style="border-bottom:1px solid #333;">
                 <td style="padding:10px 8px;"><strong>Blank line preservation</strong></td>
                 <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Preserved</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌ Stripped (#515: 151👍)</td>
-                <td style="padding:10px 8px;text-align:center;color:#888;">❌ N/A</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌ Stripped</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">❌ Stripped</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌ Stripped</td>
               </tr>
               <tr style="border-bottom:1px solid #333;">
@@ -532,9 +545,9 @@
               </tr>
               <tr>
                 <td style="padding:10px 8px;"><strong>Install</strong></td>
-                <td style="padding:10px 8px;text-align:center;"><code>pip install</code></td>
-                <td style="padding:10px 8px;text-align:center;">Binary</td>
-                <td style="padding:10px 8px;text-align:center;"><code>apt</code>/<code>brew</code></td>
+                <td style="padding:10px 8px;text-align:center;"><code>pip install</code> / <code>brew</code></td>
+                <td style="padding:10px 8px;text-align:center;"><code>brew</code> / binary</td>
+                <td style="padding:10px 8px;text-align:center;"><code>brew</code> / binary</td>
                 <td style="padding:10px 8px;text-align:center;">Browser</td>
               </tr>
             </tbody>
@@ -548,6 +561,7 @@
             <a href="/tools/devbench/forge/seo/vs-jq.html" class="btn btn-secondary btn-sm">ConfigForge vs jq</a>
             <a href="/tools/devbench/forge/seo/yj-alternative-comparison.html" class="btn btn-secondary btn-sm">ConfigForge vs yj</a>
             <a href="/tools/devbench/forge/seo/vs-dasel.html" class="btn btn-secondary btn-sm">ConfigForge vs dasel</a>
+            <a href="/tools/devbench/forge/seo/vs-devly.html" class="btn btn-secondary btn-sm">ConfigForge vs Devly</a>
             <a href="/tools/devbench/forge/seo/vs-online.html" class="btn btn-secondary btn-sm">ConfigForge vs Online Converters</a>
             <a href="/tools/devbench/forge/seo/value-proposition.html" class="btn btn-secondary btn-sm">Why $19 Is Fair</a>
             <a href="/tools/devbench/forge/seo/cloudformation-yaml-converter.html" class="btn btn-secondary btn-sm">CloudFormation Converter</a>
@@ -622,6 +636,7 @@
             <a href="/tools/devbench/forge/seo/vs-jq.html" class="btn btn-secondary btn-sm">vs jq</a>
             <a href="/tools/devbench/forge/seo/yj-alternative-comparison.html" class="btn btn-secondary btn-sm">vs yj</a>
             <a href="/tools/devbench/forge/seo/vs-dasel.html" class="btn btn-secondary btn-sm">vs dasel</a>
+            <a href="/tools/devbench/forge/seo/vs-devly.html" class="btn btn-secondary btn-sm">vs Devly</a>
             <a href="/tools/devbench/forge/seo/vs-online.html" class="btn btn-secondary btn-sm">vs Online Converters</a>
             <a href="/tools/devbench/forge/seo/value-proposition.html" class="btn btn-secondary btn-sm">Why $19 Is Fair</a>
             <a href="/tools/devbench/forge/seo/cloudformation-yaml-converter.html" class="btn btn-secondary btn-sm">CloudFormation YAML</a>
