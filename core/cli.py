@@ -110,6 +110,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "unflatten", False):
         return _run_cf_unflatten(args)
 
+    # cf --check-env  → show environment info (no stdin needed)
+    if args.command == "cf" and getattr(args, "check_env", False):
+        return _run_cf_check_env(args)
+
     # completion — emit shell completion script
     if args.command == "completion":
         return _run_completion(args.shell)
@@ -318,6 +322,10 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--sep", default=".", metavar="SEP",
                                 help="Key separator for --flatten / --unflatten (default: '.'). "
                                      "Example: --sep __ for shell-friendly var names like DATABASE__HOST")
+            tool_p.add_argument("--check-env", action="store_true", dest="check_env",
+                                help="Show environment info: Python version, platform, available formats, "
+                                     "and optional dependency status. Useful for CI/CD debugging. "
+                                     "Use --raw for JSON output.")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -949,6 +957,112 @@ def _list_cf_formats() -> str:
         "metadata": {"supported_formats": _cf.SUPPORTED_FORMATS},
     }
     return json.dumps(result, ensure_ascii=False)
+
+
+def _get_env_info() -> dict:
+    """Collect environment info for --check-env output."""
+    import platform
+    import sys as _sys
+
+    from . import configforge as _cf
+    from ._version import __version__ as _ver
+
+    # Optional dependency probes
+    optional_deps: dict[str, str | None] = {}
+    for modname, label in [
+        ("yaml", "pyyaml"),
+        ("hcl2", "python-hcl2"),
+        ("lxml", "lxml"),
+        ("ruamel.yaml", "ruamel.yaml"),
+    ]:
+        try:
+            mod = importlib.util.find_spec(modname.split(".")[0])
+            if mod is not None:
+                imported = __import__(modname.split(".")[0])
+                optional_deps[label] = getattr(imported, "__version__", "installed")
+            else:
+                optional_deps[label] = None
+        except Exception:
+            optional_deps[label] = None
+
+    # Format availability — map format → dep that enables it
+    _format_deps: dict[str, str | None] = {
+        "json": None, "jsonc": None, "env": None, "properties": None,
+        "yaml": "pyyaml", "toml": None, "xml": None, "csv": None,
+        "ini": None, "hcl": "python-hcl2", "plist": None,
+    }
+    formats_status: dict[str, bool] = {}
+    for fmt in _cf.SUPPORTED_FORMATS:
+        dep = _format_deps.get(fmt)
+        formats_status[fmt] = (dep is None) or (optional_deps.get(dep) is not None)
+
+    return {
+        "version": _ver,
+        "python_version": _sys.version.split()[0],
+        "python_impl": platform.python_implementation(),
+        "platform": _sys.platform,
+        "arch": platform.machine(),
+        "formats": formats_status,
+        "optional_deps": optional_deps,
+    }
+
+
+def _run_cf_check_env(args: argparse.Namespace) -> int:
+    """Implement devbench cf --check-env."""
+    info = _get_env_info()
+
+    if getattr(args, "raw", False):
+        print(json.dumps(info, ensure_ascii=False))
+        return EXIT_SUCCESS
+
+    lines = [
+        "═" * 60,
+        f"  DevBench {info['version']} — Environment",
+        "═" * 60,
+        "",
+        f"Python:   {info['python_version']} ({info['python_impl']}) — {info['platform']}",
+        f"Platform: {info['arch']}",
+        "",
+        f"Config Formats ({sum(info['formats'].values())}/{len(info['formats'])} available):",
+    ]
+    _dep_labels: dict[str, str] = {
+        "json": "stdlib", "jsonc": "stdlib", "env": "stdlib",
+        "properties": "stdlib", "toml": "stdlib tomllib", "xml": "stdlib xml.etree",
+        "csv": "stdlib csv", "ini": "stdlib configparser", "plist": "stdlib plistlib",
+        "yaml": "PyYAML", "hcl": "python-hcl2",
+    }
+    for fmt, available in info["formats"].items():
+        mark = "✓" if available else "✗"
+        label = _dep_labels.get(fmt, "")
+        status = ""
+        if not available:
+            dep_name = {"yaml": "pyyaml", "hcl": "python-hcl2"}.get(fmt, "")
+            status = f"  [pip install {dep_name}]" if dep_name else ""
+        lines.append(f"  {mark} {fmt:<12} {label}{status}")
+
+    lines += [
+        "",
+        "Optional dependencies:",
+    ]
+    for dep, ver in info["optional_deps"].items():
+        mark = "✓" if ver else "✗"
+        lines.append(f"  {mark} {dep:<20} {ver or 'not installed'}")
+
+    lines += [
+        "",
+        "CI/CD quick start:",
+        "  pip install devbench",
+        "  devbench cf config.yaml --to json",
+        "  devbench cf '*.yaml' --batch --validate",
+        "  devbench cf deploy.yaml --get spec.replicas",
+        "",
+        "Verify install:",
+        f"  devbench --version   →  devbench {info['version']}",
+        "  devbench cf --check-env --raw  →  JSON output for scripts",
+    ]
+
+    print("\n".join(lines))
+    return EXIT_SUCCESS
 
 
 # ---------------------------------------------------------------------------
@@ -1869,7 +1983,8 @@ _CF_FLAGS = (
     "--flatten --unflatten --sep --env-expand "
     "--batch --stream --output-dir --sort-keys --indent "
     "--flatten-xml --no-comments --yaml12 --template-safe "
-    "--null-handling --list-formats --serve --port --host --api --api-port "
+    "--null-handling --list-formats --check-env "
+    "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
 )
 _CF_FORMATS = "json jsonc yaml toml xml csv ini env hcl properties plist"
@@ -2044,6 +2159,7 @@ _devbench() {{
                         '--template-safe[Quote Jinja/Helm/Ansible template expressions]' \\
                         '--null-handling=[Null handling strategy]:mode:(skip comment empty error)' \\
                         '--list-formats[List all supported formats]' \\
+                        '--check-env[Show environment info (Python, formats, deps)]' \\
                         '--serve[Launch the web UI]' \\
                         '--port=[Web UI port (default 8080)]:port:' \\
                         '--api[Launch JSON HTTP API]' \\
@@ -2150,6 +2266,7 @@ complete -c devbench -n __devbench_seen_cf -l backup   -d 'Backup suffix before 
 
 # cf: server / misc
 complete -c devbench -n __devbench_seen_cf -l list-formats -d 'List all supported formats'
+complete -c devbench -n __devbench_seen_cf -l check-env    -d 'Show environment info (Python, formats, deps)'
 complete -c devbench -n __devbench_seen_cf -l serve        -d 'Launch the web UI'
 complete -c devbench -n __devbench_seen_cf -l port         -d 'Web UI port (default 8080)'  -r
 complete -c devbench -n __devbench_seen_cf -l api          -d 'Launch JSON HTTP API'

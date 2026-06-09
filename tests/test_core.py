@@ -1716,3 +1716,90 @@ def test_completion_help_shows_shells(capsys):
     assert "bash" in combined
     assert "zsh" in combined
     assert "fish" in combined
+
+
+# ---------------------------------------------------------------------------
+# --check-env tests
+# ---------------------------------------------------------------------------
+
+def test_check_env_human_output(capsys):
+    from core.cli import main
+    rc = main(["cf", "--check-env"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "DevBench" in out
+    assert "1.0.0" in out
+    assert "Python:" in out
+    assert "Config Formats" in out
+    assert "json" in out
+    assert "yaml" in out
+
+
+def test_check_env_raw_json(capsys):
+    import json
+    from core.cli import main
+    rc = main(["cf", "--check-env", "--raw"])
+    assert rc == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["version"] == "1.0.0"
+    assert "python_version" in data
+    assert "platform" in data
+    assert "formats" in data
+    assert "optional_deps" in data
+
+
+def test_check_env_formats_all_keys(capsys):
+    import json
+    from core.cli import main
+    main(["cf", "--check-env", "--raw"])
+    data = json.loads(capsys.readouterr().out)
+    expected = {"json", "jsonc", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties", "plist"}
+    assert set(data["formats"].keys()) == expected
+
+
+def test_check_env_formats_all_available(capsys):
+    import json
+    from core.cli import main
+    main(["cf", "--check-env", "--raw"])
+    data = json.loads(capsys.readouterr().out)
+    # All formats should be available in this environment (all deps installed)
+    unavailable = [f for f, ok in data["formats"].items() if not ok]
+    assert unavailable == [], f"Formats unavailable: {unavailable}"
+
+
+def test_check_env_optional_deps_keys(capsys):
+    import json
+    from core.cli import main
+    main(["cf", "--check-env", "--raw"])
+    data = json.loads(capsys.readouterr().out)
+    assert "pyyaml" in data["optional_deps"]
+    assert "python-hcl2" in data["optional_deps"]
+    assert "lxml" in data["optional_deps"]
+
+
+def test_check_env_human_has_ci_quickstart(capsys):
+    from core.cli import main
+    main(["cf", "--check-env"])
+    out = capsys.readouterr().out
+    assert "pip install devbench" in out
+    assert "--batch --validate" in out
+
+
+def test_check_env_exits_zero_no_input():
+    from core.cli import main
+    rc = main(["cf", "--check-env"])
+    assert rc == 0
+
+
+def test_check_env_bash_completion_includes_flag(capsys):
+    from core.cli import main
+    main(["completion", "bash"])
+    out = capsys.readouterr().out
+    assert "--check-env" in out
+
+
+def test_check_env_fish_completion_includes_flag(capsys):
+    from core.cli import main
+    main(["completion", "fish"])
+    out = capsys.readouterr().out
+    assert "check-env" in out

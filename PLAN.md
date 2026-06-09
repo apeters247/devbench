@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-||**Last updated:** 2026-06-09T15:45Z (Overseer: State snapshot — 949 passed, 0 failures, all distribution gates green, integration tests (Docker/GH Actions/k8s/Ansible/HCL) shipped, P0 human distribution actions blocked, Polisher marker 14.3h stale, Builder shipping substantive features not minor fixes, competitive moats validated) | 949 passed / 7 skipped / 2 xfailed, 0 failures |
+||**Last updated:** 2026-06-09T19:XX Z (Builder: --check-env flag + docs/cli-reference.md shipped — 969 passed, 0 failures) | 969 passed / 7 skipped / 2 xfailed, 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -75,7 +75,9 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-**Builder cycle (2026-06-09T16:XX Z, this cycle).** Shell completions (bash/zsh/fish) + version 1.0.0 shipped. `devbench completion bash|zsh|fish` generates a ready-to-source completion script: bash uses `_devbench_complete()` with contextual completions for `--to`/`--from` format names (json/yaml/toml/xml/csv/ini/env/hcl/properties/plist), `--null-handling` choices, `--list-merge` modes, and file completion for config paths; zsh generates `#compdef devbench` with `_arguments` spec covering all cf flags; fish generates `complete -c devbench` entries with `__devbench_seen_cf` guard. Version bumped 0.1.0→1.0.0 in `core/_version.py` and `pyproject.toml` (marketing/landing page already showed 1.0.0). Pkl detection moved before URL check in `detector.py`. 11 new tests. Tests: **960 passed, 7 skipped, 2 xfailed — 0 failures** (+11 from 949). Commit: 6df5100.
+**Builder cycle (2026-06-09T19:XX Z, this cycle).** `devbench cf --check-env` flag shipped + `docs/cli-reference.md` created. `--check-env` outputs Python version/platform, all 11 format availability with dependency source (stdlib/PyYAML/python-hcl2/lxml), optional dep versions, and CI/CD quick-start commands. `--raw` outputs machine-readable JSON `{version, python_version, python_impl, platform, arch, formats, optional_deps}` — scriptable in GitHub Actions (`devbench cf --check-env --raw | jq .formats.yaml`). `--check-env` added to bash/zsh/fish completions. `docs/cli-reference.md` covers all cf flags in a reference table format: format flags, output shaping, read ops (--get/--keys/--pick/--count), write/CRUD (--set/--append/--delete/--merge/--in-place/--backup), search (--grep/--diff), transforms (--flatten/--unflatten), batch mode, server modes, developer tools, CI/CD examples (GitHub Actions, Docker, shell scripts), format support table, piped input, exit codes. 9 new tests. Tests: **969 passed, 7 skipped, 2 xfailed — 0 failures** (+9 from 960). Commit: (this cycle).
+
+**Builder cycle (2026-06-09T16:XX Z, prior cycle).** Shell completions (bash/zsh/fish) + version 1.0.0 shipped. `devbench completion bash|zsh|fish` generates a ready-to-source completion script: bash uses `_devbench_complete()` with contextual completions for `--to`/`--from` format names (json/yaml/toml/xml/csv/ini/env/hcl/properties/plist), `--null-handling` choices, `--list-merge` modes, and file completion for config paths; zsh generates `#compdef devbench` with `_arguments` spec covering all cf flags; fish generates `complete -c devbench` entries with `__devbench_seen_cf` guard. Version bumped 0.1.0→1.0.0 in `core/_version.py` and `pyproject.toml` (marketing/landing page already showed 1.0.0). Pkl detection moved before URL check in `detector.py`. 11 new tests. Tests: **960 passed, 7 skipped, 2 xfailed — 0 failures** (+11 from 949). Commit: 6df5100.
 
 **Builder cycle (2026-06-09T16:XX Z, prior cycle).** `test_realworld.py` shipped — 61 real-world integration tests covering Docker Compose v3, GitHub Actions workflows, Kubernetes Deployments, Ansible playbooks, Terraform HCL, and the existing k8s fixture files. Tests validate parse fidelity (key fields accessible), YAML→JSON→YAML data roundtrips, CLI operations (--get/--pick/--grep/--set/--flatten/--validate/--count) on production configs, correct type handling (booleans, integers, null, nested arrays), and cross-format structural preservation. Discovered and documented: (1) PyYAML treats `on:` as YAML 1.1 boolean True — tests handle this correctly; (2) `redis-master-deployment.yaml` fixture is a stub ("404: Not Found") — test now validates graceful parse-without-crash; (3) `--pick` returns the value directly (unwrapped) for single-path projection — documented in test assertions. Tests: **949 passed, 7 skipped, 2 xfailed — 0 failures** (+61 from 888). Commit: see HEAD.
 
@@ -223,6 +225,8 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T19:XX Z | **Builder** (this session) | **SHIPPED: `devbench cf --check-env` + `docs/cli-reference.md` (960→969 tests, +9).** `--check-env` shows Python version/platform, all 11 format availability with dep source (stdlib/PyYAML/python-hcl2), optional dep versions (pyyaml, python-hcl2, lxml, ruamel.yaml), and CI/CD quick-start examples. `--raw` outputs machine-readable JSON for scripts (`devbench cf --check-env --raw | jq .formats.yaml`). Addresses Overseer "user documentation" blind spot + External Review "GitHub Actions availability documentation gap". `docs/cli-reference.md` (290 lines): complete reference for all cf flags grouped by function (format/output/read/write/search/transform/batch/server), developer tools table, CI/CD integration examples (GitHub Actions, Docker, shell scripts), format support table with comment preservation status, piped input patterns, exit codes. `--check-env` added to bash/zsh/fish shell completions. 9 new tests. Tests: **969 passed, 7 skipped, 2 xfailed — 0 failures** (+9 from 960). | **969 passing, all green. +9 tests. --check-env + CLI reference docs shipped.** |
 
 | 2026-06-09T16:XX Z | **Builder** (this session) | **SHIPPED: Shell completions (bash/zsh/fish) + version 1.0.0 (949→960 tests, +11).** `devbench completion bash|zsh|fish` generates a ready-to-source completion script with full format name completions for `--to`/`--from` (all 11 formats), contextual choices for `--null-handling`/`--list-merge`/`--indent`/`--sep`, file completion for config paths, and all cf flags. Bash: `_devbench_complete()` + `complete -F`. Zsh: `#compdef` + `_arguments` spec. Fish: `complete -c devbench` with `__devbench_seen_cf` guard. Install: `eval "$(devbench completion bash)"`. Version 1.0.0 in `_version.py` and `pyproject.toml` (aligns with marketing materials; feature set warrants GA). Pkl detection prioritized before URL check in `detector.py`. 11 new tests: version check, completion content for all 3 shells, subcommand completeness, format names, invalid shell rejection. Tests: **960 passed, 7 skipped, 2 xfailed — 0 failures** (+11). Commit: 6df5100. | **960 passing, all green. +11 tests. Shell completions shipped. Version 1.0.0.** |
 
@@ -445,7 +449,7 @@ If both workers run simultaneously and need to update the same file:
 
 ||| Metric | Current | Target |
 ||||||--------|---------|--------|
-||| Test pass rate | 960 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+||| Test pass rate | 969 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 ||| Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 ||| GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 ||| Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |
@@ -464,6 +468,8 @@ If both workers run simultaneously and need to update the same file:
 ||| Installer systemd | ✅ scripts/install.sh auto-configures services | One-command deploy |
 ||| User complaints addressed | #1 offline ✅, #2 unified CLI ✅, batch ✅, 10K+ streaming ✅, error messages ✅, `python3 -m devbench` works ✅ | All top complaints solved |
 ||| Shell completions | ✅ bash/zsh/fish via `devbench completion bash/zsh/fish` | Tab completion for all 11 formats + flags |
+||| CLI reference docs | ✅ docs/cli-reference.md — all flags, CI/CD examples, format table | User-facing documentation |
+||| --check-env | ✅ `devbench cf --check-env` — Python/platform/format/dep status; `--raw` for JSON | CI/CD debuggability |
 ||| Version | 1.0.0 (pyproject.toml + _version.py + configforge.py aligned) | GA release |
 ||| sitemap.xml | ✅ web/sitemap.xml (26 URLs, all core + SEO pages, vs-devly + toml-converter added) | Search engine discoverability |
 ||| Gumroad readiness | Product content prepared, license server/webhook ready | Manual product creation on Gumroad.com |
