@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|**Last updated:** 2026-06-09T04:35Z (Builder: fix convert_file OSError swallowed silently — wrap write_text in try/except, return error dict instead of raising; add 3 convert_file error-path tests: nonwritable-dir, roundtrip, format-from-extension; 627 passed / 7 skipped / 2 xfailed, 0 failures) |
+|**Last updated:** 2026-06-09T07:00Z (Builder: sitemap.xml (25 URLs, all SEO + core pages), robots.txt sitemap URL corrected; 647 passed / 7 skipped / 2 xfailed, 0 failures) |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-**Builder cycle (2026-06-09T06:00Z).** Shipped full CRUD on config values: `--set PATH VALUE` (coerces JSON types; creates intermediate dicts), `--delete PATH`, `--in-place` flag — works across all 9 formats. 12 new tests. Tests: **645 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green. Critical path to revenue: Gumroad listing ($19, manual task). macOS .app blocked on Mac Mini (~3 days). Trial license already shipped.
+**Builder cycle (2026-06-09T07:00Z).** Shipped `web/sitemap.xml` (25 URLs: 5 core pages + 20 SEO pages, with `priority` and `changefreq`). Fixed `web/robots.txt` — sitemap directive was pointing at `https://naxiai.com/sitemap.xml` (wrong root); now correctly points to `https://naxiai.com/tools/devbench/sitemap.xml`. Tests: **647 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green. Critical path to revenue: Gumroad listing ($19, manual task). macOS .app blocked on Mac Mini (~3 days).
 
 ## 4. Work Queue (ordered)
 
@@ -158,7 +158,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ### COMMERCIAL RESEARCH — NEW FINDINGS (2026-06-07T23:00Z, Rotation 5: Pricing)
 - [ ] **Pricing: $19 validated** — No change needed. Research confirms $19 is optimal for indie macOS utility tool. Left-digit effect, indie surveys, and competitor data all align.
-- [ ] **P1: Add 14-day time-limited trial** — Implement `devbench license trial` to generate trial license key with expiry. Converts 15-25% better than indefinite free tier. Builder task.
+- [x] **P1: Add 14-day time-limited trial** — `devbench license trial` + `POST /license/trial` shipped in 2026-06-09T01:30Z builder cycle. nanosecond customer_id, full CLI+server path, tested. DONE.
 - [ ] **P2: Prepare $29 "Pro" tier** — Define feature diff for v0.2.0 (format plugins, CI/CD integration). Do not ship with two tiers at launch.
 - [ ] **P2: Create "Why $19 is fair" page** — forge/seo/value-proposition.html comparing cost per format ($19/9=$2.11), ROI for DevOps engineers, vs OSS + online tools. Polisher task.
 - [ ] **P2: Add pricing validator to Polisher external review** — Monitor Gumroad/Indie Hackers for pricing trends, check competitor pricing changes.
@@ -167,6 +167,8 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T07:00Z | **Builder** (cron — this session) | **SHIPPED: `web/sitemap.xml` (25 URLs covering all 20 SEO pages + 5 core pages, with priority/changefreq). Fixed `web/robots.txt` sitemap directive — was `https://naxiai.com/sitemap.xml` (root, wrong); now `https://naxiai.com/tools/devbench/sitemap.xml` (correct for nginx alias). Marked P1 trial license as done in §4 (shipped 01:30Z cycle, overseer flagged it as still showing TODO). Tests: 647 passed, 7 skipped, 2 xfailed — 0 failures.** | **647/656 passing, all green. sitemap.xml live.** |
 
 | 2026-06-09T06:00Z | **Builder** (cron — this session) | **SHIPPED: `--set PATH VALUE`, `--delete PATH`, `--in-place` flag.** Full CRUD on config values across all 9 formats. `--set` coerces JSON types (booleans, numbers, null, arrays, objects) via `_coerce_set_value()`; creates intermediate dicts for new paths. `--delete` removes keys/list-elements by dot-notation. `--in-place`/`-i` writes result back to source file (shared by both). Implementation: `_set_by_path()`, `_delete_by_path()`, `_coerce_set_value()` in `core/configforge.py`; 12 new tests (7 for --set, 5 for --delete). Tests: **645 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green. | **645/654 passing, all green. +12 tests.** |
 
@@ -334,7 +336,7 @@ If both workers run simultaneously and need to update the same file:
 
 || Metric | Current | Target |
 |||||--------|---------|--------|
-|| Test pass rate | 645 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+|| Test pass rate | 647 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 || Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 || GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 || Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |
@@ -344,14 +346,15 @@ If both workers run simultaneously and need to update the same file:
 || Comment preservation | ✅ Implemented (YAML + INI) + round-trip tests | Preserved through JSON round-trip |
 || macOS build | Blocked | Signed .dmg |
 || Stripe | $19 product live | Checkout working |
-|| Landing page | Live at naxiai.com | SEO optimized ✅ (verified Jun 6). 18 SEO pages now (16 prior + yq-alternative-comment-preservation + jq-alternative-csv-to-json) |
+|| Landing page | Live at naxiai.com | SEO optimized ✅ (verified Jun 6). 20 SEO pages + sitemap.xml live at /tools/devbench/sitemap.xml |
 || Web demo (CORS + nginx + robots) | ✅ Hardened, all endpoints live-verified (8099) | Production-ready |
 || REST API | ✅ All 4 endpoints live-verified (8082), CORS, rate limiting | Developers can integrate |
 || License server | ✅ 9 endpoints (health, root, verify, activate, revoke, trial, webhook/stripe, webhook/gumroad, download) | Post-purchase delivery chain |
-|| License CLI | ✅ devbench license {activate|verify|server} | CLI key management + server launch |
+|| License CLI | ✅ devbench license {activate|verify|server|trial} | CLI key management + server launch |
 || Release pipeline | ✅ forge/release-checklist.md | pip + version bump + changelog |
 || Installer systemd | ✅ scripts/install.sh auto-configures services | One-command deploy |
 || User complaints addressed | #1 offline ✅, #2 unified CLI ✅, batch ✅, 10K+ streaming ✅, error messages ✅, `python3 -m devbench` works ✅ | All top complaints solved |
+|| sitemap.xml | ✅ web/sitemap.xml (25 URLs, all core + SEO pages) | Search engine discoverability |
 
 | Metric | Current | Target |
 |||||--------|---------|--------|

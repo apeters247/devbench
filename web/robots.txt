@@ -2,4 +2,4 @@ User-agent: *
 Allow: /demo/
 Allow: /api/
 Allow: /health
-Sitemap: https://naxiai.com/sitemap.xml
+Sitemap: https://naxiai.com/tools/devbench/sitemap.xml
