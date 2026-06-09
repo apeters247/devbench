@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Validate YAML/JSON/TOML in CI/CD — ConfigForge CLI Config Validator</title>
+  <meta name="description" content="Validate YAML, JSON, TOML, INI, and 7 more config formats in CI/CD pipelines with ConfigForge. One tool, 11 formats, exit codes for shell scripts. pip install devbench — runs offline, no API keys.">
+  <meta property="og:title" content="Config File Validation in CI/CD — ConfigForge validates YAML, JSON, TOML, and 8 more">
+  <meta property="og:description" content="One CLI to validate all your config formats. devbench cf *.yaml --batch --validate exits 1 on any invalid file — perfect for pre-commit hooks and GitHub Actions.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/validate-config-ci.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Validate YAML/JSON/TOML in CI/CD — ConfigForge">
+  <meta name="twitter:description" content="One pip install validates 11 config formats in CI/CD. Exit codes, batch mode, JSON output — everything pre-commit hooks need.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config validator and converter. Validates YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC. CI/CD-friendly exit codes, batch glob mode, JSON output.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="/tools/devbench/">← Back to Devbench</a>
+  </nav>
+
+  <main class="seo-page">
+    <h1>Validate Config Files in CI/CD Pipelines</h1>
+    <p class="subtitle">One tool for YAML, JSON, TOML, INI, .env, and 6 more — with CI-native exit codes</p>
+
+    <section>
+      <h2>The Problem: Config Errors Hit Production</h2>
+      <p>
+        A misplaced indent in a Kubernetes YAML, a trailing comma in a JSON config, a missing
+        section header in an INI file — these break deployments. Most teams only catch them
+        when the deploy fails. A proper pre-commit hook or CI step catches them in seconds.
+      </p>
+      <p>
+        The challenge: your configs span multiple formats. Kubernetes uses YAML. Terraform uses HCL.
+        Node.js uses JSON. Python apps use INI or .env. You'd need four separate linters.
+        Or one ConfigForge.
+      </p>
+    </section>
+
+    <section>
+      <h2>ConfigForge <code>--validate</code></h2>
+      <p>
+        ConfigForge's <code>--validate</code> flag checks whether a config file is parseable.
+        It exits 0 if valid, exits 1 if not — exactly what shell scripts and CI systems expect.
+      </p>
+
+      <h3>Single file</h3>
+      <pre><code>devbench cf config.yaml --validate
+# config.yaml: valid  (yaml, 15 keys)
+
+devbench cf broken.yaml --validate
+# broken.yaml: INVALID
+#   error: mapping values are not allowed here (line 4, col 5)</code></pre>
+
+      <h3>Batch validation — validate every config file at once</h3>
+      <pre><code># Validate all YAML files in the current directory
+devbench cf "*.yaml" --batch --validate
+
+# Recursive — validate across subdirectories
+devbench cf "**/*.yaml" --batch --validate -R
+
+# Output:
+# k8s/deployment.yaml: valid  (yaml, 12 keys)
+# k8s/service.yaml: valid  (yaml, 6 keys)
+# k8s/broken.yaml: INVALID
+#   error: could not find expected ':' (line 8, col 3)
+# [validate] 3 files: 2 valid, 1 invalid</code></pre>
+
+      <h3>Machine-readable JSON — for programmatic use</h3>
+      <pre><code>devbench cf config.yaml --validate --raw
+# {
+#   "valid": true,
+#   "file": "config.yaml",
+#   "format": "yaml",
+#   "key_count": 15
+# }
+
+devbench cf "*.yaml" --batch --validate --raw
+# [
+#   {"valid": true, "file": "a.yaml", "format": "yaml", "key_count": 5},
+#   {"valid": false, "file": "b.yaml", "error": "mapping values not allowed..."}
+# ]</code></pre>
+    </section>
+
+    <section>
+      <h2>11 Formats, One Validator</h2>
+      <p>ConfigForge validates every format it supports — no separate tools needed:</p>
+      <table>
+        <thead>
+          <tr><th>Format</th><th>Command</th><th>Use case</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>YAML</td><td><code>devbench cf app.yaml --validate</code></td><td>Kubernetes, Helm, GitHub Actions, Ansible</td></tr>
+          <tr><td>JSON</td><td><code>devbench cf tsconfig.json --validate</code></td><td>Node.js, TypeScript, package.json</td></tr>
+          <tr><td>TOML</td><td><code>devbench cf pyproject.toml --validate</code></td><td>Python packaging, Rust Cargo.toml</td></tr>
+          <tr><td>INI</td><td><code>devbench cf setup.cfg --validate</code></td><td>Python setup.cfg, Git config, service files</td></tr>
+          <tr><td>.env</td><td><code>devbench cf .env.production --validate</code></td><td>Docker, Twelve-Factor Apps</td></tr>
+          <tr><td>HCL</td><td><code>devbench cf main.tf --validate</code></td><td>Terraform, OpenTofu</td></tr>
+          <tr><td>JSONC</td><td><code>devbench cf settings.json --validate</code></td><td>VS Code, tsconfig with comments</td></tr>
+          <tr><td>XML</td><td><code>devbench cf pom.xml --validate</code></td><td>Maven, Spring Boot, Android</td></tr>
+          <tr><td>plist</td><td><code>devbench cf Info.plist --validate</code></td><td>macOS/iOS apps, launch agents</td></tr>
+          <tr><td>.properties</td><td><code>devbench cf app.properties --validate</code></td><td>Java, Spring, Maven</td></tr>
+          <tr><td>CSV</td><td><code>devbench cf data.csv --validate</code></td><td>Data pipelines, seed files</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>GitHub Actions — Validate All Configs Before Merge</h2>
+      <pre><code># .github/workflows/config-lint.yml
+name: Validate Configs
+
+on: [pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install devbench
+      - name: Validate YAML configs
+        run: devbench cf "**/*.yaml" --batch --validate -R
+      - name: Validate TOML configs
+        run: devbench cf "**/*.toml" --batch --validate -R
+      - name: Validate JSON configs
+        run: devbench cf "**/*.json" --batch --validate -R</code></pre>
+      <p>
+        Each step exits 1 if any file is invalid, failing the PR check with a clear error message.
+        Total install time: under 2 seconds on a cold runner.
+      </p>
+    </section>
+
+    <section>
+      <h2>pre-commit Hook</h2>
+      <pre><code># .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: validate-yaml
+        name: Validate YAML configs
+        language: system
+        entry: devbench cf --validate --batch
+        args: ["**/*.yaml", "-R"]
+        pass_filenames: false
+
+      - id: validate-toml
+        name: Validate TOML configs
+        language: system
+        entry: devbench cf --validate --batch
+        args: ["**/*.toml", "-R"]
+        pass_filenames: false</code></pre>
+    </section>
+
+    <section>
+      <h2>Count Config Keys — Shell Scripting with ConfigForge</h2>
+      <p>
+        Beyond validation, <code>--count PATH</code> makes shell scripting with configs ergonomic:
+      </p>
+      <pre><code># Count replicas in a Kubernetes deployment
+REPLICAS=$(devbench cf deployment.yaml --count spec.replicas)
+echo "Deploying $REPLICAS replicas"
+
+# Count containers
+CONTAINERS=$(devbench cf deployment.yaml --count spec.template.spec.containers)
+if [ "$CONTAINERS" -gt 5 ]; then
+  echo "Warning: $CONTAINERS containers in one pod"
+fi
+
+# Count environment variables
+ENV_VARS=$(devbench cf deploy.yaml --count spec.template.spec.containers[0].env)
+echo "Pod has $ENV_VARS environment variables"</code></pre>
+      <p>
+        <code>--count</code> outputs a plain integer — no jq, no Python, no awk. Works with any
+        supported format: YAML, JSON, TOML, INI, HCL, and more.
+      </p>
+    </section>
+
+    <section>
+      <h2>Why Not yamllint / jsonlint / toml-lint?</h2>
+      <table>
+        <thead>
+          <tr><th>Tool</th><th>Formats</th><th>Batch glob</th><th>JSON output</th><th>Also converts</th><th>One install</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>ConfigForge</strong></td><td>11</td><td>✓</td><td>✓ <code>--raw</code></td><td>✓</td><td>✓ <code>pip install devbench</code></td></tr>
+          <tr><td>yamllint</td><td>YAML only</td><td>✗</td><td>✗</td><td>✗</td><td>separate install</td></tr>
+          <tr><td>jsonlint</td><td>JSON only</td><td>✗</td><td>partial</td><td>✗</td><td>separate install</td></tr>
+          <tr><td>taplo</td><td>TOML only</td><td>✓</td><td>✓</td><td>✗</td><td>separate install</td></tr>
+          <tr><td>yq</td><td>YAML/JSON/XML</td><td>✗</td><td>✗</td><td>partial</td><td>separate install</td></tr>
+          <tr><td>dasel</td><td>8 formats</td><td>✗</td><td>✗</td><td>partial</td><td>separate install</td></tr>
+        </tbody>
+      </table>
+      <p>
+        ConfigForge replaces four separate format-specific linters with one <code>pip install</code>.
+        And unlike format-specific linters, it also <em>converts</em> between formats — so you can
+        validate, modify, and convert in one tool, keeping your CI pipeline simple.
+      </p>
+    </section>
+
+    <section>
+      <h2>Install</h2>
+      <pre><code>pip install devbench
+
+# Quick test
+devbench cf config.yaml --validate
+echo $?  # 0 = valid, 1 = invalid</code></pre>
+      <p>
+        No API keys. No internet connection required during validation. Runs offline in air-gapped
+        CI environments.
+      </p>
+      <p>
+        <a href="/tools/devbench/" class="cta-link">Get Devbench — $19 one-time →</a>
+      </p>
+    </section>
+
+    <section class="related-links">
+      <h2>Related</h2>
+      <ul>
+        <li><a href="kubernetes-config-converter.html">Kubernetes config converter — YAML↔JSON↔TOML</a></li>
+        <li><a href="use-cases.html">9 real-world ConfigForge workflows</a></li>
+        <li><a href="vs-yq.html">ConfigForge vs yq — comment preservation comparison</a></li>
+        <li><a href="vs-dasel.html">ConfigForge vs dasel — format support and comment handling</a></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Devbench · <a href="https://naxiai.com">naxiai.com</a> · <a href="/tools/devbench/">9 developer tools in one</a></p>
+  </footer>
+</body>
+</html>

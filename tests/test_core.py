@@ -698,3 +698,209 @@ def test_cf_diff_flatten_dot_in_key():
     d = {"com.apple.finder": {"Enabled": True}}
     flat = _flatten_for_diff(d)
     assert "com\\.apple\\.finder.Enabled" in flat
+
+
+# ---------------------------------------------------------------------------
+# cf --validate
+# ---------------------------------------------------------------------------
+
+
+def test_cf_validate_valid_yaml(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--validate"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "valid" in out
+    assert "yaml" in out
+
+
+def test_cf_validate_invalid_yaml(tmp_path, capsys):
+    f = tmp_path / "broken.yaml"
+    f.write_text("key: value\n  bad_indent: oops\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--validate"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "INVALID" in out
+
+
+def test_cf_validate_valid_json(tmp_path, capsys):
+    f = tmp_path / "config.json"
+    f.write_text('{"host": "localhost", "port": 5432}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--validate"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "valid" in out
+    assert "json" in out
+
+
+def test_cf_validate_valid_toml(tmp_path, capsys):
+    f = tmp_path / "config.toml"
+    f.write_text('host = "localhost"\nport = 5432\n')
+    from core.cli import main
+    rc = main(["cf", str(f), "--validate"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "valid" in out
+
+
+def test_cf_validate_raw_valid(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("a: 1\nb: 2\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--validate", "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["valid"] is True
+    assert data["format"] == "yaml"
+    assert data["key_count"] == 2
+
+
+def test_cf_validate_raw_invalid(tmp_path, capsys):
+    f = tmp_path / "broken.yaml"
+    f.write_text("key: value\n  bad: indent\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--validate", "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    data = json.loads(out)
+    assert data["valid"] is False
+    assert "error" in data
+
+
+def test_cf_validate_nonexistent_file(tmp_path, capsys):
+    from core.cli import main
+    rc = main(["cf", str(tmp_path / "missing.yaml"), "--validate"])
+    assert rc == 1
+
+
+def test_cf_validate_batch_all_valid(tmp_path, capsys):
+    (tmp_path / "a.yaml").write_text("x: 1\n")
+    (tmp_path / "b.yaml").write_text("y: 2\n")
+    from core.cli import main
+    rc = main(["cf", str(tmp_path / "*.yaml"), "--validate", "--batch"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "2 files" in out
+    assert "2 valid" in out
+    assert "0 invalid" in out
+
+
+def test_cf_validate_batch_mixed(tmp_path, capsys):
+    (tmp_path / "good.yaml").write_text("a: 1\n")
+    (tmp_path / "bad.yaml").write_text("a: b\n  bad: indent\n")
+    from core.cli import main
+    rc = main(["cf", str(tmp_path / "*.yaml"), "--validate", "--batch"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "1 valid" in out
+    assert "1 invalid" in out
+
+
+def test_cf_validate_batch_no_match(tmp_path, capsys):
+    from core.cli import main
+    rc = main(["cf", str(tmp_path / "*.yaml"), "--validate", "--batch"])
+    assert rc == 1
+
+
+def test_cf_validate_batch_raw_output(tmp_path, capsys):
+    (tmp_path / "a.yaml").write_text("x: 1\n")
+    (tmp_path / "b.yaml").write_text("y: 2\n")
+    from core.cli import main
+    rc = main(["cf", str(tmp_path / "*.yaml"), "--validate", "--batch", "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    results = json.loads(out)
+    assert isinstance(results, list)
+    assert all(r["valid"] for r in results)
+    assert all("format" in r for r in results)
+
+
+def test_cf_validate_key_count_display(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("a: 1\nb: 2\nc: 3\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--validate"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "3 keys" in out
+
+
+# ---------------------------------------------------------------------------
+# cf --count
+# ---------------------------------------------------------------------------
+
+
+def test_cf_count_top_level_keys(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("a: 1\nb: 2\nc: 3\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--count", "."])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "3"
+
+
+def test_cf_count_list_length(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("ports:\n  - 80\n  - 443\n  - 8080\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--count", "ports"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "3"
+
+
+def test_cf_count_nested_dict(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("database:\n  host: localhost\n  port: 5432\n  name: mydb\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--count", "database"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "3"
+
+
+def test_cf_count_scalar_returns_1(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--count", "host"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "1"
+
+
+def test_cf_count_raw_output(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("services:\n  - web\n  - db\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--count", "services", "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["count"] == 2
+    assert data["type"] == "list"
+    assert data["path"] == "services"
+
+
+def test_cf_count_missing_path(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--count", "nonexistent"])
+    assert rc == 1
+
+
+def test_cf_count_json_input(tmp_path, capsys):
+    f = tmp_path / "config.json"
+    f.write_text('{"containers": [{"name": "web"}, {"name": "db"}]}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--count", "containers"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "2"

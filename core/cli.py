@@ -72,6 +72,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "api", False):
         return _run_cf_api(getattr(args, "api_port", 8081), getattr(args, "host", "127.0.0.1"))
 
+    # cf --validate  → check config is parseable (single or --batch glob)
+    if args.command == "cf" and getattr(args, "validate", False):
+        return _run_cf_validate(args)
+
     # cf --batch  → batch convert files matching a glob (handle before reading stdin)
     if args.command == "cf" and getattr(args, "batch", False):
         return _run_cf_batch(args)
@@ -93,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_cf_merge(args)
     if args.command == "cf" and getattr(args, "diff", None):
         return _run_cf_diff(args)
+    if args.command == "cf" and getattr(args, "count", None):
+        return _run_cf_count(args)
 
     # license commands (server starts before reading stdin)
     if args.command == "license":
@@ -252,6 +258,16 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Exit 0 = identical, exit 1 = differences. "
                                      "Works cross-format: YAML vs JSON, TOML vs INI, etc. "
                                      "Use --raw for machine-readable JSON output.")
+            tool_p.add_argument("--validate", action="store_true",
+                                help="Validate that config file(s) are parseable. "
+                                     "Exit 0 = all valid, exit 1 = any invalid. "
+                                     "Combine with --batch for bulk validation. "
+                                     "Use --raw for JSON output.")
+            tool_p.add_argument("--count", metavar="PATH", default=None,
+                                help="Count items at PATH: list length, dict key count, or 1 for scalars. "
+                                     "Use '.' for top-level key count. "
+                                     "Outputs a plain integer — ideal for shell scripts. "
+                                     "Use --raw for JSON output.")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -1290,6 +1306,143 @@ def _run_cf_diff(args) -> int:
             print(f"~ {k}: {ov!r} → {nv!r}")
 
     return EXIT_ERROR  # exit 1 = differences found (standard diff semantics)
+
+
+# ---------------------------------------------------------------------------
+# cf --count: count items at a path
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_count(args) -> int:
+    """Count items at PATH: list length, dict key count, or 1 for scalars.
+
+    Use '.' to count top-level keys. Outputs a plain integer for shell scripts.
+    """
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    path = args.count
+    if path == ".":
+        val = data
+    else:
+        try:
+            val = _cf._get_by_path(data, path)
+        except (KeyError, IndexError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+    if isinstance(val, (dict, list)):
+        count = len(val)
+        type_name = "dict" if isinstance(val, dict) else "list"
+    else:
+        count = 1
+        type_name = "scalar"
+    if getattr(args, "raw", False):
+        print(json.dumps({"path": path, "count": count, "type": type_name}))
+    else:
+        print(count)
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# cf --validate: single-file or batch config validation
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_validate(args) -> int:
+    """Validate that one or more config files are parseable.
+
+    Single-file mode: reads one file (or stdin) and reports valid/invalid.
+    Batch mode (--batch also set): loops over glob matches, reports each.
+    Exit 0 if all valid, exit 1 if any invalid — suitable for CI/CD hooks.
+    """
+    import glob as _glob
+    from . import configforge as _cf
+
+    raw = getattr(args, "raw", False)
+    from_fmt = getattr(args, "from_fmt", "auto")
+    parse_opts = _cf_parse_opts(args)
+    is_batch = getattr(args, "batch", False)
+
+    def _validate_content(content: str, label: str) -> dict:
+        """Parse content and return a result dict."""
+        try:
+            parsed = _cf.parse_text(
+                content,
+                fmt=None if from_fmt == "auto" else from_fmt,
+                **parse_opts,
+            )
+            data = parsed.get("data", parsed)
+            fmt = parsed.get("format", "unknown")
+            key_count = len(data) if isinstance(data, (dict, list)) else 1
+            return {"valid": True, "file": label, "format": fmt, "key_count": key_count}
+        except Exception as exc:
+            return {"valid": False, "file": label, "error": str(exc)}
+
+    def _print_result(r: dict) -> None:
+        if r["valid"]:
+            fmt = r.get("format", "?")
+            kc = r.get("key_count", "?")
+            ks = "key" if kc == 1 else "keys"
+            print(f"{r['file']}: valid  ({fmt}, {kc} {ks})")
+        else:
+            print(f"{r['file']}: INVALID")
+            print(f"  error: {r.get('error', 'unknown error')}", file=sys.stderr)
+
+    if is_batch:
+        input_glob = getattr(args, "text", None)
+        if not input_glob:
+            print("error: --validate --batch requires a glob pattern as the text argument", file=sys.stderr)
+            print("  Usage: devbench cf --validate --batch '*.yaml'", file=sys.stderr)
+            return EXIT_ERROR
+
+        recursive = getattr(args, "recursive", False)
+        files = sorted(_glob.glob(input_glob, recursive=recursive))
+        if not files:
+            print(f"error: no files matched: {input_glob}", file=sys.stderr)
+            return EXIT_ERROR
+
+        results = []
+        for f in files:
+            try:
+                content = Path(f).read_text(encoding="utf-8")
+                r = _validate_content(content, f)
+            except OSError as e:
+                r = {"valid": False, "file": f, "error": str(e)}
+            results.append(r)
+
+        if raw:
+            print(json.dumps(results, indent=2, default=str))
+        else:
+            for r in results:
+                _print_result(r)
+            valid_count = sum(1 for r in results if r["valid"])
+            invalid_count = len(results) - valid_count
+            print(f"[validate] {len(results)} files: {valid_count} valid, {invalid_count} invalid")
+
+        return EXIT_SUCCESS if all(r["valid"] for r in results) else EXIT_ERROR
+
+    # Single-file / stdin mode
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    label = str(file_path) if file_path else "stdin"
+    r = _validate_content(content, label)
+
+    if raw:
+        print(json.dumps(r, indent=2, default=str))
+    else:
+        _print_result(r)
+
+    return EXIT_SUCCESS if r["valid"] else EXIT_ERROR
 
 
 # ---------------------------------------------------------------------------
