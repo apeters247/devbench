@@ -1606,3 +1606,139 @@ def test_plist_ext_map_auto_output(tmp_path, capsys):
     content = out.read_text()
     assert "<plist" in content
     assert "myapp" in content
+
+
+# ── Jinja/Helm template-safe YAML parsing (yq#1126 / yq#2270) ──
+
+def test_template_yaml_pure_var_to_json():
+    """YAML with unquoted {{ var }} values auto-parses (template-quoted fallback)."""
+    r = convert("name: {{ app_name }}\nimage: {{ registry }}/myapp:{{ tag }}\n", "json")
+    assert r["success"]
+    parsed = json.loads(r["output"])
+    assert "{{ app_name }}" in parsed["name"]
+    assert "{{ registry }}/myapp:{{ tag }}" in parsed["image"]
+
+
+def test_template_yaml_mixed_suffix_to_json():
+    """YAML with {{ var }}-suffix mixed values auto-parses (yq#1126 complaint)."""
+    r = convert("host: {{ domain }}-api.example.com\nport: 8080\n", "json")
+    assert r["success"]
+    parsed = json.loads(r["output"])
+    assert "{{ domain }}-api.example.com" in parsed["host"]
+    assert parsed["port"] == 8080
+
+
+def test_template_yaml_helm_values_to_json():
+    """Realistic Helm values.yaml with multiple template vars converts cleanly."""
+    helm_yaml = (
+        "replicaCount: {{ .Values.replicas | default 1 }}\n"
+        "image:\n"
+        "  repository: {{ .Values.registry }}/{{ .Values.image }}\n"
+        "  tag: {{ .Values.tag }}\n"
+        "service:\n"
+        "  port: 80\n"
+    )
+    r = convert(helm_yaml, "json")
+    assert r["success"]
+    parsed = json.loads(r["output"])
+    assert "{{ .Values.replicas | default 1 }}" in parsed["replicaCount"]
+    assert parsed["service"]["port"] == 80
+
+
+def test_template_yaml_ansible_to_json():
+    """Ansible playbook vars with {{ inventory_hostname }} parse correctly."""
+    ansible_yaml = (
+        "hostname: {{ inventory_hostname }}\n"
+        "db_url: postgresql://{{ db_user }}:{{ db_pass }}@{{ db_host }}/{{ db_name }}\n"
+    )
+    r = convert(ansible_yaml, "json")
+    assert r["success"]
+    parsed = json.loads(r["output"])
+    assert parsed["hostname"] == "{{ inventory_hostname }}"
+    assert "{{ db_user }}" in parsed["db_url"]
+
+
+def test_template_yaml_detect_format():
+    """Templated YAML auto-detected as 'yaml' format."""
+    fmt = detect_format("name: {{ app }}\nversion: 1.0\n")
+    assert fmt == "yaml"
+
+
+def test_template_yaml_to_toml():
+    """Template YAML converts to TOML preserving template strings."""
+    r = convert("name: {{ app_name }}\nenv: {{ environment }}\n", "toml")
+    assert r["success"]
+    assert "{{ app_name }}" in r["output"]
+    assert "{{ environment }}" in r["output"]
+
+
+# ── --template-safe explicit flag ──
+
+def test_template_safe_parse_text_forces_quoting():
+    """parse_text(template_safe=True) pre-quotes templates before normal parse."""
+    yaml_text = "image: {{ .Values.image }}\nreplicas: 3\n"
+    result = parse_text(yaml_text, fmt="yaml", template_safe=True)
+    assert result["format"] == "yaml"
+    assert result["data"]["replicas"] == 3
+    assert "{{ .Values.image }}" in result["data"]["image"]
+    assert result.get("template_quoted") is True
+
+
+def test_template_safe_no_op_on_plain_yaml():
+    """template_safe=True is harmless when no template syntax present."""
+    yaml_text = "host: localhost\nport: 8080\n"
+    result = parse_text(yaml_text, fmt="yaml", template_safe=True)
+    assert result["format"] == "yaml"
+    assert result["data"]["host"] == "localhost"
+    assert result["data"]["port"] == 8080
+
+
+def test_template_safe_via_convert():
+    """convert() with template_safe=True converts Helm YAML to JSON."""
+    helm = "image: {{ .Values.image }}\nreplicas: {{ .Values.replicas | default 1 }}\n"
+    r = convert(helm, "json", template_safe=True)
+    assert r["success"]
+    data = json.loads(r["output"])
+    assert "{{ .Values.image }}" in data["image"]
+
+
+def test_template_safe_cli_flag():
+    """configforge --template-safe flag parses Helm values.yaml correctly."""
+    from core.configforge import main
+    import io
+    helm_yaml = "service:\n  port: {{ .Values.servicePort }}\n  type: ClusterIP\n"
+    old_stdin = sys.stdin
+    sys.stdin = io.StringIO(helm_yaml)
+    try:
+        rc = main(["-t", "json", "--template-safe"])
+    finally:
+        sys.stdin = old_stdin
+    assert rc == 0
+
+
+def test_yaml12_via_devbench_cf():
+    """devbench cf --yaml12 treats yes/no/on/off as strings (not booleans)."""
+    from core.cli import main as cli_main
+    import io
+    yaml_text = "enabled: yes\ndisabled: no\nflag: on\n"
+    old_stdin = sys.stdin
+    sys.stdin = io.StringIO(yaml_text)
+    try:
+        rc = cli_main(["cf", "--to", "json", "--yaml12"])
+    finally:
+        sys.stdin = old_stdin
+    assert rc == 0
+
+
+def test_template_safe_via_devbench_cf():
+    """devbench cf --template-safe parses Jinja template YAML."""
+    from core.cli import main as cli_main
+    import io
+    yaml_text = "name: {{ app }}\nversion: 1.0\n"
+    old_stdin = sys.stdin
+    sys.stdin = io.StringIO(yaml_text)
+    try:
+        rc = cli_main(["cf", "--to", "json", "--template-safe"])
+    finally:
+        sys.stdin = old_stdin
+    assert rc == 0

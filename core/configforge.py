@@ -579,8 +579,49 @@ def _yaml_error_message(exc: "yaml.YAMLError", text: str) -> str:
             f"  Fix: rename one of the duplicate anchors."
         )
 
+    # --- Jinja/Helm template syntax ({{ var }}) ---
+    if "unhashable" in raw.lower() and _has_template_syntax(text):
+        return (
+            f"YAML parse error{p_context}: a value containing '{{{{ ... }}}}' template "
+            f"syntax was interpreted as a nested YAML mapping.{p_excerpt}\n"
+            f"  Fix: quote the value, e.g.  key: '{{{{ var }}}}'  or use --template-safe."
+        )
+
     # Generic YAML error with multi-line location context
     return f"YAML parse error{p_context}: {raw}{p_excerpt}"
+
+
+def _has_template_syntax(text: str) -> bool:
+    """Return True if text contains Jinja/Helm/Ansible template markers."""
+    return bool(re.search(r"\{\{|\{%|\{#", text))
+
+
+def _quote_template_values(text: str) -> str:
+    """Pre-quote unquoted Jinja/Helm template expressions so PyYAML can parse them.
+
+    Handles the yq#1126 / yq#2270 complaint: YAML files containing values like
+      key: {{ var }}
+      host: {{ domain }}-api.example.com
+    fail to parse because PyYAML treats {{ as a flow-mapping start.
+    This function single-quotes such values so they survive round-trip parsing.
+    """
+    result_lines = []
+    for line in text.split("\n"):
+        if "{{" not in line and "{%" not in line and "{#" not in line:
+            result_lines.append(line)
+            continue
+        # Only rewrite key: value lines where the value is unquoted
+        m = re.match(r"^(\s*(?:[^:#\s][^:]*)?:\s*)(.+)$", line)
+        if m:
+            prefix = m.group(1)
+            value = m.group(2).rstrip()
+            # Skip if already quoted or a comment
+            if value and value[0] not in ("'", '"', "#"):
+                escaped = value.replace("'", "''")
+                result_lines.append(f"{prefix}'{escaped}'")
+                continue
+        result_lines.append(line)
+    return "\n".join(result_lines)
 
 
 def _make_yaml12_loader():
@@ -1203,6 +1244,13 @@ def detect_format(text: str) -> str:
                             yaml.safe_load(text)
                         except yaml.composer.ComposerError:
                             list(yaml.safe_load_all(text))
+                        except yaml.YAMLError:
+                            # Jinja/Helm template syntax ({{ var }}) fails normal parse;
+                            # retry with values quoted to confirm it's valid YAML structure.
+                            if _has_template_syntax(text):
+                                yaml.safe_load(_quote_template_values(text))
+                            else:
+                                raise
                     return "yaml"
                 except Exception:
                     pass
@@ -1417,16 +1465,41 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
         # Handle multi-document YAML (--- separator)
         multi_doc = options.get("multi_doc", True)
         yaml12 = options.get("yaml12", False)
+        template_safe = options.get("template_safe", False)
         loader_cls = _make_yaml12_loader() if yaml12 else yaml.SafeLoader
-        try:
-            if multi_doc and text.count("---") > 0:
-                docs = list(yaml.load_all(text, Loader=loader_cls))
+
+        def _parse_yaml_text(src: str) -> dict:
+            if multi_doc and src.count("---") > 0:
+                docs = list(yaml.load_all(src, Loader=loader_cls))
                 docs = [d for d in docs if d is not None]
                 if len(docs) == 1:
                     return {"data": docs[0], "format": "yaml"}
                 return {"data": docs, "format": "yaml-multi"}
-            return {"data": yaml.load(text, Loader=loader_cls), "format": "yaml"}
+            return {"data": yaml.load(src, Loader=loader_cls), "format": "yaml"}
+
+        # --template-safe: pre-quote template expressions (Helm/Ansible) first.
+        # Useful when the caller knows the file contains {{ var }} expressions.
+        if template_safe and _has_template_syntax(text):
+            try:
+                result = _parse_yaml_text(_quote_template_values(text))
+                result["template_quoted"] = True
+                return result
+            except yaml.YAMLError:
+                pass  # fall through to normal parse
+
+        try:
+            return _parse_yaml_text(text)
         except yaml.YAMLError as e:
+            # Auto-retry with Jinja/Helm template quoting (yq#1126 / yq#2270).
+            # Files like  key: {{ var }}  or  host: {{ d }}-api  fail because
+            # PyYAML treats {{ as a flow-mapping start. Quote those values and retry.
+            if _has_template_syntax(text):
+                try:
+                    result = _parse_yaml_text(_quote_template_values(text))
+                    result["template_quoted"] = True
+                    return result
+                except yaml.YAMLError:
+                    pass
             raise ValueError(_yaml_error_message(e, text)) from e
 
     elif fmt == "toml" and HAS_TOML:
@@ -2625,6 +2698,11 @@ Compared to yq/jq:
     parser.add_argument("--yaml12", action="store_true",
                         help="Use YAML 1.2 boolean rules: only true/false are booleans. "
                              "Treats yes/no/on/off as plain strings (prevents the Norway problem).")
+    parser.add_argument("--template-safe", action="store_true", dest="template_safe",
+                        help="Pre-quote Jinja/Helm/Ansible {{ var }} template values in YAML "
+                             "before parsing. Use for Helm charts, Ansible playbooks, or any "
+                             "YAML with unquoted {{ ... }} expressions. Auto-retry is the "
+                             "default; this flag forces quoting on the first pass.")
     parser.add_argument("--sort-keys", action="store_true", help="Sort keys in output.")
     parser.add_argument("--no-infer-dates", action="store_true",
                         help="Keep ISO-8601 date strings as strings (TOML).")
@@ -2669,7 +2747,10 @@ Compared to yq/jq:
         "infer_dates": not args.no_infer_dates,
         "null_handling": args.null_handling,
         "yaml12": args.yaml12,
+        "template_safe": args.template_safe,
     }
+    # Parse-only options passed to parse_text() in CRUD handlers.
+    parse_opts = {"yaml12": args.yaml12, "template_safe": args.template_safe}
 
     if args.batch:
         if not args.input:
@@ -2684,7 +2765,8 @@ Compared to yq/jq:
     if args.get:
         text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
         try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None)
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -2708,7 +2790,7 @@ Compared to yq/jq:
         text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
         from_fmt_set = args.from_fmt if args.from_fmt != "auto" else None
         try:
-            parsed = parse_text(text, fmt=from_fmt_set)
+            parsed = parse_text(text, fmt=from_fmt_set, **parse_opts)
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -2743,7 +2825,7 @@ Compared to yq/jq:
         text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
         from_fmt_del = args.from_fmt if args.from_fmt != "auto" else None
         try:
-            parsed = parse_text(text, fmt=from_fmt_del)
+            parsed = parse_text(text, fmt=from_fmt_del, **parse_opts)
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -2782,7 +2864,7 @@ Compared to yq/jq:
             return 1
         from_fmt_merge = args.from_fmt if args.from_fmt != "auto" else None
         try:
-            base_parsed = parse_text(base_text, fmt=from_fmt_merge)
+            base_parsed = parse_text(base_text, fmt=from_fmt_merge, **parse_opts)
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -2794,7 +2876,7 @@ Compared to yq/jq:
             print(f"error: cannot read overlay file: {e}", file=sys.stderr)
             return 1
         try:
-            overlay_parsed = parse_text(overlay_text)
+            overlay_parsed = parse_text(overlay_text, **parse_opts)
         except ValueError as exc:
             print(f"error reading overlay: {exc}", file=sys.stderr)
             return 1

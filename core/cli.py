@@ -206,6 +206,10 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--indent", type=int, default=2, help="Indentation width for YAML/JSON output (default: 2)")
             tool_p.add_argument("--flatten-xml", action="store_true", help="Flatten nested XML into dotted keys")
             tool_p.add_argument("--no-comments", action="store_true", help="Do not preserve comments")
+            tool_p.add_argument("--yaml12", action="store_true",
+                                help="YAML 1.2 booleans: only true/false (not yes/no/on/off)")
+            tool_p.add_argument("--template-safe", action="store_true", dest="template_safe",
+                                help="Pre-quote Jinja/Helm/Ansible {{ var }} values in YAML before parsing")
             tool_p.add_argument("--sort-keys", action="store_true", help="Sort keys in output")
             tool_p.add_argument("--no-infer-dates", action="store_true", help="Keep ISO-8601 date strings as strings (TOML)")
             tool_p.add_argument("--null-handling", default="skip", choices=["skip", "comment", "empty", "error"],
@@ -477,6 +481,10 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
         options["flatten_xml"] = True
     if hasattr(args, "no_comments") and args.no_comments:
         options["preserve_comments"] = False
+    if hasattr(args, "yaml12") and args.yaml12:
+        options["yaml12"] = True
+    if hasattr(args, "template_safe") and args.template_safe:
+        options["template_safe"] = True
     if hasattr(args, "sort_keys") and args.sort_keys:
         options["sort_keys"] = True
     if hasattr(args, "no_infer_dates") and args.no_infer_dates:
@@ -939,6 +947,16 @@ def _cf_serialize_options(args) -> dict:
     return opts
 
 
+def _cf_parse_opts(args) -> dict:
+    """Collect parse-only options for parse_text() from cf subcommand args."""
+    opts: dict = {}
+    if getattr(args, "yaml12", False):
+        opts["yaml12"] = True
+    if getattr(args, "template_safe", False):
+        opts["template_safe"] = True
+    return opts
+
+
 def _run_cf_get(args) -> int:
     from . import configforge as _cf
     content, _ = _cf_read_file_or_content(args)
@@ -946,7 +964,8 @@ def _run_cf_get(args) -> int:
         return EXIT_ERROR
     from_fmt = getattr(args, "from_fmt", "auto")
     try:
-        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt)
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -977,7 +996,8 @@ def _run_cf_set(args) -> int:
     value = _cf._coerce_set_value(raw_value)
     from_fmt = getattr(args, "from_fmt", "auto")
     try:
-        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt)
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -1019,7 +1039,8 @@ def _run_cf_delete(args) -> int:
         return EXIT_ERROR
     from_fmt = getattr(args, "from_fmt", "auto")
     try:
-        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt)
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -1061,7 +1082,8 @@ def _run_cf_merge(args) -> int:
         return EXIT_ERROR
     from_fmt = getattr(args, "from_fmt", "auto")
     try:
-        base_parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt)
+        base_parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                     **_cf_parse_opts(args))
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -1076,7 +1098,7 @@ def _run_cf_merge(args) -> int:
         print(f"error: cannot read overlay file: {e}", file=sys.stderr)
         return EXIT_ERROR
     try:
-        overlay_parsed = _cf.parse_text(overlay_text)
+        overlay_parsed = _cf.parse_text(overlay_text, **_cf_parse_opts(args))
     except ValueError as exc:
         print(f"error reading overlay: {exc}", file=sys.stderr)
         return EXIT_ERROR
