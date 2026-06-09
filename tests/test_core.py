@@ -1600,3 +1600,119 @@ def test_configforge_unflatten_dict_collision_raises():
     import pytest
     with pytest.raises(ValueError, match="collision"):
         _unflatten_dict({"a": 1, "a.b": 2})
+
+# ═══════════════════════════════════════════════
+# VERSION — 1.0.0 bump
+# ═══════════════════════════════════════════════
+
+def test_version_is_1_0_0():
+    from core._version import __version__
+    assert __version__ == "1.0.0"
+
+
+def test_cli_version_flag(capsys):
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "-m", "core.cli", "--version"],
+        cwd=os.path.join(os.path.dirname(__file__), ".."),
+        capture_output=True, text=True,
+    )
+    assert "1.0.0" in result.stdout or "1.0.0" in result.stderr
+
+
+# ═══════════════════════════════════════════════
+# SHELL COMPLETIONS — devbench completion bash/zsh/fish
+# ═══════════════════════════════════════════════
+
+def test_completion_bash_contains_key_fragments(capsys):
+    from core.cli import main
+    rc = main(["completion", "bash"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "_devbench_complete" in out
+    assert "complete -F _devbench_complete devbench" in out
+    assert "--to" in out
+    assert "json jsonc yaml" in out
+    assert "bash zsh fish" in out
+
+
+def test_completion_zsh_contains_key_fragments(capsys):
+    from core.cli import main
+    rc = main(["completion", "zsh"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "#compdef devbench" in out
+    assert "_devbench" in out
+    assert "--to=" in out
+    assert "bash zsh fish" in out
+
+
+def test_completion_fish_contains_key_fragments(capsys):
+    from core.cli import main
+    rc = main(["completion", "fish"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "complete -c devbench" in out
+    assert "__fish_use_subcommand" in out
+    assert "bash" in out and "zsh" in out and "fish" in out
+    assert "-l to" in out  # fish uses -l <name> for long options
+
+
+def test_completion_bash_includes_all_subcommands(capsys):
+    from core.cli import main
+    main(["completion", "bash"])
+    out = capsys.readouterr().out
+    for cmd in ("detect", "json", "base64", "jwt", "hash", "url", "timestamp",
+                "uuid", "diff", "cf", "token", "chunk", "list", "batch",
+                "license", "completion"):
+        assert cmd in out, f"bash completion missing subcommand: {cmd}"
+
+
+def test_completion_fish_includes_all_subcommands(capsys):
+    from core.cli import main
+    main(["completion", "fish"])
+    out = capsys.readouterr().out
+    for cmd in ("detect", "json", "base64", "jwt", "hash", "url", "timestamp",
+                "uuid", "diff", "cf", "token", "chunk", "list", "batch",
+                "license", "completion"):
+        assert cmd in out, f"fish completion missing subcommand: {cmd}"
+
+
+def test_completion_bash_cf_format_names(capsys):
+    from core.cli import main
+    main(["completion", "bash"])
+    out = capsys.readouterr().out
+    for fmt in ("json", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties", "plist"):
+        assert fmt in out, f"bash completion missing format: {fmt}"
+
+
+def test_completion_bash_null_handling_choices(capsys):
+    from core.cli import main
+    main(["completion", "bash"])
+    out = capsys.readouterr().out
+    assert "skip" in out
+    assert "empty" in out
+    assert "error" in out
+
+
+def test_completion_invalid_shell_exits_nonzero():
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "-m", "core.cli", "completion", "powershell"],
+        cwd=os.path.join(os.path.dirname(__file__), ".."),
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+
+
+def test_completion_help_shows_shells(capsys):
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "-m", "core.cli", "completion", "--help"],
+        cwd=os.path.join(os.path.dirname(__file__), ".."),
+        capture_output=True, text=True,
+    )
+    combined = result.stdout + result.stderr
+    assert "bash" in combined
+    assert "zsh" in combined
+    assert "fish" in combined

@@ -85,27 +85,33 @@ def detect(input_text: str) -> dict[str, Any]:
     if result["confidence"] > 0.5:
         return result
 
-    # 2. Check URL
+    # 2. Check Pkl first (high confidence detection) before URL
+    # because Pkl patterns can look like domains to urlparse
+    result = _try_pkl(input_text)
+    if result["confidence"] > 0.7:
+        return result
+
+    # 3. Check URL
     result = _try_url(input_text)
     if result["confidence"] > 0.7:
         return result
 
-    # 3. Check timestamp (before JSON — a bare number should route here, not JSON)
+    # 4. Check timestamp (before JSON — a bare number should route here, not JSON)
     result = _try_timestamp(input_text)
     if result["confidence"] > 0.7:
         return result
 
-    # 4. Check JSON (after timestamp so numbers route correctly)
+    # 5. Check JSON (after timestamp so numbers route correctly)
     result = _try_json(input_text)
     if result["confidence"] > 0.5:
         return result
 
-    # 5. Check Base64
+    # 6. Check Base64
     result = _try_base64(input_text)
     if result["confidence"] > 0.3:
         return result
 
-    # 6. Check config formats (YAML, TOML, INI, ENV, CSV, XML)
+    # 7. Check config formats (YAML, TOML, INI, ENV, CSV, XML)
     result = _try_config_format(input_text)
     if result["confidence"] > 0.5:
         return result
@@ -275,7 +281,7 @@ def _try_base64(text: str) -> dict[str, Any]:
         confidence = 0.8
         if text.endswith("==") or text.endswith("="):
             confidence += 0.1 # Higher confidence if it has padding
-        
+
         return {
             "tool": "base64",
             "detection_type": "Base64 encoded data",
@@ -283,6 +289,49 @@ def _try_base64(text: str) -> dict[str, Any]:
         }
     except (ValueError, TypeError, UnicodeDecodeError):
         pass # Not valid base64 or not ASCII
+
+    return {"tool": None, "detection_type": "", "confidence": 0.0}
+
+
+def _try_pkl(text: str) -> dict[str, Any]:
+    """Check if text looks like Apple Pkl configuration language.
+
+    Pkl uses: key = value syntax, blocks with {...}, no commas, no colons.
+    """
+    text = text.strip()
+
+    # Need at least some content
+    if len(text) < 5:
+        return {"tool": None, "detection_type": "", "confidence": 0.0}
+
+    # Pkl typically has assignment operators with `=` and no colons for key-value
+    # Key patterns: "key = value", "key { nested = value }", comments with //
+    has_assignment = " = " in text or "=" in text
+    has_no_colons = ":" not in text or text.count(":") < text.count("=")
+    has_blocks = "{" in text and "}" in text
+
+    # Check for Pkl-like patterns
+    lines = text.split("\n")
+    pkl_pattern_count = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//"):
+            continue
+        # Pkl assignment: key = value (spaces around =)
+        if " = " in stripped and ":" not in stripped:
+            pkl_pattern_count += 1
+        # Pkl block: key { ... }
+        elif stripped.endswith("{") and " = " not in stripped:
+            pkl_pattern_count += 1
+
+    # If we found multiple Pkl-like patterns, it's probably Pkl
+    if pkl_pattern_count >= 2 and has_assignment and has_no_colons:
+        return {
+            "tool": None,  # No tool yet (would need Pkl parser library)
+            "detection_type": "Pkl configuration detected (Apple 2024)",
+            "confidence": 0.75,
+        }
 
     return {"tool": None, "detection_type": "", "confidence": 0.0}
 

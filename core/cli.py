@@ -110,6 +110,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "unflatten", False):
         return _run_cf_unflatten(args)
 
+    # completion — emit shell completion script
+    if args.command == "completion":
+        return _run_completion(args.shell)
+
     # license commands (server starts before reading stdin)
     if args.command == "license":
         lc = getattr(args, "license_command", None)
@@ -352,6 +356,17 @@ def _build_parser() -> argparse.ArgumentParser:
     license_server_p = license_sub.add_parser("server", help="Start the license server")
     license_server_p.add_argument("--port", type=int, default=9001, help="Port (default: 9001)")
     license_server_p.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
+
+    # completion
+    completion_p = sub.add_parser(
+        "completion",
+        help="Generate shell completion script (bash/zsh/fish). Source with: eval \"$(devbench completion bash)\"",
+    )
+    completion_p.add_argument(
+        "shell",
+        choices=["bash", "zsh", "fish"],
+        help="Shell type to generate completions for",
+    )
 
     return parser
 
@@ -1841,6 +1856,314 @@ def _run_cf_unflatten(args) -> int:
     else:
         sys.stdout.write(output_text)
     return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# Shell completion
+# ---------------------------------------------------------------------------
+
+_CF_FLAGS = (
+    "--to --from --get --set --append --delete --merge --list-merge "
+    "--in-place -i --backup --diff --validate --count --keys "
+    "--recursive -R --pick --grep --grep-case-sensitive "
+    "--flatten --unflatten --sep --env-expand "
+    "--batch --stream --output-dir --sort-keys --indent "
+    "--flatten-xml --no-comments --yaml12 --template-safe "
+    "--null-handling --list-formats --serve --port --host --api --api-port "
+    "--raw -r --pretty -p --help"
+)
+_CF_FORMATS = "json jsonc yaml toml xml csv ini env hcl properties plist"
+_SUBCOMMANDS = (
+    "detect json base64 jwt hash url timestamp uuid diff "
+    "cf token chunk list batch license completion"
+)
+
+
+def _run_completion(shell: str) -> int:
+    """Print a shell completion script for devbench to stdout."""
+    if shell == "bash":
+        print(_BASH_COMPLETION)
+    elif shell == "zsh":
+        print(_ZSH_COMPLETION)
+    elif shell == "fish":
+        print(_FISH_COMPLETION)
+    return EXIT_SUCCESS
+
+
+_BASH_COMPLETION = f"""\
+# devbench bash completion
+# Add to ~/.bashrc or ~/.bash_profile:
+#   eval "$(devbench completion bash)"
+# Or source directly:
+#   source <(devbench completion bash)
+
+_devbench_complete() {{
+    local cur prev subcmd
+    COMPREPLY=()
+    cur="${{COMP_WORDS[COMP_CWORD]}}"
+    prev="${{COMP_WORDS[COMP_CWORD-1]}}"
+
+    # Find the subcommand (first non-flag word after 'devbench')
+    subcmd=""
+    local i
+    for (( i=1; i < COMP_CWORD; i++ )); do
+        if [[ "${{COMP_WORDS[$i]}}" != -* ]]; then
+            subcmd="${{COMP_WORDS[$i]}}"
+            break
+        fi
+    done
+
+    local formats="{_CF_FORMATS}"
+    local subcommands="{_SUBCOMMANDS}"
+
+    case "$subcmd" in
+        cf)
+            case "$prev" in
+                --to|--from)
+                    COMPREPLY=( $(compgen -W "$formats" -- "$cur") )
+                    return 0 ;;
+                --null-handling)
+                    COMPREPLY=( $(compgen -W "skip comment empty error" -- "$cur") )
+                    return 0 ;;
+                --list-merge)
+                    COMPREPLY=( $(compgen -W "replace merge append" -- "$cur") )
+                    return 0 ;;
+                --indent)
+                    COMPREPLY=( $(compgen -W "2 4 8" -- "$cur") )
+                    return 0 ;;
+                --sep)
+                    COMPREPLY=( $(compgen -W ". __" -- "$cur") )
+                    return 0 ;;
+                --merge|--diff|--output-dir)
+                    COMPREPLY=( $(compgen -f -- "$cur") )
+                    return 0 ;;
+                --port|--api-port|--get|--set|--delete|--count|--pick|--grep|--append)
+                    return 0 ;;
+            esac
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "{_CF_FLAGS}" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -f -- "$cur") )
+            fi
+            ;;
+        completion)
+            COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
+            ;;
+        "")
+            COMPREPLY=( $(compgen -W "$subcommands --list -l --version -V --help" -- "$cur") )
+            ;;
+        *)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--raw -r --pretty -p --help" -- "$cur") )
+            fi
+            ;;
+    esac
+}}
+
+complete -F _devbench_complete devbench
+"""
+
+_ZSH_COMPLETION = f"""\
+#compdef devbench
+# devbench zsh completion
+# Add to ~/.zshrc:
+#   eval "$(devbench completion zsh)"
+# Or source directly:
+#   source <(devbench completion zsh)
+
+_devbench() {{
+    local state line
+    typeset -A opt_args
+
+    _arguments -C \\
+        '--list[List all available tools]' \\
+        '--version[Show version and exit]' \\
+        '--help[Show help message]' \\
+        '1:command:->command' \\
+        '*::args:->args'
+
+    case $state in
+        command)
+            local -a commands
+            commands=(
+                'detect:Auto-detect content type and apply tool'
+                'json:Format and pretty-print JSON'
+                'base64:Encode or decode base64'
+                'jwt:Decode JWT tokens'
+                'hash:Generate md5/sha256/sha512 hash'
+                'url:Encode or decode URLs'
+                'timestamp:Convert Unix timestamps to ISO 8601'
+                'uuid:Generate UUIDs'
+                'diff:Compare two texts side-by-side'
+                'cf:Convert config files — yq/dasel alternative'
+                'token:Count tokens with tiktoken'
+                'chunk:Chunk text into token-limited segments'
+                'list:List all available tools'
+                'batch:Batch process multiple files'
+                'license:License key management'
+                'completion:Generate shell completion script'
+            )
+            _describe 'command' commands
+            ;;
+        args)
+            case ${{line[1]}} in
+                cf)
+                    _arguments \\
+                        '--to=[Output format]:format:({_CF_FORMATS})' \\
+                        '--from=[Input format (auto-detect)]:format:({_CF_FORMATS})' \\
+                        '--get=[Get value at dotted path]:path:' \\
+                        '--set=[Set value: --set PATH VALUE]:path value:' \\
+                        '--append=[Append value: --append PATH VALUE]:path value:' \\
+                        '--delete=[Delete value at path]:path:' \\
+                        '--merge=[Merge overlay file]:file:_files' \\
+                        '--list-merge=[List merge strategy]:mode:(replace merge append)' \\
+                        '--diff=[Structural diff against file]:file:_files' \\
+                        '--validate[Validate config is parseable]' \\
+                        '--count=[Count items at path]:path:' \\
+                        '--keys[List top-level config keys]' \\
+                        '--recursive[Recursive glob / --keys]' \\
+                        '-R[Recursive glob / --keys]' \\
+                        '--pick=[Project fields]:path:' \\
+                        '--grep=[Search config keys/values by regex]:pattern:' \\
+                        '--grep-case-sensitive[Case-sensitive --grep]' \\
+                        '--flatten[Flatten nested keys to dotted notation]' \\
+                        '--unflatten[Expand dotted keys back to nested]' \\
+                        '--sep=[Key separator (default .)]:sep:' \\
+                        '--env-expand[Expand \${{VAR}} references]' \\
+                        '--batch[Treat input as glob pattern]' \\
+                        '--stream[Streaming batch mode (memory-efficient)]' \\
+                        '--output-dir=[Output directory for batch]:dir:_directories' \\
+                        '--sort-keys[Sort keys alphabetically]' \\
+                        '--in-place[Edit file in-place]' \\
+                        '-i[Edit file in-place]' \\
+                        '--backup=[Backup suffix before in-place edit]:suffix:' \\
+                        '--indent=[Indentation width]:width:(2 4 8)' \\
+                        '--flatten-xml[Flatten nested XML to dotted keys]' \\
+                        '--no-comments[Strip comments from output]' \\
+                        '--yaml12[YAML 1.2 mode: only true/false are booleans]' \\
+                        '--template-safe[Quote Jinja/Helm/Ansible template expressions]' \\
+                        '--null-handling=[Null handling strategy]:mode:(skip comment empty error)' \\
+                        '--list-formats[List all supported formats]' \\
+                        '--serve[Launch the web UI]' \\
+                        '--port=[Web UI port (default 8080)]:port:' \\
+                        '--api[Launch JSON HTTP API]' \\
+                        '--api-port=[API port (default 8081)]:port:' \\
+                        '--raw[Machine-readable output]' \\
+                        '-r[Machine-readable output]' \\
+                        '*:file:_files'
+                    ;;
+                completion)
+                    _arguments '1:shell:(bash zsh fish)'
+                    ;;
+            esac
+            ;;
+    esac
+}}
+
+_devbench "$@"
+"""
+
+_FISH_COMPLETION = f"""\
+# devbench fish completion
+# Install:
+#   devbench completion fish > ~/.config/fish/completions/devbench.fish
+# Or add to config.fish:
+#   devbench completion fish | source
+
+# Global options
+complete -c devbench -n '__fish_use_subcommand' -l list -d 'List all tools'
+complete -c devbench -n '__fish_use_subcommand' -l version -d 'Show version'
+complete -c devbench -n '__fish_use_subcommand' -l help -d 'Show help'
+
+# Subcommands
+complete -c devbench -n '__fish_use_subcommand' -f -a detect    -d 'Auto-detect content type and apply tool'
+complete -c devbench -n '__fish_use_subcommand' -f -a json      -d 'Format and pretty-print JSON'
+complete -c devbench -n '__fish_use_subcommand' -f -a base64    -d 'Encode or decode base64'
+complete -c devbench -n '__fish_use_subcommand' -f -a jwt       -d 'Decode JWT tokens'
+complete -c devbench -n '__fish_use_subcommand' -f -a hash      -d 'Generate md5/sha256/sha512 hash'
+complete -c devbench -n '__fish_use_subcommand' -f -a url       -d 'Encode or decode URLs'
+complete -c devbench -n '__fish_use_subcommand' -f -a timestamp -d 'Convert Unix timestamps'
+complete -c devbench -n '__fish_use_subcommand' -f -a uuid      -d 'Generate UUIDs'
+complete -c devbench -n '__fish_use_subcommand' -f -a diff      -d 'Compare two texts'
+complete -c devbench -n '__fish_use_subcommand' -f -a cf        -d 'Convert config files — yq/dasel alternative'
+complete -c devbench -n '__fish_use_subcommand' -f -a token     -d 'Count tokens with tiktoken'
+complete -c devbench -n '__fish_use_subcommand' -f -a chunk     -d 'Chunk text into token-limited segments'
+complete -c devbench -n '__fish_use_subcommand' -f -a list      -d 'List all available tools'
+complete -c devbench -n '__fish_use_subcommand' -f -a batch     -d 'Batch process multiple files'
+complete -c devbench -n '__fish_use_subcommand' -f -a license   -d 'License key management'
+complete -c devbench -n '__fish_use_subcommand' -f -a completion -d 'Generate shell completion script'
+
+# Helper: detect when we are inside the cf subcommand
+function __devbench_seen_cf
+    set -l cmd (commandline -opc)
+    contains -- cf $cmd
+end
+
+# cf: format options
+set -l _db_formats {_CF_FORMATS}
+complete -c devbench -n __devbench_seen_cf -l to   -d 'Output format' -r -f -a "$_db_formats"
+complete -c devbench -n __devbench_seen_cf -l from -d 'Input format'  -r -f -a "$_db_formats"
+
+# cf: CRUD flags
+complete -c devbench -n __devbench_seen_cf -l get    -d 'Get value at dotted path'  -r
+complete -c devbench -n __devbench_seen_cf -l set    -d 'Set value at dotted path'  -r
+complete -c devbench -n __devbench_seen_cf -l append -d 'Append value at path'      -r
+complete -c devbench -n __devbench_seen_cf -l delete -d 'Delete value at path'      -r
+complete -c devbench -n __devbench_seen_cf -l merge  -d 'Merge overlay file'        -r -F
+complete -c devbench -n __devbench_seen_cf -l list-merge -d 'List merge strategy'   -r -f -a 'replace merge append'
+complete -c devbench -n __devbench_seen_cf -l diff   -d 'Structural diff vs file'   -r -F
+
+# cf: query / search flags
+complete -c devbench -n __devbench_seen_cf -l validate             -d 'Validate config is parseable'
+complete -c devbench -n __devbench_seen_cf -l count                -d 'Count items at path'            -r
+complete -c devbench -n __devbench_seen_cf -l keys                 -d 'List top-level config keys'
+complete -c devbench -n __devbench_seen_cf -l recursive            -d 'Recursive glob / --keys'
+complete -c devbench -n __devbench_seen_cf -s R                    -d 'Recursive glob / --keys'
+complete -c devbench -n __devbench_seen_cf -l pick                 -d 'Project specific fields'         -r
+complete -c devbench -n __devbench_seen_cf -l grep                 -d 'Search keys/values by regex'     -r
+complete -c devbench -n __devbench_seen_cf -l grep-case-sensitive  -d 'Case-sensitive --grep'
+
+# cf: transform flags
+complete -c devbench -n __devbench_seen_cf -l flatten    -d 'Flatten nested keys to dotted notation'
+complete -c devbench -n __devbench_seen_cf -l unflatten  -d 'Expand dotted keys back to nested'
+complete -c devbench -n __devbench_seen_cf -l sep        -d 'Key separator' -r -f -a '. __'
+complete -c devbench -n __devbench_seen_cf -l env-expand -d 'Expand \${{VAR}} env references'
+complete -c devbench -n __devbench_seen_cf -l sort-keys  -d 'Sort keys alphabetically'
+
+# cf: batch flags
+complete -c devbench -n __devbench_seen_cf -l batch      -d 'Treat input as glob pattern'
+complete -c devbench -n __devbench_seen_cf -l stream     -d 'Streaming batch mode (memory-efficient)'
+complete -c devbench -n __devbench_seen_cf -l output-dir -d 'Output directory for batch'  -r -a '(__fish_complete_directories)'
+
+# cf: output flags
+complete -c devbench -n __devbench_seen_cf -l indent        -d 'Indentation width'    -r -f -a '2 4 8'
+complete -c devbench -n __devbench_seen_cf -l flatten-xml   -d 'Flatten nested XML'
+complete -c devbench -n __devbench_seen_cf -l no-comments   -d 'Strip comments'
+complete -c devbench -n __devbench_seen_cf -l yaml12        -d 'YAML 1.2 (true/false only)'
+complete -c devbench -n __devbench_seen_cf -l template-safe -d 'Quote Jinja/Helm/Ansible templates'
+complete -c devbench -n __devbench_seen_cf -l null-handling -d 'Null handling mode'   -r -f -a 'skip comment empty error'
+
+# cf: in-place edit
+complete -c devbench -n __devbench_seen_cf -l in-place -d 'Edit file in-place'
+complete -c devbench -n __devbench_seen_cf -s i        -d 'Edit file in-place'
+complete -c devbench -n __devbench_seen_cf -l backup   -d 'Backup suffix before in-place edit'  -r
+
+# cf: server / misc
+complete -c devbench -n __devbench_seen_cf -l list-formats -d 'List all supported formats'
+complete -c devbench -n __devbench_seen_cf -l serve        -d 'Launch the web UI'
+complete -c devbench -n __devbench_seen_cf -l port         -d 'Web UI port (default 8080)'  -r
+complete -c devbench -n __devbench_seen_cf -l api          -d 'Launch JSON HTTP API'
+complete -c devbench -n __devbench_seen_cf -l api-port     -d 'API port (default 8081)'     -r
+complete -c devbench -n __devbench_seen_cf -l raw          -d 'Machine-readable output'
+complete -c devbench -n __devbench_seen_cf -s r            -d 'Machine-readable output'
+
+# completion subcommand
+function __devbench_seen_completion
+    set -l cmd (commandline -opc)
+    contains -- completion $cmd
+end
+complete -c devbench -n __devbench_seen_completion -f -a 'bash zsh fish' -d 'Shell type'
+"""
 
 
 # ---------------------------------------------------------------------------

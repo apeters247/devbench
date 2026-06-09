@@ -644,7 +644,7 @@ def test_fixture_k8s_ingress_yaml_to_json(k8s_ingress_path):
     r = convert(text, "json")
     assert r["success"]
     data = json.loads(r["output"])
-    assert isinstance(data, (dict, list))
+    assert isinstance(data, (dict, list)) and len(str(data)) > 10
 
 
 def test_fixture_helm_values_parses(helm_values_path):
@@ -652,6 +652,10 @@ def test_fixture_helm_values_parses(helm_values_path):
     result = parse_text(text, "yaml")
     assert result["format"] in ("yaml", "yaml-multi")
     assert isinstance(result["data"], (dict, list))
+    if isinstance(result["data"], dict):
+        assert len(result["data"]) > 0
+    else:
+        assert len(result["data"]) > 0
 
 
 def test_fixture_helm_values_roundtrip(helm_values_path):
@@ -671,8 +675,10 @@ def test_fixture_redis_deployment_parses(redis_deployment_path):
     data = result["data"]
     if isinstance(data, list):
         assert all(d is None or isinstance(d, dict) for d in data)
+        assert len(data) > 0
     else:
         assert isinstance(data, dict)
+        assert "kind" in data or "apiVersion" in data or len(data) > 0
 
 
 def test_fixture_redis_deployment_parses_gracefully(redis_deployment_path, capsys):
@@ -681,7 +687,7 @@ def test_fixture_redis_deployment_parses_gracefully(redis_deployment_path, capsy
     # either way parse_text must not raise.
     try:
         result = parse_text(text, "yaml")
-        assert result is not None
+        assert result is not None and "data" in result and "format" in result
     except Exception as exc:
         pytest.fail(f"parse_text raised unexpectedly: {exc}")
 
@@ -728,7 +734,7 @@ def test_ansible_playbook_yaml_to_json_roundtrip():
     r = convert(ANSIBLE_PLAYBOOK, "json")
     assert r["success"]
     data = json.loads(r["output"])
-    assert isinstance(data, list)
+    assert isinstance(data, list) and len(data) > 0
     play = data[0]
     assert play["name"] == "Deploy application stack"
     assert play["vars"]["app_port"] == 8080
@@ -781,7 +787,7 @@ def test_hcl_terraform_to_json():
     r = convert(HCL_TERRAFORM, "json", "hcl")
     assert r["success"]
     data = json.loads(r["output"])
-    assert isinstance(data, dict)
+    assert isinstance(data, dict) and len(data) > 0
 
 
 # ── Cross-format real-world conversions ────────────────────────────────────────
