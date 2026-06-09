@@ -3,7 +3,7 @@ import sys, os, json
 import yaml
 import tomllib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from core.configforge import convert, convert_file, batch_convert, batch_convert_stream, detect_format, SUPPORTED_FORMATS
+from core.configforge import convert, convert_file, batch_convert, batch_convert_stream, detect_format, parse_text, SUPPORTED_FORMATS
 
 def test_detect_json():
     assert detect_format('{"a":1}') == "json"
@@ -109,7 +109,7 @@ def test_empty_input():
     assert r["error"]
 
 def test_supported_formats():
-    expected_formats = ["json", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties", "plist"]
+    expected_formats = ["json", "jsonc", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties", "plist"]
     assert set(SUPPORTED_FORMATS) == set(expected_formats)
 
 def test_convert_file(tmp_path):
@@ -226,6 +226,21 @@ def test_batch_convert_empty_glob(tmp_path):
     """Empty glob returns empty list with no errors."""
     results = batch_convert(str(tmp_path / "nonexistent_*.json"), "yaml")
     assert results == []
+
+
+def test_batch_empty_glob_cli_exits_1(tmp_path, capsys):
+    """CLI cf --batch with an empty glob returns exit code 1."""
+    from core.cli import main as cli_main
+    rc = cli_main(["cf", "--batch", "--to", "yaml", str(tmp_path / "nonexistent_*.json")])
+    assert rc == 1
+
+
+def test_batch_stream_empty_glob_cli_exits_1(tmp_path, capsys):
+    """CLI cf --batch --stream with an empty glob returns exit code 1."""
+    from core.cli import main as cli_main
+    rc = cli_main(["cf", "--batch", "--stream", "--to", "yaml", str(tmp_path / "nonexistent_*.json")])
+    assert rc == 1
+
 
 def test_batch_convert_progress(tmp_path, capsys):
     """Batch convert with show_progress prints progress lines."""
@@ -540,6 +555,42 @@ def test_set_boolean_coercion(tmp_path, capsys):
     assert rc == 0
     result = yaml.safe_load(captured.out)
     assert result["debug"] is True
+
+
+def test_set_python_true_is_boolean(tmp_path, capsys):
+    """--set 'True' (Python-style) yields a boolean, not the string 'True'."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("enabled: false\n")
+    rc = main([str(f), "--set", "enabled", "True"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["enabled"] is True
+
+
+def test_set_python_false_is_boolean(tmp_path, capsys):
+    """--set 'False' (Python-style) yields a boolean, not the string 'False'."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("enabled: true\n")
+    rc = main([str(f), "--set", "enabled", "False"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["enabled"] is False
+
+
+def test_set_python_none_is_null(tmp_path, capsys):
+    """--set 'None' (Python-style) yields null, not the string 'None'."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("value: hello\n")
+    rc = main([str(f), "--set", "value", "None"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["value"] is None
 
 
 def test_set_creates_intermediate_key(tmp_path, capsys):
@@ -869,3 +920,109 @@ def test_plist_convert_file_extension(tmp_path):
     data = json.loads(out.read_text())
     assert data["CFBundleIdentifier"] == "com.example.MyApp"
     assert data["CFBundleVersion"] == "1.0.0"
+
+
+# ── Binary plist support ───────────────────────────────────────────────────────
+
+def test_binary_plist_detect_format():
+    """Binary plist (bplist00 magic) is detected as 'plist'."""
+    import plistlib
+    raw = plistlib.dumps({"k": "v"}, fmt=plistlib.FMT_BINARY)
+    # detect_format receives text; binary plist starts with printable 'bplist'
+    text = raw.decode("latin-1")
+    assert detect_format(text) == "plist"
+
+
+def test_binary_plist_parse():
+    """Binary plist bytes are parsed by parse_text when fmt='plist'."""
+    import plistlib
+    raw = plistlib.dumps({"version": "3.1", "count": 99}, fmt=plistlib.FMT_BINARY)
+    result = parse_text(raw, "plist")
+    assert result["format"] == "plist"
+    assert result["data"]["version"] == "3.1"
+    assert result["data"]["count"] == 99
+
+
+def test_binary_plist_convert_file_to_json(tmp_path):
+    """convert_file reads a binary .plist file and converts it to JSON."""
+    import plistlib
+    data = {"CFBundleVersion": "5.0", "Name": "MyMacApp", "Retina": True}
+    raw = plistlib.dumps(data, fmt=plistlib.FMT_BINARY)
+    f = tmp_path / "Info.plist"
+    f.write_bytes(raw)
+    out = tmp_path / "Info.json"
+    result = convert_file(str(f), str(out))
+    assert result["success"], result.get("error")
+    parsed = json.loads(out.read_text())
+    assert parsed["CFBundleVersion"] == "5.0"
+    assert parsed["Name"] == "MyMacApp"
+    assert parsed["Retina"] is True
+
+
+def test_binary_plist_convert_file_to_yaml(tmp_path):
+    """convert_file converts a binary plist to YAML."""
+    import plistlib
+    data = {"AppName": "DevBench", "BuildNumber": 42}
+    raw = plistlib.dumps(data, fmt=plistlib.FMT_BINARY)
+    f = tmp_path / "build.plist"
+    f.write_bytes(raw)
+    result = convert_file(str(f), to_fmt="yaml")
+    assert result["success"], result.get("error")
+    assert "AppName: DevBench" in result["output"]
+    assert "BuildNumber: 42" in result["output"]
+
+
+# ── jq-style passthrough (stdin, no --to) ──────────────────────────────────────
+
+def test_passthrough_json_stdin(capsys, monkeypatch):
+    """Piping JSON with no --to pretty-prints the same JSON (jq '.' equivalent).
+
+    HN complaint: 'yq doesn't accept standard input in the way jq does
+    (ie pipe in some json, and output some pretty json)' — configforge fixes
+    this by auto-detecting the format and re-serialising with indent=2."""
+    import io
+    from core.configforge import main
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"name":"alice","age":30}'))
+    rc = main([])
+    captured = capsys.readouterr()
+    assert rc == 0
+    data = json.loads(captured.out)
+    assert data["name"] == "alice"
+    assert data["age"] == 30
+    assert "  " in captured.out  # pretty-printed
+
+
+def test_passthrough_yaml_stdin(capsys, monkeypatch):
+    """Piping YAML with no --to pretty-prints the same YAML."""
+    import io
+    from core.configforge import main
+    monkeypatch.setattr("sys.stdin", io.StringIO("name: alice\nage: 30\n"))
+    rc = main([])
+    captured = capsys.readouterr()
+    assert rc == 0
+    data = yaml.safe_load(captured.out)
+    assert data["name"] == "alice"
+    assert data["age"] == 30
+
+
+def test_passthrough_json_file(tmp_path, capsys):
+    """Passing a JSON file with no --to pretty-prints it in place."""
+    from core.configforge import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"x":1,"y":2}')
+    rc = main([str(f)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    data = json.loads(captured.out)
+    assert data["x"] == 1
+    assert data["y"] == 2
+
+
+def test_passthrough_unknown_format_errors(capsys, monkeypatch):
+    """Unrecognised stdin with no --to exits with code 2."""
+    import io
+    from core.configforge import main
+    monkeypatch.setattr("sys.stdin", io.StringIO("@@@@not a config@@@@"))
+    rc = main([])
+    assert rc == 2
+    assert "could not auto-detect" in capsys.readouterr().err

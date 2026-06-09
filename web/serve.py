@@ -207,7 +207,7 @@ PAGE = """<!DOCTYPE html>
   </div>
 </main>
 
-<footer>ConfigForge · stdlib only · no data leaves your machine · 9 formats</footer>
+<footer>ConfigForge · stdlib only · no data leaves your machine · 11 formats</footer>
 
 <script>
 (function () {
@@ -431,6 +431,9 @@ class ConfigForgeHandler(BaseHTTPRequestHandler):
         try:
             target.relative_to(demo_root)
         except ValueError:
+            self._send(403, b"Forbidden", "text/plain; charset=utf-8")
+            return
+        if target.is_symlink():
             self._send(403, b"Forbidden", "text/plain; charset=utf-8")
             return
         if not target.is_file():

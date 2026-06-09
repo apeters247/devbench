@@ -127,3 +127,19 @@ def test_unknown_route_404(server):
         assert False, "expected 404"
     except urllib.error.HTTPError as e:
         assert e.code == 404
+
+
+def test_demo_symlink_returns_403(server, tmp_path):
+    """Symlink inside demo/static/ returns 403 to block path traversal."""
+    demo_static = Path(__file__).resolve().parent.parent / "demo" / "static"
+    sensitive = tmp_path / "sensitive.txt"
+    sensitive.write_text("secret-data")
+    link = demo_static / "_test_symlink_traversal.txt"
+    try:
+        link.symlink_to(sensitive)
+        _get(server, "/demo/_test_symlink_traversal.txt")
+        assert False, "expected 403"
+    except urllib.error.HTTPError as e:
+        assert e.code == 403
+    finally:
+        link.unlink(missing_ok=True)

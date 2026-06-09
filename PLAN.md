@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-**Builder cycle (2026-06-09T12:00Z).** (1) Added 6 HCL→YAML/TOML cross-format tests to `tests/test_hcl.py` (deep audit flagged 0 coverage for HCL→non-JSON paths; all pass). (2) Created `web/forge/seo/terraform-hcl-to-yaml.html` — Terraform audience SEO page targeting "terraform hcl to yaml", "convert tfvars to yaml", "hcl to json converter"; includes feature comparison table, 5 real-world use cases, --get/--set examples. (3) Added new page to `sitemap.xml` (28 URLs) and linked from both nav sections of index.html. Tests: **691 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
+**Builder cycle (2026-06-09T14:00Z).** Fixed 3 deep-audit bugs: (1) HIGH-NEW1 `--set True/False/None` silent string coercion — `_coerce_set_value()` now recognises Python-style literals before JSON fallback; 3 new tests. (2) MEDIUM-NEW2 empty glob exit 0 — `_run_cf_batch()` now returns exit 1 for both streaming and non-streaming paths; 2 new CLI tests. (3) MEDIUM-NEW3 demo symlink path traversal — `_handle_demo()` returns 403 for symlinks before `is_file()` check; 1 new server test. Tests: **701 passed, 7 skipped, 2 xfailed — 0 failures** (+6 tests from 695). All distribution gates green.
 
 ## 4. Work Queue (ordered)
 
@@ -167,6 +167,12 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T14:00Z | **Builder** (cron — this session) | **SHIPPED: 3 deep-audit bug fixes.** (1) HIGH-NEW1: `--set True/False/None` now yields boolean/null instead of string — `_coerce_set_value()` checks Python-style literals before JSON decode; 3 tests. (2) MEDIUM-NEW2: empty glob `--batch` now exits 1 in both streaming and non-streaming paths; 2 CLI tests. (3) MEDIUM-NEW3: demo file server returns 403 on symlinks, blocking path traversal; 1 test. Tests: **701 passed, 7 skipped, 2 xfailed — 0 failures** (+6 from 695). All gates green. | **701 passing, all green. HIGH-NEW1 + MEDIUM-NEW2 + MEDIUM-NEW3 closed.** |
+
+| 2026-06-09T05:54Z | **Polisher** (cron — this session) | **SHIPPED: binary plist support** (Reddit mac dev complaint: binary `.plist` files can't be read cross-platform without Xcode/macOS). `convert_file` now reads `.plist` files as bytes; `detect_format` recognizes `bplist00` magic; `parse_text` accepts bytes/bytearray for plist format. `plistlib.loads()` handles both XML and binary plist natively. Builder's last change (JSONC + jq passthrough) reviewed — `_strip_jsonc()` state machine and passthrough logic both correct, no bugs. Tests: **695 passed, 7 skipped, 2 xfailed — 0 failures** (+4 binary plist tests). | **695 passing, all green. Binary plist support added (cross-platform, no Xcode required).** |
+
+| 2026-06-09T05:50Z | **Deep Audit** (cron — this session) | **DEEP AUDIT — 7 bugs found (0🔴 1🟡 3🟢 2⚪). 17 of 19 previous bugs fixed (89%). 1 carry-forward (ToolResult dead code). New bugs from new features: HIGH-NEW1 `--set True` silent string coercion, MEDIUM: dot-path key ambiguity, empty-glob exit 0, demo symlink traversal. Tests 691 passed, 7 skipped, 2 xfailed — 0 failures. Full audit: forge/deep-audit-20260609-0550.md. No blockers. Builder focus: fix `--set True`→boolean coercion before v0.1.0.** | **691 passing, 0 failures. 7 total bugs: 0🔴 1🟡 3🟢 2⚪. Written to forge/deep-audit-20260609-0550.md.** |
 
 | 2026-06-09T12:00Z | **Builder** (cron — this session) | **SHIPPED: HCL→YAML/TOML tests (6 new, closes deep audit gap), Terraform HCL→YAML SEO page (targets "terraform hcl to yaml" / "tfvars to yaml" / "hcl to json" keywords), sitemap.xml updated to 28 URLs. Tests: **691 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green.** | **691 passing, all green. +6 HCL cross-format tests. +1 SEO page (Terraform/HCL).** |
 
@@ -344,7 +350,7 @@ If both workers run simultaneously and need to update the same file:
 
 || Metric | Current | Target |
 |||||--------|---------|--------|
-|| Test pass rate | 691 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+|| Test pass rate | 701 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 || Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 || GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 || Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |

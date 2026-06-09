@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ConfigForge — Multi-format config file converter.
-Converts between JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties.
+Converts between JSON, JSONC, YAML, TOML, XML, CSV, INI, .env, HCL, .properties.
 Preserves comments. Offline. Batch capable.
 """
 import csv
@@ -948,19 +948,77 @@ def _looks_like_properties(text: str) -> bool:
     return (kv_matches + comment_matches) > len(lines) * 0.30
 
 
+def _strip_jsonc(text: str) -> str:
+    """Strip // line comments and /* block comments */ from JSONC, then remove
+    trailing commas before } or ]. Does not modify string literal contents."""
+    result = []
+    i, n = 0, len(text)
+    in_string = False
+
+    while i < n:
+        ch = text[i]
+        if in_string:
+            if ch == '\\' and i + 1 < n:
+                result.append(ch)
+                result.append(text[i + 1])
+                i += 2
+                continue
+            result.append(ch)
+            if ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        if ch == '"':
+            in_string = True
+            result.append(ch)
+            i += 1
+            continue
+
+        # Line comment: skip to end of line
+        if ch == '/' and i + 1 < n and text[i + 1] == '/':
+            while i < n and text[i] != '\n':
+                i += 1
+            continue
+
+        # Block comment: skip until */
+        if ch == '/' and i + 1 < n and text[i + 1] == '*':
+            i += 2
+            while i < n - 1:
+                if text[i] == '*' and text[i + 1] == '/':
+                    i += 2
+                    break
+                i += 1
+            else:
+                i = n
+            continue
+
+        result.append(ch)
+        i += 1
+
+    stripped = ''.join(result)
+    # Remove trailing commas before } or ]
+    return re.sub(r',(\s*[}\]])', r'\1', stripped)
+
+
 def detect_format(text: str) -> str:
     """Detect config format from text content."""
     text = text.strip()
     if not text:
         return "unknown"
 
-    # JSON: starts with { or [
+    # JSON / JSONC: starts with { or [
     if text.startswith("{") or text.startswith("["):
         try:
             json.loads(text)
             return "json"
         except json.JSONDecodeError:
-            pass
+            # Could be JSONC (// line comments, /* block comments */, trailing commas)
+            try:
+                json.loads(_strip_jsonc(text))
+                return "jsonc"
+            except (json.JSONDecodeError, Exception):
+                pass
 
     # HCL: terraform-style block headers — `name "label" "label2" {` or a bare
     # `name {`, optionally alongside top-level `key = value` lines. This brace
@@ -1064,6 +1122,10 @@ def detect_format(text: str) -> str:
                 pass
         except Exception:
             pass
+
+    # Binary plist: magic bytes bplist00 (readable even from text)
+    if text[:6] == "bplist":
+        return "plist"
 
     # Plist: Apple property list XML — must check before generic XML
     if text.strip().startswith("<") and (
@@ -1238,6 +1300,9 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
     if fmt == "json":
         return {"data": json.loads(text), "format": "json"}
 
+    elif fmt == "jsonc":
+        return {"data": json.loads(_strip_jsonc(text)), "format": "jsonc"}
+
     elif fmt == "yaml" and HAS_YAML:
         # Handle multi-document YAML (--- separator)
         multi_doc = options.get("multi_doc", True)
@@ -1411,7 +1476,14 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
     elif fmt == "plist":
         import plistlib
         try:
-            data = plistlib.loads(text.encode("utf-8"))
+            if isinstance(text, (bytes, bytearray)):
+                raw = bytes(text)
+            elif text[:6] == "bplist":
+                # Binary plist read as text — preserve byte values via latin-1
+                raw = text.encode("latin-1")
+            else:
+                raw = text.encode("utf-8")
+            data = plistlib.loads(raw)
             return {"data": _plist_normalize(data), "format": "plist"}
         except Exception as exc:
             raise ValueError(f"Invalid plist: {exc}") from exc
@@ -1514,8 +1586,13 @@ def _set_by_path(data, path: str, value):
         raise KeyError(f"cannot set '{last}' in {type(node).__name__}")
 
 
+_PYTHON_LITERALS: dict = {"True": True, "False": False, "None": None}
+
+
 def _coerce_set_value(s: str):
-    """Parse --set VALUE: JSON if valid, otherwise plain string."""
+    """Parse --set VALUE: JSON if valid, Python literal if matched, otherwise plain string."""
+    if s in _PYTHON_LITERALS:
+        return _PYTHON_LITERALS[s]
     try:
         return json.loads(s)
     except (ValueError, json.JSONDecodeError):
@@ -1639,7 +1716,7 @@ def _plist_prepare(data):
 
 def serialize(data, fmt: str, **options) -> str:
     """Convert Python data to config format string."""
-    if fmt == "json":
+    if fmt in ("json", "jsonc"):
         indent = options.get("indent", 2)
         sort_keys = options.get("sort_keys", False)
 
@@ -2065,13 +2142,17 @@ def convert_file(input_path: str, output_path: str = None, to_fmt: str = None, *
     if not path.exists():
         return {"success": False, "error": f"File not found: {input_path}"}
 
-    ext_map = {".json": "json", ".yaml": "yaml", ".yml": "yaml",
+    ext_map = {".json": "json", ".jsonc": "jsonc", ".yaml": "yaml", ".yml": "yaml",
                ".toml": "toml", ".xml": "xml", ".csv": "csv",
                ".ini": "ini", ".env": "env", ".hcl": "hcl",
                ".properties": "properties", ".plist": "plist"}
 
     input_fmt = ext_map.get(path.suffix.lower(), "auto")
-    content = path.read_text(encoding="utf-8", errors="replace")
+    # Read plist files as bytes to support binary plist format (bplist00 magic)
+    if input_fmt == "plist":
+        content = path.read_bytes()
+    else:
+        content = path.read_text(encoding="utf-8", errors="replace")
 
     if not to_fmt and output_path:
         out_path = Path(output_path)
@@ -2254,7 +2335,7 @@ def validate_indentation(text: str, unit: int = 2) -> dict:
 
 
 # ── SUPPORTED FORMATS ──
-SUPPORTED_FORMATS = ["json", "yaml", "toml", "xml", "csv", "ini", "env", "hcl",
+SUPPORTED_FORMATS = ["json", "jsonc", "yaml", "toml", "xml", "csv", "ini", "env", "hcl",
                      "properties", "plist"]
 
 # Telemetry opt-out: set DEVBENCH_NO_TELEMETRY=1 (canonical; the misspelled
@@ -2278,14 +2359,14 @@ def main(argv=None) -> int:
     one entry point, zero network calls, all nine formats."""
     import argparse
 
-    ext_map = {".json": "json", ".yaml": "yaml", ".yml": "yaml", ".toml": "toml",
-               ".xml": "xml", ".csv": "csv", ".ini": "ini", ".env": "env",
-               ".hcl": "hcl", ".properties": "properties"}
+    ext_map = {".json": "json", ".jsonc": "jsonc", ".yaml": "yaml", ".yml": "yaml",
+               ".toml": "toml", ".xml": "xml", ".csv": "csv", ".ini": "ini",
+               ".env": "env", ".hcl": "hcl", ".properties": "properties"}
 
     parser = argparse.ArgumentParser(
         prog="configforge",
         description="Offline multi-format config converter "
-                    "(JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties). "
+                    "(JSON/JSONC/YAML/TOML/XML/CSV/INI/.env/HCL/.properties). "
                     "No network, no telemetry. "
                     "Set DEVBENCH_NO_TELEMETRY=1 (or legacy DEVEBENCH_NO_TELEMETRY) for explicit assurance.",
         epilog="""Examples:
@@ -2464,12 +2545,19 @@ Compared to yq/jq:
     to_fmt = args.to
     if not to_fmt and args.output:
         to_fmt = ext_map.get(Path(args.output).suffix.lower())
-    if not to_fmt:
-        print("error: target format required (use --to, or -o with a known extension)",
-              file=sys.stderr)
-        return 2
 
-    if args.input:
+    # jq-style passthrough: no --to → auto-detect format and pretty-print in place
+    if not to_fmt:
+        raw_text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        detected = detect_format(raw_text)
+        if detected == "unknown":
+            print("error: could not auto-detect format; use --to", file=sys.stderr)
+            return 2
+        to_fmt = detected
+        result = convert(raw_text, to_fmt, to_fmt, **options)
+        if result.get("success") and args.output:
+            Path(args.output).write_text(result["output"], encoding="utf-8")
+    elif args.input:
         result = convert_file(args.input, args.output, to_fmt, **options)
     else:
         text = sys.stdin.read()
