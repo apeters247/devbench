@@ -26,3 +26,7 @@ tools/
 forge/archive/
 forge/*-task.txt
 forge/.last-cron-runner-change
+
+# Overseer state snapshots
+snapshots/
+snapshots/latest.txt

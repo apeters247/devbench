@@ -1236,7 +1236,7 @@ def detect_format(text: str) -> str:
     if ":" in text or text.strip().startswith("---"):
         for line in text.strip().split("\n"):
             line = line.strip()
-            if re.match(r"^[\w\-\"]+:\s", line) or line == "---":
+            if re.match(r"^[\w\-\"]+:(?:\s|$)", line) or line == "---":
                 try:
                     if HAS_YAML:
                         # safe_load rejects multi-doc YAML, so try safe_load_all as fallback
