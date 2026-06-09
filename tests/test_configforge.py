@@ -787,6 +787,142 @@ def test_toml_no_empty_intermediate_headers():
     assert tomllib.loads(out) == data
 
 
+# -- --merge tests --
+# Addresses the r/devops complaint that yq has no ergonomic deep-merge for
+# Kubernetes YAML files with nested lists (containers, env vars, volumes).
+
+
+def test_merge_dict_overlay_yaml(tmp_path, capsys):
+    """--merge replaces scalar values from the overlay file (dict deep merge)."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("server:\n  host: localhost\n  port: 8080\ndebug: false\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("server:\n  port: 9200\ndebug: true\n")
+    rc = main([str(base), "--merge", str(overlay)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["server"]["host"] == "localhost"
+    assert result["server"]["port"] == 9200
+    assert result["debug"] is True
+
+
+def test_merge_adds_new_keys(tmp_path, capsys):
+    """--merge adds keys present in overlay but absent from base."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("name: myapp\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("version: '2.0'\nreplicas: 3\n")
+    rc = main([str(base), "--merge", str(overlay)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["name"] == "myapp"
+    assert result["version"] == "2.0"
+    assert result["replicas"] == 3
+
+
+def test_merge_list_replace_default(tmp_path, capsys):
+    """--merge with default --list-merge=replace replaces lists entirely."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("containers:\n  - name: app\n    image: myapp:v1\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("containers:\n  - name: app\n    image: myapp:v2\n  - name: sidecar\n    image: nginx\n")
+    rc = main([str(base), "--merge", str(overlay)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert len(result["containers"]) == 2
+    assert result["containers"][0]["image"] == "myapp:v2"
+    assert result["containers"][1]["name"] == "sidecar"
+
+
+def test_merge_list_append(tmp_path, capsys):
+    """--merge --list-merge=append appends overlay list to base list.
+
+    The primary r/devops use-case: adding env vars or volumes to a base
+    Kubernetes deployment without repeating every existing entry."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("env:\n  - name: APP_ENV\n    value: production\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("env:\n  - name: DEBUG\n    value: 'false'\n")
+    rc = main([str(base), "--merge", str(overlay), "--list-merge", "append"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert len(result["env"]) == 2
+    assert result["env"][0]["name"] == "APP_ENV"
+    assert result["env"][1]["name"] == "DEBUG"
+
+
+def test_merge_json_files(tmp_path, capsys):
+    """--merge works on JSON base and JSON overlay."""
+    from core.configforge import main
+    base = tmp_path / "base.json"
+    base.write_text('{"database": {"host": "localhost", "port": 5432}, "debug": false}')
+    overlay = tmp_path / "overlay.json"
+    overlay.write_text('{"database": {"host": "db.prod.example.com"}, "log_level": "warn"}')
+    rc = main([str(base), "--merge", str(overlay)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["database"]["host"] == "db.prod.example.com"
+    assert result["database"]["port"] == 5432
+    assert result["log_level"] == "warn"
+    assert result["debug"] is False
+
+
+def test_merge_cross_format_yaml_base_json_overlay(tmp_path, capsys):
+    """--merge accepts overlay in a different format from the base."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("server:\n  host: localhost\n  port: 8080\n")
+    overlay = tmp_path / "overlay.json"
+    overlay.write_text('{"server": {"port": 443}, "tls": true}')
+    rc = main([str(base), "--merge", str(overlay)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["server"]["host"] == "localhost"
+    assert result["server"]["port"] == 443
+    assert result["tls"] is True
+
+
+def test_merge_in_place(tmp_path):
+    """--merge --in-place overwrites the base file with the merged result."""
+    from core.configforge import main
+    base = tmp_path / "config.yaml"
+    base.write_text("version: 1\nfeatures:\n  - alpha\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("version: 2\n")
+    rc = main([str(base), "--merge", str(overlay), "--in-place"])
+    assert rc == 0
+    result = yaml.safe_load(base.read_text())
+    assert result["version"] == 2
+    assert result["features"] == ["alpha"]
+
+
+def test_merge_deep_nested_dict(tmp_path, capsys):
+    """--merge does recursive deep merge on arbitrarily nested dicts."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("app:\n  db:\n    host: localhost\n    port: 5432\n    name: mydb\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("app:\n  db:\n    host: db.prod\n    pool_size: 10\n")
+    rc = main([str(base), "--merge", str(overlay)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["app"]["db"]["host"] == "db.prod"
+    assert result["app"]["db"]["port"] == 5432
+    assert result["app"]["db"]["name"] == "mydb"
+    assert result["app"]["db"]["pool_size"] == 10
+
+
 def test_toml_set_pyproject_version(tmp_path, capsys):
     """--set on a pyproject.toml-style file updates the version and preserves structure.
 

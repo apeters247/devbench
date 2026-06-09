@@ -149,7 +149,7 @@ devbench cf info.yaml --to plist &gt; Info.plist
 <tr><td>macOS support</td><td>Yes</td><td>Yes</td></tr>
 <tr><td>Linux CI support</td><td>No</td><td>Yes (pure Python)</td></tr>
 <tr><td>Nested key access</td><td><code>-c "Set :key:subkey val"</code></td><td><code>--set key.subkey val</code></td></tr>
-<tr><td>Convert to YAML/JSON</td><td>No (plist-only)</td><td>Yes — any of 10 formats</td></tr>
+<tr><td>Convert to YAML/JSON</td><td>No (plist-only)</td><td>Yes — any of 11 formats</td></tr>
 <tr><td>Batch mode</td><td>No</td><td>Yes (<code>--batch "*.plist"</code>)</td></tr>
 <tr><td>JSON output</td><td>Via <code>plutil -convert json</code></td><td>Direct: <code>--to json</code></td></tr>
 <tr><td>Dot-notation key paths</td><td>No (colon-separated)</td><td>Yes</td></tr>
@@ -164,7 +164,7 @@ devbench cf info.yaml --to plist &gt; Info.plist
 
 # Verify
 devbench cf --list-formats
-# json yaml toml xml csv ini env hcl properties plist
+# json jsonc yaml toml xml csv ini env hcl properties plist
 </code></pre>
 <br />
 <p>Works on Python 3.10–3.13, macOS and Linux. Uses stdlib <code>plistlib</code> — no additional dependencies for plist support.</p>
@@ -175,7 +175,7 @@ devbench cf --list-formats
 </p>
 
 <hr style="margin:3rem 0;opacity:0.3;">
-<p style="font-size:0.85rem;opacity:0.7;"><em>ConfigForge — 10 formats, 100% offline, cross-platform. Part of Devbench ($19 one-time). No subscriptions, no data collection.</em></p>
+<p style="font-size:0.85rem;opacity:0.7;"><em>ConfigForge — 11 formats, 100% offline, cross-platform. Part of Devbench ($19 one-time). No subscriptions, no data collection.</em></p>
 
 </div>
 </body>

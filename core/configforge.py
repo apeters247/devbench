@@ -1599,6 +1599,32 @@ def _coerce_set_value(s: str):
         return s
 
 
+def _deep_merge(base, overlay, list_mode: str = "replace"):
+    """Recursively merge overlay onto base.
+
+    Addresses the r/devops complaint that yq has no ergonomic way to merge
+    Kubernetes YAML files with nested lists — users needed a full sub-expression
+    for something that should be a one-liner.
+
+    list_mode="replace": overlay list replaces base list (default, safe for most configs).
+    list_mode="append":  overlay list is appended to base list (useful for k8s env vars,
+                         volumes, containers).
+    """
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        result = dict(base)
+        for key, val in overlay.items():
+            if key in result:
+                result[key] = _deep_merge(result[key], val, list_mode)
+            else:
+                result[key] = val
+        return result
+    if isinstance(base, list) and isinstance(overlay, list):
+        if list_mode == "append":
+            return list(base) + list(overlay)
+        return list(overlay)
+    return overlay
+
+
 def _delete_by_path(data, path: str):
     """Delete the key/element at a dot-notation path in a nested dict/list.
 
@@ -2431,6 +2457,17 @@ Compared to yq/jq:
                         help="Delete a key by dot-notation path and write the result. "
                              "Output format defaults to the input format. "
                              "Use --in-place to overwrite the source file.")
+    parser.add_argument("--merge", metavar="OVERLAY",
+                        help="Deep-merge OVERLAY file onto the base input and emit the result. "
+                             "Dict keys from OVERLAY override base; list behaviour is "
+                             "controlled by --list-merge. Output format defaults to the "
+                             "base input format.  Use --in-place to overwrite the base file.")
+    parser.add_argument("--list-merge", metavar="MODE", dest="list_merge",
+                        default="replace", choices=["replace", "append"],
+                        help="How to merge lists when using --merge: "
+                             "'replace' (default) replaces the base list with the overlay list; "
+                             "'append' appends the overlay list to the base list "
+                             "(useful for Kubernetes env-vars, volumes, containers).")
     args = parser.parse_args(argv)
 
     options = {
@@ -2528,6 +2565,42 @@ Compared to yq/jq:
             return 2
         try:
             output_text = serialize(data, to_fmt_del, **options)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        if not output_text.endswith("\n"):
+            output_text += "\n"
+        if args.in_place:
+            if not args.input:
+                print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+                return 2
+            Path(args.input).write_text(output_text, encoding="utf-8")
+        else:
+            sys.stdout.write(output_text)
+        return 0
+
+    if args.merge:
+        base_text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        from_fmt_merge = args.from_fmt if args.from_fmt != "auto" else None
+        base_parsed = parse_text(base_text, fmt=from_fmt_merge)
+        if "error" in base_parsed:
+            print(f"error: {base_parsed['error']}", file=sys.stderr)
+            return 1
+        detected_fmt = base_parsed.get("format")
+        base_data = base_parsed.get("data", base_parsed)
+        overlay_text = Path(args.merge).read_text(encoding="utf-8")
+        overlay_parsed = parse_text(overlay_text)
+        if "error" in overlay_parsed:
+            print(f"error reading overlay: {overlay_parsed['error']}", file=sys.stderr)
+            return 1
+        overlay_data = overlay_parsed.get("data", overlay_parsed)
+        merged = _deep_merge(base_data, overlay_data, list_mode=args.list_merge)
+        to_fmt_merge = args.to or detected_fmt
+        if not to_fmt_merge:
+            print("error: cannot determine output format; use --to", file=sys.stderr)
+            return 2
+        try:
+            output_text = serialize(merged, to_fmt_merge, **options)
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

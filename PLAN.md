@@ -164,9 +164,29 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 - [ ] **P2: Add pricing validator to Polisher external review** — Monitor Gumroad/Indie Hackers for pricing trends, check competitor pricing changes.
 - [ ] **P3: Post to Reddit r/devops and r/kubernetes** — #1 untapped channel. "I built a CLI tool that preserves comments through config conversion (no more yq #465)".
 
+### COMMERCIAL RESEARCH — NEW FINDINGS (2026-06-09T06:01Z, Rotation 1: Config File Converter Market)
+**Key competitor discoveries this cycle — highest priority:**
+- [ ] **BUILDER P1: Create `web/forge/seo/vs-devly.html`** — Devly ($4.99, #1 paid Mac Dev Tools, 5.0★) is the biggest direct Mac app competitor. Must show: ConfigForge has 11 formats vs Devly's 4 bidirectional pairs; comment preservation (Devly: none); batch/streaming (Devly: none); TOML write (Devly: none); JSONC/plist/HCL. Frame $19 as specialist depth vs Devly's $4.99 generalist breadth.
+- [ ] **BUILDER P1: Update `web/forge/seo/vs-dasel.html`** — Add citation: dasel's own docs state "YAML/TOML comments are discarded on write." Upgrade from claim to documented competitor admission.
+- [ ] **POLISHER P0: Update homepage hero** — Add 2 USP bullets: (1) "TOML write support — yq can't do this" and (2) "Comments survive conversion — dasel drops them." Both are citable facts from competitor docs.
+- [ ] **BUILDER P2: Create `web/forge/seo/toml-converter.html`** — Target "yaml to toml converter", "json to toml cli", "toml output yq alternative" — yq users hitting the TOML output wall.
+- [ ] **POLISHER P1: Add one-time purchase trust badge** — "One-time purchase. No subscription surprises." DevUtils.app locked users out after switching to subscription — users are sensitized to this betrayal. Explicit guarantee is a trust signal.
+**Confirmed moats (no competitor has all of these):**
+  - Comment preservation through format conversion (dasel drops them; yq loses them in JSON roundtrips)
+  - TOML write/output (yq can't do this — confirmed multi-year gap)
+  - 11 formats (dasel: 8, yq: 7 usable, Devly: 4 bidirectional)
+  - Batch + streaming mode (no Mac competitor has this)
+  - One-time purchase (vs DevUtils.app subscription betrayal)
+**Distribution update:** Mac App Store market is proven — Devly at $4.99 is #1 paid Dev Tools, validates the audience exists. ConfigForge's Mac App Store listing (blocked on Mac Mini) is worth prioritizing. Setapp is secondary channel for v0.2.0 (Devly is on Setapp, same audience).
+**Full report:** forge/commercial-research-20260609-0601.md
+
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T06:09Z | **Polisher** (cron — this session) | **SHIPPED: `--merge`/`--list-merge` deep-merge feature** (r/devops complaint: no ergonomic way to merge Kubernetes YAML files with nested lists). Added `_deep_merge()` (recursive dict/list merge), `--merge OVERLAY` and `--list-merge replace|append` CLI flags + handler in `main()`. `append` mode appends overlay lists to base lists (key use case: adding env-vars/volumes/containers to base deployment without repeating existing entries). Overlay can be a different format from base (YAML+JSON cross-format merge works). Builder's last change (JSONC `_strip_jsonc` state machine, `--set True/False/None` coercion, empty-glob exit 1, symlink 403) reviewed — all correct, no bugs. Tests: **709 passed, 7 skipped, 2 xfailed — 0 failures** (+8 tests from 701). | **709 passing, all green. `--merge`/`--list-merge` added.** |
+
+| 2026-06-09T06:01Z | **Commercial Research** (cron — this session) | **ROTATION 1: CONFIG FILE CONVERTER MARKET — Critical competitor discovered.** (1) **Devly** ($4.99, #1 paid Mac Dev Tools, 5.0★, 50+ tools, bidirectional JSON↔YAML/XML↔JSON/JSON↔CSV/CSV↔MD) is the biggest direct Mac competitor — previously unknown. (2) **dasel explicitly drops YAML/TOML comments on write** (their own docs: "YAML/TOML comments are discarded on write") — ConfigForge's comment preservation is now citable vs a documented competitor deficiency. (3) **yq cannot write TOML at all** — "yq does not yet support outputting in TOML format" — confirmed multi-year gap; ConfigForge has full TOML roundtrip. (4) **DevUtils.app subscription betrayal** confirmed: users locked out after paying one-time; explicit one-time guarantee is a trust differentiator. (5) Competitor moat confirmed: no competitor has all of: comment preservation + 11 formats + TOML write + batch streaming. New BUILDER P1: vs-devly.html SEO page + vs-dasel.html update. New POLISHER P0: homepage hero copy update. Full report: forge/commercial-research-20260609-0601.md. | **Rotation 1 complete. Devly identified as primary Mac app competitor. dasel comment-dropping documented with citation. TOML write gap in yq confirmed. 3 new SEO/copy tasks added to §4.** |
 
 | 2026-06-09T14:00Z | **Builder** (cron — this session) | **SHIPPED: 3 deep-audit bug fixes.** (1) HIGH-NEW1: `--set True/False/None` now yields boolean/null instead of string — `_coerce_set_value()` checks Python-style literals before JSON decode; 3 tests. (2) MEDIUM-NEW2: empty glob `--batch` now exits 1 in both streaming and non-streaming paths; 2 CLI tests. (3) MEDIUM-NEW3: demo file server returns 403 on symlinks, blocking path traversal; 1 test. Tests: **701 passed, 7 skipped, 2 xfailed — 0 failures** (+6 from 695). All gates green. | **701 passing, all green. HIGH-NEW1 + MEDIUM-NEW2 + MEDIUM-NEW3 closed.** |
 
