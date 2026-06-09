@@ -502,7 +502,7 @@ class LicenseHandler(BaseHTTPRequestHandler):
         try:
             license_key = lm.generate(
                 email=email,
-                customer_id=f"trial_{int(time.time())}",
+                customer_id=f"trial_{time.time_ns()}",
                 payment_intent="",
                 expiry=expiry,
             )

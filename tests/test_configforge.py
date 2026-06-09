@@ -364,3 +364,75 @@ another:
     assert "another:" in yaml_output
     assert "  # comment inside nested" in yaml_output
     assert "  nested_key: nested_value  # another inline" in yaml_output
+
+
+def test_env_null_values_serialize_as_empty():
+    """YAML null values must become empty strings in .env output, not 'None'."""
+    yaml_in = "DB_HOST: localhost\nDB_PORT: null\nEMPTY:\n"
+    r = convert(yaml_in, "env")
+    assert r["success"]
+    lines = dict(line.split("=", 1) for line in r["output"].splitlines())
+    assert lines["DB_HOST"] == "localhost"
+    assert lines["DB_PORT"] == ""
+    assert lines["EMPTY"] == ""
+
+
+def test_env_bool_values_serialize_lowercase():
+    """YAML booleans must become lowercase true/false in .env output, not True/False."""
+    yaml_in = "DEBUG: true\nVERBOSE: false\n"
+    r = convert(yaml_in, "env")
+    assert r["success"]
+    lines = dict(line.split("=", 1) for line in r["output"].splitlines())
+    assert lines["DEBUG"] == "true"
+    assert lines["VERBOSE"] == "false"
+
+
+def test_ini_null_values_serialize_as_empty():
+    """YAML null values must become empty strings in INI output, not 'None'."""
+    yaml_in = "host: localhost\nport: null\n"
+    r = convert(yaml_in, "ini")
+    assert r["success"]
+    output = r["output"]
+    assert "None" not in output
+    assert "port = \n" in output or "port =\n" in output
+
+
+def test_ini_bool_values_serialize_lowercase():
+    """YAML booleans must become lowercase true/false in INI output."""
+    yaml_in = "debug: true\nverbose: false\n"
+    r = convert(yaml_in, "ini")
+    assert r["success"]
+    output = r["output"]
+    assert "True" not in output
+    assert "False" not in output
+    assert "debug = true" in output
+    assert "verbose = false" in output
+
+
+def test_yaml_alias_error_actionable_message():
+    """YAML with an unquoted *.ext value gives an actionable error, not a raw scanner dump."""
+    yaml_in = "patterns:\n  - *.html\n  - *.css\n"
+    r = convert(yaml_in, "json")
+    assert not r["success"]
+    err = r["error"]
+    # Must mention quoting as the fix — not just a raw YAML scanner traceback
+    assert "Fix:" in err or "quote" in err.lower(), f"Expected actionable fix hint, got: {err}"
+    assert "*.html" not in err or "quote" in err.lower()  # points user to the problem
+
+
+def test_yaml_tab_error_actionable_message():
+    """YAML with tab indentation gives a clear 'use spaces' message."""
+    yaml_in = "parent:\n\tchild: value\n"
+    r = convert(yaml_in, "json", from_fmt="yaml")
+    assert not r["success"]
+    err = r["error"]
+    assert "tab" in err.lower() or "spaces" in err.lower(), f"Expected tab hint, got: {err}"
+
+
+def test_yaml_parse_error_includes_location():
+    """A YAML parse error message should include a line number."""
+    yaml_in = "key: valid\nbad: [\nincomplete\n"
+    r = convert(yaml_in, "json")
+    assert not r["success"]
+    # Should contain either 'line' or a colon-separated location
+    assert "line" in r["error"].lower() or ":" in r["error"]

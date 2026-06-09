@@ -2121,3 +2121,34 @@ def test_comment_loss_warning_toml_to_csv():
     assert r["success"]
     assert "comment_loss_warning" in r
     assert "comment(s) were lost" in r["comment_loss_warning"]
+
+
+@pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
+def test_comment_loss_warning_suggests_alternative_formats():
+    """Comment loss warning should suggest comment-supporting formats as alternatives."""
+    src = "# Config comment\nkey: value\n"
+    r = convert(src, "csv", "yaml")
+    assert "comment_loss_warning" in r
+    warning = r["comment_loss_warning"]
+    # Warning must name at least one format that supports comments (yaml/toml/ini)
+    assert any(fmt in warning for fmt in ("yaml", "toml", "ini")), (
+        f"Warning should suggest comment-supporting formats, got: {warning!r}"
+    )
+    # The suggestion part (after "convert to") should not include the target format
+    suggestion_part = warning.split("convert to", 1)[-1] if "convert to" in warning else warning
+    assert "csv" not in suggestion_part, (
+        f"Warning should not suggest target format as alternative, got: {warning!r}"
+    )
+
+
+@pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
+def test_comment_loss_warning_does_not_mention_json():
+    """Comment loss warning should NOT suggest JSON (JSON doesn't support comments)."""
+    src = "# Important comment\nkey: value\n"
+    r = convert(src, "env", "yaml")
+    assert "comment_loss_warning" in r
+    warning = r["comment_loss_warning"]
+    # JSON is not a comment-supporting format — must never appear in the suggestion
+    assert "json" not in warning.lower(), (
+        f"Warning incorrectly suggests JSON as a comment-preserving format: {warning!r}"
+    )

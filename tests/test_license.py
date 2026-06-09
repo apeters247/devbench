@@ -391,33 +391,31 @@ class TestServerEndpoints:
 
     @staticmethod
     def _start_server(secret: str = _SECRET):
-        """Start server on a random high port, return (proc, port)."""
+        """Start server on a random high port, return port.
+
+        Binds port 0 and reads the OS-assigned port from the live socket so
+        there is no TOCTOU race between finding a free port and starting the
+        server.
+        """
         import os
-        import socket
         import tempfile
+        from http.server import ThreadingHTTPServer
         from threading import Thread
 
         os.environ["DEVBENCH_LICENSE_SECRET"] = secret
         os.environ["DEVBENCH_LICENSE_DB"] = tempfile.mktemp(suffix=".db")
 
-        # Force re-import to pick up new env vars
+        # Reload to pick up new env vars (module-level lm + DB_PATH).
         import importlib
         import web.license_server
         importlib.reload(web.license_server)
 
-        # Find free port
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
-        sock.close()
+        # Bind to port 0 in the main thread — OS assigns a free port and the
+        # socket stays open until serve_forever() owns it. No race.
+        server = ThreadingHTTPServer(("127.0.0.1", 0), web.license_server.LicenseHandler)
+        port = server.server_address[1]
 
-        # Start in thread
-        server_thread = Thread(
-            target=web.license_server.run_server,
-            args=("127.0.0.1", port),
-            daemon=True,
-        )
-        server_thread.start()
+        Thread(target=server.serve_forever, daemon=True).start()
         return port
 
     def test_health_endpoint(self):
@@ -485,9 +483,10 @@ class TestGumroadWebhook:
 
     @staticmethod
     def _start_server(secret: str = _SECRET):
+        """Start server on a random high port, return port (no TOCTOU race)."""
         import os
-        import socket
         import tempfile
+        from http.server import ThreadingHTTPServer
         from threading import Thread
 
         os.environ["DEVBENCH_LICENSE_SECRET"] = secret
@@ -497,17 +496,9 @@ class TestGumroadWebhook:
         import web.license_server
         importlib.reload(web.license_server)
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
-        sock.close()
-
-        server_thread = Thread(
-            target=web.license_server.run_server,
-            args=("127.0.0.1", port),
-            daemon=True,
-        )
-        server_thread.start()
+        server = ThreadingHTTPServer(("127.0.0.1", 0), web.license_server.LicenseHandler)
+        port = server.server_address[1]
+        Thread(target=server.serve_forever, daemon=True).start()
         return port
 
     def test_gumroad_sale_generates_license(self):

@@ -129,6 +129,8 @@ DETECT_SAMPLES = [
     "eyJhbGciOiJIUzI1NiJ9.eyJ0ZXN0IjoxfQ.",
     "https://example.com/path?q=1",
     "1700000000",
+    "name: test\ncount: 1\nenabled: true",  # YAML config
+    "[database]\nhost = localhost\nport = 5432",  # INI config
 ]
 
 
@@ -253,3 +255,29 @@ def test_all_subcommands_produce_json(subcommand):
     assert isinstance(obj["output"], str), (
         f"`devbench {subcommand}` `output` must be a string"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 1.5 — cf (ConfigForge) converts real config content correctly.
+# ---------------------------------------------------------------------------
+
+
+def test_cf_converts_yaml_to_json():
+    """`devbench cf --to json` must convert YAML and return parseable JSON config.
+
+    The generic test_all_subcommands_produce_json passes "hello" to cf, which
+    exercises the error path. This test exercises the success path with real
+    config content — the most complex UI tool.
+    """
+    yaml_input = "name: test\ncount: 42\nenabled: true"
+    proc = run_devbench(["cf", "--to", "json", yaml_input])
+    assert proc.returncode == 0, (
+        f"`devbench cf --to json` exited {proc.returncode}\nstderr: {proc.stderr.strip()}"
+    )
+    envelope = json.loads(proc.stdout)
+    assert envelope.get("error") is None, f"cf returned an error: {envelope.get('error')}"
+    assert isinstance(envelope["output"], str), "`output` must be a string"
+    parsed = json.loads(envelope["output"])
+    assert parsed["name"] == "test"
+    assert parsed["count"] == 42
+    assert parsed["enabled"] is True

@@ -424,6 +424,78 @@ def _reinsert_yaml_comments(yaml_text: str, comments: list) -> str:
     return "\n".join(lines)
 
 
+def _yaml_error_message(exc: "yaml.YAMLError", text: str) -> str:
+    """Translate a raw yaml.YAMLError into an actionable error message.
+
+    Covers the most common confusing cases:
+    - Scanner/ComposerError on '*foo' or '&foo' tokens (alias/anchor misparse)
+    - Tab character in indentation
+    - Duplicate anchor name
+    """
+    raw = str(exc)
+    lines = text.splitlines()
+
+    # Extract line number from the exception's mark if available
+    mark = getattr(exc, "problem_mark", None) or getattr(exc, "context_mark", None)
+    lineno = mark.line + 1 if mark else None
+    col = mark.column + 1 if mark else None
+    context = f" (line {lineno}, column {col})" if lineno else ""
+    excerpt = ""
+    if lineno and 1 <= lineno <= len(lines):
+        excerpt = f"\n  → {lines[lineno - 1]}"
+        if col:
+            excerpt += f"\n  {'─' * (col + 1)}^"
+
+    # Alias/anchor: scanner sees * or & followed by an invalid name
+    if "could not find expected" in raw or "found undefined alias" in raw:
+        problem = getattr(exc, "problem", "")
+        if "alias" in raw.lower() or "*" in problem:
+            return (
+                f"YAML alias error{context}: an unquoted value starts with '*' "
+                f"and was parsed as an alias reference but the anchor name is "
+                f"invalid or undefined.{excerpt}\n"
+                f"  Fix: quote the value (e.g. '*.html' → \"'*.html'\") or "
+                f"define the anchor with '&name' before referencing it with '*name'."
+            )
+
+    if "alias" in raw.lower() and "anchor" in raw.lower():
+        return (
+            f"YAML anchor/alias error{context}: an anchor name may contain only "
+            f"letters, digits, hyphens, underscores, and colons.{excerpt}\n"
+            f"  Fix: quote any value that starts with '*' or '&', "
+            f"e.g. change  key: *.html  to  key: \"*.html\"."
+        )
+
+    # Scanner error on * or & in a value position
+    if ("scanner" in type(exc).__name__.lower() or "scanner" in raw.lower()):
+        problem = getattr(exc, "problem", "")
+        if "special character" in raw or "mapping values" in raw or "*" in problem or "&" in problem:
+            return (
+                f"YAML syntax error{context}: a value contains a special character "
+                f"('*' or '&') that YAML reserved for anchors and aliases.{excerpt}\n"
+                f"  Fix: wrap the value in quotes, e.g. \"*.html\" or '*.html'."
+            )
+
+    # Tab character
+    if "found character '\\t'" in raw or "tab" in raw.lower():
+        return (
+            f"YAML indentation error{context}: YAML does not allow tab characters "
+            f"for indentation — use spaces only.{excerpt}\n"
+            f"  Fix: replace tabs with spaces (e.g. expand-tabs in your editor)."
+        )
+
+    # Duplicate anchor
+    if "duplicate" in raw.lower() and "anchor" in raw.lower():
+        return (
+            f"YAML anchor error{context}: the same anchor name is defined more "
+            f"than once. Anchor names must be unique within a document.{excerpt}\n"
+            f"  Fix: rename one of the duplicate anchors."
+        )
+
+    # Generic YAML error with location hint
+    return f"YAML parse error{context}: {raw}{excerpt}"
+
+
 def _extract_yaml_blank_lines(text: str) -> list:
     """Extract blank-line positions from YAML text, anchored to the full key
     path of the NEXT key line that follows each blank.
@@ -1163,14 +1235,16 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
     elif fmt == "yaml" and HAS_YAML:
         # Handle multi-document YAML (--- separator)
         multi_doc = options.get("multi_doc", True)
-        if multi_doc and text.count("---") > 0:
-            docs = list(yaml.safe_load_all(text))
-            # Filter None (empty documents between separators)
-            docs = [d for d in docs if d is not None]
-            if len(docs) == 1:
-                return {"data": docs[0], "format": "yaml"}
-            return {"data": docs, "format": "yaml-multi"}
-        return {"data": yaml.safe_load(text), "format": "yaml"}
+        try:
+            if multi_doc and text.count("---") > 0:
+                docs = list(yaml.safe_load_all(text))
+                docs = [d for d in docs if d is not None]
+                if len(docs) == 1:
+                    return {"data": docs[0], "format": "yaml"}
+                return {"data": docs, "format": "yaml-multi"}
+            return {"data": yaml.safe_load(text), "format": "yaml"}
+        except yaml.YAMLError as e:
+            raise ValueError(_yaml_error_message(e, text)) from e
 
     elif fmt == "toml" and HAS_TOML:
         return {"data": tomllib.loads(text), "format": "toml"}
@@ -1342,13 +1416,28 @@ def _flatten_dict(data, parent_key="", sep="."):
 
 
 # ── Serializers ──
+def _ini_format_value(v) -> str:
+    """Format a scalar value for a ConfigParser INI line.
+    None → empty string; booleans → lowercase true/false."""
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return str(v)
+
+
 def _env_format_value(v) -> str:
     """Format a value for a single .env line.
     Newlines (and carriage returns) would otherwise break the file structure
     and swallow subsequent KEY=VALUE lines, so such values are quoted and the
     line breaks escaped to keep the value on one physical line. Values with
     leading/trailing whitespace, or that begin/end with a quote character,
-    are also quoted so the parser round-trips them losslessly."""
+    are also quoted so the parser round-trips them losslessly.
+    None maps to empty string; booleans map to lowercase true/false."""
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
     s = str(v)
     if "\n" in s or "\r" in s:
         esc = s.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n")
@@ -1421,15 +1510,15 @@ def serialize(data, fmt: str, **options) -> str:
                 for k, v in values.items():
                     if isinstance(v, (dict, list)) and not isinstance(v, str):
                         raise ValueError(f"INI cannot represent nested value '{k}' in section '{section}'")
-                cfg[section] = {str(k): str(v) for k, v in values.items()}
+                cfg[section] = {str(k): _ini_format_value(v) for k, v in values.items()}
             if top_scalars:
-                cfg["DEFAULT"] = {str(k): str(v) for k, v in top_scalars.items()}
+                cfg["DEFAULT"] = {str(k): _ini_format_value(v) for k, v in top_scalars.items()}
         else:
             # Flat dict → wrap in DEFAULT section
             for k, v in data.items():
                 if isinstance(v, (dict, list)) and not isinstance(v, str):
                     raise ValueError(f"INI cannot represent nested value '{k}'")
-            cfg["DEFAULT"] = {str(k): str(v) for k, v in data.items()}
+            cfg["DEFAULT"] = {str(k): _ini_format_value(v) for k, v in data.items()}
         buf = io.StringIO()
         cfg.write(buf)
         return buf.getvalue()
@@ -1728,10 +1817,14 @@ def convert(text: str, to_fmt: str, from_fmt: str = "auto", **options) -> dict:
         if comments:
             result["_comments"] = comments
             # Warn when comments are silently dropped (target format doesn't support them)
+            _comment_formats = [f for f in ("yaml", "toml", "ini") if f != to_fmt]
+            _alt = (
+                f" To preserve comments, convert to {' or '.join(_comment_formats)} instead."
+                if _comment_formats else ""
+            )
             result["comment_loss_warning"] = (
-                f"⚠️  {len(comments)} comment(s) were lost: the target format '{to_fmt}' "
-                f"does not support comments. Use JSON as an intermediate format to "
-                f"preserve comments through round-trips (YAML → JSON → YAML)."
+                f"⚠️  {len(comments)} comment(s) were lost: '{to_fmt}' does not support "
+                f"comments.{_alt}"
             )
         return result
     except Exception as e:
@@ -1746,7 +1839,9 @@ def convert(text: str, to_fmt: str, from_fmt: str = "auto", **options) -> dict:
         elif "JSON" in err_msg:
             hints.append("JSON must be valid: double-quote strings, no trailing commas.")
         elif "YAML" in err_msg:
-            hints.append("YAML is indentation-sensitive. Check for mixed tabs/spaces.")
+            # _yaml_error_message already embeds a "Fix:" line for known errors
+            if "Fix:" not in err_msg:
+                hints.append("YAML is indentation-sensitive. Check for mixed tabs/spaces.")
         elif "TOML" in err_msg:
             hints.append("TOML requires proper sections [like.this] and no duplicate keys.")
         elif "not found" in err_msg.lower():

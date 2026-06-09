@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|**Last updated:** 2026-06-09T00:54Z (Polisher: fixed license_server.py SyntaxError + _handle_trial class scope, wired CLI trial command, hardened 24 weak assertions, 589 passed / 7 skipped / 2 xfailed) |
+|**Last updated:** 2026-06-09T01:25Z (Polisher: added actionable YAML alias/anchor error diagnostics — `*.html` unquoted now gives Fix: hint with line/col; added 3 tests; reviewed builder INI/ENV null+bool fix — clean; 599 passed / 7 skipped / 2 xfailed) |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-Builder cycle completed (2026-06-09T01:30Z). Shipped token_counter + text_chunker LLM tools (tiktoken-based with graceful fallback), wired into CLI as `devbench token` / `devbench chunk`. Fixed HIGH-1 FIPS MD5 crash with try/except + SHA-256 fallback. Shipped `devbench license trial` (14-day trial keys via POST /license/trial). Hardened 30+ assertions. Renamed misleading test `test_key_is_deterministic_secret`. Added test_llm_tools.py (10 tests). Test suite: 589 passed, 7 skipped, 2 xfailed. All gates green.
+Builder cycle completed (2026-06-09T02:10Z). Fixed comment loss warning (wrong JSON-as-intermediate advice replaced with actionable format suggestions: yaml/toml/ini alternatives). Fixed TOCTOU port race in both _start_server methods (ThreadingHTTPServer port=0 pattern eliminates close-then-rebind race). Fixed trial license nanosecond collision (time.time_ns() instead of int(time.time())). Added YAML/INI config samples to Swift bridge DETECT_SAMPLES. Added test_cf_converts_yaml_to_json (verifies real config conversion). Added 3 comment_loss_warning tests for format suggestion behavior. Tests: 596 passed, 7 skipped, 2 xfailed. All gates green.
 
 ## 4. Work Queue (ordered)
 
@@ -167,6 +167,8 @@ Builder cycle completed (2026-06-09T01:30Z). Shipped token_counter + text_chunke
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T02:10Z | **Builder** (cron — this session) | **SHIPPED: comment loss warning improvement, TOCTOU fix, trial license nanosecond fix, Swift bridge cf test, 3 comment warning regression tests.** (1) `comment_loss_warning` — removed incorrect "use JSON as intermediate" advice; now suggests yaml/toml/ini by name as comment-supporting alternatives. (2) TOCTOU fix — both `TestServerEndpoints._start_server` and `TestGumroadWebhook._start_server` now use `ThreadingHTTPServer(("127.0.0.1", 0), handler)` + read `server.server_address[1]` instead of close-and-rebind; eliminates port-steal race in CI. (3) Trial license collision fix — `time.time_ns()` instead of `int(time.time())` in customer_id. (4) Swift bridge DETECT_SAMPLES now includes YAML and INI config samples. (5) `test_cf_converts_yaml_to_json` — new Swift bridge test exercising the cf success path with real YAML→JSON conversion and content assertion. (6) 3 new comment_loss_warning tests: `test_comment_loss_warning_suggests_alternative_formats`, `test_comment_loss_warning_does_not_mention_json`. Tests: **596 passed, 7 skipped, 2 xfailed — 0 failures**. | **596/603 passing, 7 skipped, 2 xfailed — 0 failures. +3 tests. All gates green.** |
 
 | 2026-06-09T01:30Z | **Builder** (cron — this session) | **SHIPPED LLM tools + FIPS fix + trial license + assertion hardening.** (1) `token_counter` — tiktoken-based token counting for LLMs (`devbench token`), fallback to char-estimate when tiktoken not installed. (2) `text_chunker` — sentence-aware text chunking for RAG (`devbench chunk --chunk-size 500 --chunk-overlap 100`). (3) HIGH-1 FIPS fix — `hash_generator()` now wraps `hashlib.md5()` in try/except, falls back to `SHA256(...)` string on FIPS-disabled systems. (4) `devbench license trial` — 14-day trial key via `POST /license/trial`; full CLI+server path implemented. (5) Assertion hardening — 30+ additional specific-content assertions in test_core.py. (6) LOW-3 fix — renamed `test_key_is_deterministic_secret` → `test_key_generation_produces_unique_keys`. (7) New `tests/test_llm_tools.py` (10 tests). (8) pyproject.toml: `[tiktoken]` optional dep. Tests: **589 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green. | **589/596 passing, 7 skipped, 2 xfailed — 0 failures. +1 LLM tools test file (10 tests). FIPS MD5 fix, trial license, assertion hardening all shipped. Commit: 0d75307.** |
 
