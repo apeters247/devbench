@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>TOML to YAML Converter CLI — Comments Preserved, Batch Mode | devbench cf</title>
+  <meta name="description" content="Convert TOML to YAML from the command line with comment preservation. devbench cf is the only CLI tool that keeps TOML section comments intact when converting to YAML. Handles Cargo.toml, pyproject.toml, config.toml. pip install devbench.">
+  <meta property="og:title" content="TOML to YAML CLI Converter — Comments Preserved (Not Dropped)">
+  <meta property="og:description" content="devbench cf converts TOML to YAML while preserving comments — unlike yq, dasel, and most online tools that silently drop them. One command: devbench cf config.toml -t yaml.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/toml-to-yaml-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="TOML to YAML CLI Converter — Comments Preserved">
+  <meta name="twitter:description" content="Convert TOML to YAML in one command: devbench cf config.toml -t yaml. Comments survive the round-trip. Batch mode, stdin/stdout, offline.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "11-format config file converter. Convert TOML to YAML, JSON, INI, .env, CSV, HCL, XML. Comment preservation, batch mode, fully offline.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>TOML to YAML Converter CLI — The One That Keeps Your Comments</h1>
+<br />
+<p>Most config converters silently drop comments when converting TOML to YAML. If your <code>pyproject.toml</code>, <code>Cargo.toml</code>, or <code>config.toml</code> has inline explanations, section headers, or operational notes, they disappear. <strong>devbench cf</strong> preserves them.</p>
+<br />
+<pre><code class="language-bash"># Install
+pip install devbench
+
+# Basic TOML → YAML
+devbench cf config.toml -t yaml
+
+# Write to a file
+devbench cf config.toml -t yaml > config.yaml
+
+# Pipe from stdin
+cat pyproject.toml | devbench cf -f toml -t yaml
+
+# In-place conversion
+devbench cf config.toml -t yaml --in-place
+</code></pre>
+<br />
+
+<h2>Comment Preservation: The Difference That Matters</h2>
+<br />
+<p>Here's a typical TOML configuration with operational comments:</p>
+<br />
+<pre><code class="language-toml"># Database connection — rotate credentials every 90 days
+[database]
+host = "db.internal"
+port = 5432  # non-standard port for firewall rule
+# Increase pool size if p99 latency > 200ms
+pool_size = 10
+
+[cache]
+# Redis — requires AUTH in production
+url = "redis://cache:6379"
+ttl = 3600
+</code></pre>
+<br />
+<p>With most tools (yq, dasel, online converters):</p>
+<br />
+<pre><code class="language-yaml">database:
+  host: db.internal
+  port: 5432
+  pool_size: 10
+cache:
+  url: redis://cache:6379
+  ttl: 3600
+</code></pre>
+<br />
+<p>The operational context is gone. With devbench cf:</p>
+<br />
+<pre><code class="language-yaml"># Database connection — rotate credentials every 90 days
+database:
+  host: db.internal
+  port: 5432  # non-standard port for firewall rule
+  # Increase pool size if p99 latency > 200ms
+  pool_size: 10
+
+# Redis — requires AUTH in production
+cache:
+  url: redis://cache:6379
+  ttl: 3600
+</code></pre>
+<br />
+<p>Comments survive the round-trip. Your documentation stays with your data.</p>
+<br />
+
+<h2>Common Migration Patterns</h2>
+<br />
+<h3>Rust / Cargo.toml to YAML (Ansible/Kubernetes)</h3>
+<pre><code class="language-bash"># Extract dependencies section from Cargo.toml as YAML
+devbench cf Cargo.toml --get dependencies -t yaml
+
+# Convert full Cargo.toml for documentation generation
+devbench cf Cargo.toml -t yaml > cargo-manifest.yaml
+</code></pre>
+<br />
+
+<h3>Python / pyproject.toml to YAML</h3>
+<pre><code class="language-bash"># Extract project metadata
+devbench cf pyproject.toml --get project -t yaml
+
+# Extract tool.pytest config for CI YAML step
+devbench cf pyproject.toml --get tool.pytest.ini_options -t yaml
+</code></pre>
+<br />
+
+<h3>Hugo / config.toml to YAML</h3>
+<pre><code class="language-bash"># Hugo supports both formats — migrate from TOML to YAML
+devbench cf config.toml -t yaml > config.yaml
+
+# Verify structure before switching
+devbench cf config.toml -t yaml | devbench cf -f yaml --validate
+</code></pre>
+<br />
+
+<h2>Batch Conversion</h2>
+<br />
+<pre><code class="language-bash"># Convert all TOML files in a directory
+devbench cf "*.toml" --batch -t yaml
+
+# Recursive — all TOML files in a project tree
+devbench cf "**/*.toml" --batch -t yaml
+
+# With output directory
+devbench cf "configs/**/*.toml" --batch -t yaml --output-dir ./yaml-configs/
+
+# Preview what would be converted (dry run via --validate)
+devbench cf "**/*.toml" --batch --validate
+</code></pre>
+<br />
+
+<h2>TOML Types in YAML</h2>
+<br />
+<p>TOML has explicit typing that YAML handles through type inference. devbench cf maps them correctly:</p>
+<br />
+<table>
+<thead>
+<tr><th>TOML Type</th><th>TOML Value</th><th>YAML Output</th></tr>
+</thead>
+<tbody>
+<tr><td>String</td><td><code>"hello"</code></td><td><code>hello</code></td></tr>
+<tr><td>Integer</td><td><code>42</code></td><td><code>42</code></td></tr>
+<tr><td>Float</td><td><code>3.14</code></td><td><code>3.14</code></td></tr>
+<tr><td>Boolean</td><td><code>true</code></td><td><code>true</code></td></tr>
+<tr><td>Datetime</td><td><code>1979-05-27T07:32:00Z</code></td><td><code>'1979-05-27T07:32:00+00:00'</code></td></tr>
+<tr><td>Array</td><td><code>[1, 2, 3]</code></td><td><code>- 1\n- 2\n- 3</code></td></tr>
+<tr><td>Table</td><td><code>[section]</code></td><td>YAML mapping block</td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Reverse: YAML to TOML</h2>
+<br />
+<p>The reverse direction works equally well:</p>
+<br />
+<pre><code class="language-bash"># YAML → TOML
+devbench cf config.yaml -t toml
+
+# YAML → TOML with sorted keys (for readable Cargo.toml output)
+devbench cf deps.yaml -t toml --sort-keys
+</code></pre>
+<br />
+<p>devbench cf is one of the few Python tools that supports <strong>TOML write</strong>. The <code>tomllib</code> module in Python's stdlib is read-only; devbench cf uses <code>tomli_w</code> to write TOML correctly.</p>
+<br />
+
+<h2>Quick Reference</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>Command</th></tr>
+</thead>
+<tbody>
+<tr><td>Basic conversion</td><td><code>devbench cf config.toml -t yaml</code></td></tr>
+<tr><td>From stdin</td><td><code>cat config.toml | devbench cf -f toml -t yaml</code></td></tr>
+<tr><td>Extract path</td><td><code>devbench cf config.toml --get database -t yaml</code></td></tr>
+<tr><td>Batch convert</td><td><code>devbench cf "**/*.toml" --batch -t yaml</code></td></tr>
+<tr><td>In-place</td><td><code>devbench cf config.toml -t yaml -i</code></td></tr>
+<tr><td>Sort keys</td><td><code>devbench cf config.toml -t yaml --sort-keys</code></td></tr>
+<tr><td>Reverse: YAML→TOML</td><td><code>devbench cf config.yaml -t toml</code></td></tr>
+</tbody>
+</table>
+<br />
+
+<p>See also: <a href="yaml-to-json-converter.html">YAML to JSON converter</a> · <a href="json-to-toml-converter.html">JSON to TOML converter</a> · <a href="toml-converter.html">TOML converter overview</a> · <a href="toml-vs-yaml.html">TOML vs YAML comparison</a></p>
+
+    </div>
+  </main>
+  <footer style="text-align:center;padding:2rem;opacity:0.6;font-size:0.875rem;">
+    <p>© 2026 NaxiAI · <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+  </footer>
+</body>
+</html>

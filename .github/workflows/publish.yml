@@ -1,6 +1,6 @@
-name: Publish to PyPI
+name: Publish to PyPI + GitHub Release
 
-# Publishes devbench to PyPI on tagged releases.
+# Publishes devbench to PyPI and creates a GitHub Release on tagged releases.
 # Trigger: git tag v* && git push origin v*
 
 on:
@@ -10,13 +10,16 @@ on:
 
 jobs:
   publish:
-    name: Build and publish to PyPI
+    name: Build, publish to PyPI, and create GitHub Release
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # for trusted publishing via PyPI
+      id-token: write   # for trusted publishing via PyPI
+      contents: write   # for creating GitHub releases
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for changelog
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -43,3 +46,46 @@ jobs:
 
       - name: Publish to PyPI (prod)
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release notes
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | sed -n '2p')
+          if [ -n "$PREV_TAG" ]; then
+            CHANGES=$(git log "${PREV_TAG}..HEAD" --oneline --no-merges | head -30)
+          else
+            CHANGES=$(git log --oneline --no-merges | head -30)
+          fi
+          {
+            echo "NOTES<<EOF"
+            echo "## devbench v${VERSION}"
+            echo ""
+            echo "### Install"
+            echo '```bash'
+            echo "pip install devbench==${VERSION}"
+            echo '```'
+            echo ""
+            echo "### What's Changed"
+            echo "$CHANGES" | sed 's/^/- /'
+            echo ""
+            echo "### Links"
+            echo "- [PyPI](https://pypi.org/project/devbench/${VERSION}/)"
+            echo "- [Documentation](https://naxiai.com/tools/devbench/)"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "devbench v${{ steps.version.outputs.VERSION }}"
+          body: ${{ steps.notes.outputs.NOTES }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
+          files: |
+            dist/*.whl
+            dist/*.tar.gz

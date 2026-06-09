@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>YAML to JSON Converter CLI — Offline, Batch, Comment-Aware | devbench cf</title>
+  <meta name="description" content="Convert YAML to JSON from the command line. devbench cf handles YAML 1.2 booleans correctly (yes/no stay as strings), preserves structure, supports batch conversion of thousands of files, and works fully offline. pip install devbench.">
+  <meta property="og:title" content="YAML to JSON CLI Converter — No Online Tools Required">
+  <meta property="og:description" content="Convert YAML to JSON in one command: devbench cf input.yaml -t json. Handles YAML 1.2 booleans, batch mode, stdin/stdout piping. Fully offline.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/yaml-to-json-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="YAML to JSON CLI Converter — Offline, Batch, YAML 1.2 Correct">
+  <meta name="twitter:description" content="devbench cf converts YAML to JSON correctly: yes/no treated as strings (not booleans), batch glob mode, stdin piping, all offline.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "11-format config file converter and 9 developer tools. Convert YAML to JSON, TOML, CSV, INI, .env, HCL, XML, plist, JSONC. Comment preservation, batch mode, offline.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>YAML to JSON Converter — Command-Line, Offline, YAML 1.2 Correct</h1>
+<br />
+<p>Converting YAML to JSON from the command line sounds simple until you hit the edge cases: <code>yes</code> and <code>no</code> turning into <code>true</code> and <code>false</code>, Norwegian booleans (<code>off</code>, <code>on</code>), and multi-document YAML files that break JSON parsers. <strong>devbench cf</strong> handles all of these correctly with a single command.</p>
+<br />
+<pre><code class="language-bash"># Basic YAML → JSON
+devbench cf input.yaml -t json
+
+# Write output to a file
+devbench cf input.yaml -t json > output.json
+
+# Pipe from stdin
+cat input.yaml | devbench cf -f yaml -t json
+
+# In-place conversion (replaces the file)
+devbench cf input.yaml -t json --in-place
+
+# Compact/minified JSON output
+devbench cf input.yaml -t json --compact
+</code></pre>
+<br />
+
+<h2>The YAML Boolean Trap — Why Most Tools Get This Wrong</h2>
+<br />
+<p>YAML 1.1 (the version most tools implement) treats these values as booleans:</p>
+<br />
+<pre><code class="language-yaml">enabled: yes      # YAML 1.1 → true
+debug: no         # YAML 1.1 → false
+flag: on          # YAML 1.1 → true
+toggle: off       # YAML 1.1 → false
+</code></pre>
+<br />
+<p>This causes silent data corruption in the "Norway Problem" — a YAML key named <code>NO</code> (Norway's ISO 3166-1 country code) becomes <code>false</code>. Any CI/CD pipeline or application reading the converted JSON would receive wrong values without any error.</p>
+<br />
+<p><strong>devbench cf defaults to YAML 1.2</strong>, where only <code>true</code> and <code>false</code> are booleans. Everything else stays as a string:</p>
+<br />
+<pre><code class="language-yaml"># input.yaml
+country: "NO"
+enabled: yes
+feature_flags:
+  - on
+  - off
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf input.yaml -t json</code></pre>
+<br />
+<pre><code class="language-json">{
+  "country": "NO",
+  "enabled": "yes",
+  "feature_flags": ["on", "off"]
+}
+</code></pre>
+<br />
+<p>If you need YAML 1.1 behavior for legacy systems, use <code>--yaml12 false</code>:</p>
+<br />
+<pre><code class="language-bash"># YAML 1.1 behavior (yes/no → true/false)
+devbench cf input.yaml -t json --yaml12 false</code></pre>
+<br />
+
+<h2>Batch YAML to JSON Conversion</h2>
+<br />
+<p>For converting entire directories of YAML files:</p>
+<br />
+<pre><code class="language-bash"># Convert all YAML files in current directory
+devbench cf "*.yaml" --batch -t json
+
+# Recursive — all YAML files in a tree
+devbench cf "**/*.yaml" --batch -t json
+
+# With output directory (preserves directory structure)
+devbench cf "configs/**/*.yaml" --batch -t json --output-dir ./json-configs/
+
+# Stream mode for large numbers of files (constant memory usage)
+devbench cf "**/*.yaml" --batch -t json --stream
+</code></pre>
+<br />
+<p>Batch mode gives you per-file error reporting: if one file fails to parse, the rest continue converting. Errors go to stderr, output goes to files, so your pipeline stays clean.</p>
+<br />
+
+<h2>Value Extraction Before Conversion</h2>
+<br />
+<p>Use <code>--get</code> to extract a specific path from YAML and emit it as JSON:</p>
+<br />
+<pre><code class="language-bash"># Extract a nested value as JSON
+devbench cf kubernetes.yaml --get spec.containers -t json
+
+# Extract and minify
+devbench cf config.yaml --get database -t json --compact
+
+# Extract with a fallback if the key is missing
+devbench cf config.yaml --get database.timeout --default 30
+
+# Filter a list by field value, then extract as JSON
+devbench cf pods.yaml --select status.phase=Running --get metadata.name -t json
+</code></pre>
+<br />
+
+<h2>GitHub Actions — YAML Config to JSON in CI</h2>
+<br />
+<pre><code class="language-yaml">- name: Convert config to JSON
+  run: |
+    pip install devbench
+    devbench cf config.yaml -t json > config.json
+    cat config.json | jq .database.host
+</code></pre>
+<br />
+<pre><code class="language-yaml">- name: Validate YAML structure
+  run: |
+    pip install devbench
+    devbench cf --check-env
+    devbench cf config.yaml --validate
+    devbench cf config.yaml --assert environment=production
+</code></pre>
+<br />
+
+<h2>Install</h2>
+<br />
+<pre><code class="language-bash"># Install devbench (includes cf command)
+pip install devbench
+
+# Verify
+devbench cf --help
+devbench cf --list-formats
+</code></pre>
+<br />
+<p>Works on Python 3.10–3.13. Fully offline — no telemetry, no external API calls. The <code>cf</code> command supports 11 formats bidirectionally: JSON, YAML, TOML, XML, CSV, INI, .env, HCL, Java .properties, Apple plist, and JSONC.</p>
+<br />
+
+<h2>Quick Reference</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>Command</th></tr>
+</thead>
+<tbody>
+<tr><td>Convert file</td><td><code>devbench cf input.yaml -t json</code></td></tr>
+<tr><td>Minified output</td><td><code>devbench cf input.yaml -t json --compact</code></td></tr>
+<tr><td>From stdin</td><td><code>cat f.yaml | devbench cf -f yaml -t json</code></td></tr>
+<tr><td>YAML 1.1 booleans</td><td><code>devbench cf input.yaml -t json --yaml12 false</code></td></tr>
+<tr><td>Extract path as JSON</td><td><code>devbench cf input.yaml --get a.b.c -t json</code></td></tr>
+<tr><td>Batch directory</td><td><code>devbench cf "**/*.yaml" --batch -t json</code></td></tr>
+<tr><td>In-place</td><td><code>devbench cf input.yaml -t json -i</code></td></tr>
+<tr><td>Sort keys</td><td><code>devbench cf input.yaml -t json --sort-keys</code></td></tr>
+</tbody>
+</table>
+<br />
+
+<p>See also: <a href="json-to-yaml-converter.html">JSON to YAML converter</a> · <a href="toml-to-yaml-converter.html">TOML to YAML converter</a> · <a href="vs-yq.html">devbench vs yq</a> · <a href="vs-jq.html">devbench vs jq</a></p>
+
+    </div>
+  </main>
+  <footer style="text-align:center;padding:2rem;opacity:0.6;font-size:0.875rem;">
+    <p>© 2026 NaxiAI · <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+  </footer>
+</body>
+</html>

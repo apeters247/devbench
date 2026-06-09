@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>ConfigForge vs Miller (mlr) — YAML/TOML/JSON Support vs CSV-Only | devbench</title>
+  <meta name="description" content="Compare ConfigForge vs Miller (mlr) for config file processing. Miller excels at CSV/TSV data processing. ConfigForge handles 11 formats including YAML, TOML, JSON, HCL, plist, INI, .env. Use both for different jobs.">
+  <meta property="og:title" content="ConfigForge vs Miller (mlr) — When to Use Each">
+  <meta property="og:description" content="Miller (mlr) is excellent for CSV/TSV data pipelines. ConfigForge handles YAML, TOML, JSON, HCL, INI, .env, XML, plist — formats Miller doesn't cover. Honest comparison.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/vs-miller.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ConfigForge vs Miller (mlr) — Format Coverage Comparison">
+  <meta name="twitter:description" content="Miller (mlr) is a powerful CSV/TSV tool. ConfigForge adds YAML, TOML, JSON, HCL and 7 more formats. See when to use each.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI. Convert JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties, plist, JSONC. Comment preservation, batch mode, offline.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>ConfigForge vs Miller (mlr): Different Tools for Different Jobs</h1>
+<br />
+<p>If you're searching for a <strong>Miller (mlr) alternative</strong> that handles YAML, TOML, and other config formats, <strong>ConfigForge</strong> (the <code>cf</code> subcommand in the <a href="https://pypi.org/project/devbench/">devbench</a> toolkit) covers formats that Miller doesn't support. This is an honest comparison of what each tool does well.</p>
+<br />
+
+<h2>The Short Version</h2>
+<br />
+<ul>
+<li><strong>Use Miller</strong> when you need stream-processing, aggregation, or transformation of large CSV/TSV/JSON-lines datasets — Miller is purpose-built for this and extremely fast.</li>
+<li><strong>Use ConfigForge</strong> when you need to convert between YAML, TOML, HCL, INI, .env, plist, JSONC, and other config formats — Miller simply doesn't support these.</li>
+<li><strong>Use both</strong> in pipelines — ConfigForge converts the format, Miller processes the records.</li>
+</ul>
+<br />
+
+<h2>Format Coverage Comparison</h2>
+<br />
+<table>
+<thead>
+<tr><th>Format</th><th>ConfigForge (<code>devbench cf</code>)</th><th>Miller (mlr)</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>JSON</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+<tr><td><strong>CSV / TSV</strong></td><td>✅ Read + Write</td><td>✅ Read + Write + stream transforms</td></tr>
+<tr><td><strong>YAML</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>TOML</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>HCL (Terraform)</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>INI</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>.env</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>Java .properties</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>Apple plist</strong></td><td>✅ Read + Write (XML + binary)</td><td>❌ Not supported</td></tr>
+<tr><td><strong>JSONC (JSON with Comments)</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>JSON Lines / NDJSON</strong></td><td>Via <code>--stream</code></td><td>✅ Native streaming</td></tr>
+<tr><td><strong>XML</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Where Miller Wins</h2>
+<br />
+<p>Miller is a data processing powerhouse for structured tabular data. Its DSL (Miller Record Language) supports:</p>
+<br />
+<ul>
+<li><strong>Field transforms</strong>: <code>mlr put '$price = $price * 1.1'</code></li>
+<li><strong>Aggregation</strong>: <code>mlr stats1 -a mean,stddev -f price -g category</code></li>
+<li><strong>Sorting and filtering</strong>: <code>mlr filter '$quantity > 100'</code></li>
+<li><strong>Join operations</strong>: <code>mlr join -f lookup.csv -j id</code></li>
+<li><strong>Streaming billion-row files</strong>: constant memory, doesn't load the full file</li>
+</ul>
+<br />
+<p>For data engineering pipelines over CSV, TSV, and JSON Lines, Miller is faster and more expressive than ConfigForge. ConfigForge doesn't try to replicate this.</p>
+<br />
+
+<h2>Where ConfigForge Wins</h2>
+<br />
+<p>ConfigForge handles the entire config-file ecosystem that Miller doesn't touch:</p>
+<br />
+<pre><code class="language-bash"># Convert Terraform HCL vars to YAML for Ansible
+devbench cf terraform.tfvars.hcl -t yaml
+
+# Convert Kubernetes YAML to JSON for tooling
+devbench cf deployment.yaml -t json
+
+# Extract database config from YAML as .env
+devbench cf config.yaml --get database --to env > .env.db
+
+# Convert Spring Boot properties to TOML for a Rust service
+devbench cf application.properties -t toml
+
+# Batch convert all TOML files in a project to YAML
+devbench cf "**/*.toml" --batch -t yaml
+
+# Validate pyproject.toml against schema
+devbench cf pyproject.toml --validate
+</code></pre>
+<br />
+<p>Comment preservation is ConfigForge's differentiator. When you convert a TOML file with operational comments to YAML, the comments survive:</p>
+<br />
+<pre><code class="language-toml"># Production — rotate quarterly
+[database]
+host = "db.internal"
+pool_size = 10  # increase if p99 > 200ms
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf config.toml -t yaml</code></pre>
+<br />
+<pre><code class="language-yaml"># Production — rotate quarterly
+database:
+  host: db.internal
+  pool_size: 10  # increase if p99 > 200ms
+</code></pre>
+<br />
+
+<h2>Using Both in a Pipeline</h2>
+<br />
+<p>ConfigForge and Miller complement each other well. ConfigForge converts the format into something Miller can process, then Miller does the data work:</p>
+<br />
+<pre><code class="language-bash"># Convert YAML inventory to CSV, then aggregate with Miller
+devbench cf inventory.yaml -t csv | mlr --csv stats1 -a count,sum -f quantity -g category
+
+# Convert JSON config to CSV for spreadsheet analysis via Miller
+devbench cf config.json -t csv | mlr --csv sort -f name
+
+# Parse a TOML service registry to CSV, filter active services with Miller
+devbench cf services.toml -t csv | mlr --csv filter '$status == "active"'
+</code></pre>
+<br />
+
+<h2>Installation</h2>
+<br />
+<table>
+<thead>
+<tr><th>Tool</th><th>Install</th><th>Language</th></tr>
+</thead>
+<tbody>
+<tr><td>ConfigForge (devbench cf)</td><td><code>pip install devbench</code></td><td>Python 3.10–3.13</td></tr>
+<tr><td>Miller (mlr)</td><td><code>brew install miller</code> / binary download</td><td>Go (static binary)</td></tr>
+</tbody>
+</table>
+<br />
+<pre><code class="language-bash"># Install devbench (includes cf command)
+pip install devbench
+devbench cf --help
+
+# Verify format support
+devbench cf --list-formats
+</code></pre>
+<br />
+
+<h2>Summary</h2>
+<br />
+<p>Miller and ConfigForge solve different problems. Miller is one of the best tools available for streaming CSV/TSV/JSON-lines data processing. ConfigForge covers the config-file formats that Miller ignores: YAML, TOML, HCL, INI, .env, plist, JSONC, XML, and Java .properties.</p>
+<br />
+<p>If you've been using Miller for CSV work and need to also handle YAML or TOML configuration files, ConfigForge is the tool to add to your stack — not a replacement.</p>
+<br />
+
+<p>See also: <a href="vs-jq.html">ConfigForge vs jq</a> · <a href="vs-yq.html">ConfigForge vs yq</a> · <a href="vs-dasel.html">ConfigForge vs dasel</a> · <a href="csv-to-yaml-converter.html">CSV to YAML converter</a></p>
+
+    </div>
+  </main>
+  <footer style="text-align:center;padding:2rem;opacity:0.6;font-size:0.875rem;">
+    <p>© 2026 NaxiAI · <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+  </footer>
+</body>
+</html>
