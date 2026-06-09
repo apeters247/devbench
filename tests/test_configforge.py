@@ -109,7 +109,7 @@ def test_empty_input():
     assert r["error"]
 
 def test_supported_formats():
-    expected_formats = ["json", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties"]
+    expected_formats = ["json", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties", "plist"]
     assert set(SUPPORTED_FORMATS) == set(expected_formats)
 
 def test_convert_file(tmp_path):
@@ -699,3 +699,173 @@ def test_yaml_parse_error_includes_location():
     assert not r["success"]
     # Should contain either 'line' or a colon-separated location
     assert "line" in r["error"].lower() or ":" in r["error"]
+
+
+def test_toml_no_empty_intermediate_headers():
+    """TOML output must not emit empty [section] headers for intermediate-only tables.
+
+    Addresses the yq GitHub issue #2710 pattern: deeply nested TOML like
+    pyproject.toml produces clean output without noise like '[tool]' or
+    '[tool.poetry.group]' when those levels carry no direct scalar values.
+    """
+    from core.configforge import serialize
+    data = {
+        "tool": {
+            "poetry": {
+                "name": "mypackage",
+                "version": "1.0.0",
+                "dependencies": {"python": "^3.10"},
+                "group": {
+                    "dev": {
+                        "dependencies": {"pytest": "^7.0"}
+                    }
+                }
+            }
+        }
+    }
+    out = serialize(data, "toml")
+    # Intermediate-only tables must NOT appear as standalone headers
+    assert "[tool]\n" not in out
+    assert "[tool.poetry.group]\n" not in out
+    assert "[tool.poetry.group.dev]\n" not in out
+    # Leaf sections WITH scalars must still have headers
+    assert "[tool.poetry]\n" in out
+    assert "[tool.poetry.dependencies]\n" in out
+    assert "[tool.poetry.group.dev.dependencies]\n" in out
+    # Data integrity: output must round-trip cleanly
+    assert tomllib.loads(out) == data
+
+
+def test_toml_set_pyproject_version(tmp_path, capsys):
+    """--set on a pyproject.toml-style file updates the version and preserves structure.
+
+    The yq GitHub issue #2710 showed yq mangling [tool.poetry.dependencies] when
+    updating version — ConfigForge must preserve all sections correctly.
+    """
+    from core.configforge import main
+    toml_content = (
+        '[tool.poetry]\n'
+        'name = "mypackage"\n'
+        'version = "1.0.0"\n'
+        '\n'
+        '[tool.poetry.dependencies]\n'
+        'python = "^3.10"\n'
+        'requests = "^2.28"\n'
+    )
+    f = tmp_path / "pyproject.toml"
+    f.write_text(toml_content)
+    rc = main([str(f), "--set", "tool.poetry.version", "2.0.0"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    parsed = tomllib.loads(captured.out)
+    # Version updated
+    assert parsed["tool"]["poetry"]["version"] == "2.0.0"
+    # Dependencies section preserved — not mangled or dropped
+    assert parsed["tool"]["poetry"]["dependencies"]["python"] == "^3.10"
+    assert parsed["tool"]["poetry"]["dependencies"]["requests"] == "^2.28"
+    # Name unchanged
+    assert parsed["tool"]["poetry"]["name"] == "mypackage"
+
+
+# ── Plist tests (macOS developer use case) ──
+
+PLIST_INFO = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.example.MyApp</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+    </dict>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>armv7</string>
+    </array>
+</dict>
+</plist>
+"""
+
+
+def test_plist_detect_format():
+    """Plist XML is detected as 'plist', not 'xml'."""
+    assert detect_format(PLIST_INFO) == "plist"
+
+
+def test_plist_in_supported_formats():
+    assert "plist" in SUPPORTED_FORMATS
+
+
+def test_plist_parse_basic():
+    """Plist parses to expected Python dict with correct types."""
+    r = convert(PLIST_INFO, "json")
+    assert r["success"]
+    data = json.loads(r["output"])
+    assert data["CFBundleIdentifier"] == "com.example.MyApp"
+    assert data["CFBundleVersion"] == "1.0.0"
+    assert data["NSAppTransportSecurity"]["NSAllowsArbitraryLoads"] is False
+    assert data["UIRequiredDeviceCapabilities"] == ["armv7"]
+
+
+def test_plist_to_yaml():
+    """Plist converts cleanly to YAML."""
+    r = convert(PLIST_INFO, "yaml")
+    assert r["success"]
+    parsed = yaml.safe_load(r["output"])
+    assert parsed["CFBundleIdentifier"] == "com.example.MyApp"
+    assert parsed["CFBundleVersion"] == "1.0.0"
+
+
+def test_plist_round_trip():
+    """JSON dict serializes to valid plist XML and back."""
+    from core.configforge import serialize, parse_text
+    data = {
+        "CFBundleIdentifier": "com.example.App",
+        "CFBundleVersion": "2.1.0",
+        "DebugEnabled": False,
+        "MaxConnections": 4,
+    }
+    plist_out = serialize(data, "plist")
+    assert "<?xml" in plist_out
+    assert "com.example.App" in plist_out
+    assert "<integer>4</integer>" in plist_out
+    parsed_back = parse_text(plist_out, "plist")
+    assert parsed_back["data"]["CFBundleIdentifier"] == "com.example.App"
+    assert parsed_back["data"]["CFBundleVersion"] == "2.1.0"
+    assert parsed_back["data"]["DebugEnabled"] is False
+    assert parsed_back["data"]["MaxConnections"] == 4
+
+
+def test_plist_set_bundle_version_in_place(tmp_path, capsys):
+    """macOS CI use case: --set CFBundleVersion 2.1.0 Info.plist -i updates version."""
+    from core.configforge import main
+    f = tmp_path / "Info.plist"
+    f.write_text(PLIST_INFO)
+    rc = main([str(f), "--set", "CFBundleVersion", "2.1.0", "-i"])
+    assert rc == 0
+    import plistlib
+    updated = plistlib.loads(f.read_bytes())
+    assert updated["CFBundleVersion"] == "2.1.0"
+    # Other keys must be preserved
+    assert updated["CFBundleIdentifier"] == "com.example.MyApp"
+    assert updated["NSAppTransportSecurity"]["NSAllowsArbitraryLoads"] is False
+
+
+def test_plist_convert_file_extension(tmp_path):
+    """convert_file auto-detects .plist extension and converts to JSON."""
+    from core.configforge import convert_file
+    f = tmp_path / "Info.plist"
+    f.write_text(PLIST_INFO)
+    out = tmp_path / "Info.json"
+    result = convert_file(str(f), str(out))
+    assert result["success"]
+    data = json.loads(out.read_text())
+    assert data["CFBundleIdentifier"] == "com.example.MyApp"
+    assert data["CFBundleVersion"] == "1.0.0"

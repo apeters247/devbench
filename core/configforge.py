@@ -1065,6 +1065,12 @@ def detect_format(text: str) -> str:
         except Exception:
             pass
 
+    # Plist: Apple property list XML — must check before generic XML
+    if text.strip().startswith("<") and (
+        "<!DOCTYPE plist" in text[:500] or "<plist version=" in text[:500]
+    ):
+        return "plist"
+
     # XML: starts with <
     if text.strip().startswith("<") and text.strip().endswith(">"):
         try:
@@ -1402,11 +1408,19 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
                     result = []
         return {"data": result, "format": "csv"}
 
+    elif fmt == "plist":
+        import plistlib
+        try:
+            data = plistlib.loads(text.encode("utf-8"))
+            return {"data": _plist_normalize(data), "format": "plist"}
+        except Exception as exc:
+            raise ValueError(f"Invalid plist: {exc}") from exc
+
     else:
         if fmt == "unknown":
             raise ValueError(
                 "Could not detect format. Try --from yaml or paste valid "
-                "YAML/JSON/TOML/XML/CSV/INI/ENV/HCL/PROPERTIES"
+                "YAML/JSON/TOML/XML/CSV/INI/ENV/HCL/PROPERTIES/PLIST"
             )
         raise ValueError(f"Unsupported format: {fmt}")
 
@@ -1592,6 +1606,37 @@ def _env_format_value(v) -> str:
     return s
 
 
+def _plist_normalize(data):
+    """Normalize parsed plist data for cross-format use.
+    bytes → base64 string; datetime/date → ISO-8601 string."""
+    import base64
+    if isinstance(data, bytes):
+        return base64.b64encode(data).decode("ascii")
+    elif isinstance(data, (datetime, date)):
+        return data.isoformat()
+    elif isinstance(data, dict):
+        return {str(k): _plist_normalize(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_plist_normalize(v) for v in data]
+    return data
+
+
+def _plist_prepare(data):
+    """Coerce arbitrary data to plistlib-compatible types before serialization.
+    None maps to empty string (plist has no null type)."""
+    if isinstance(data, dict):
+        return {str(k): _plist_prepare(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_plist_prepare(v) for v in data]
+    elif isinstance(data, (bool, int, float, bytes)):
+        return data
+    elif isinstance(data, (datetime, date)):
+        return data
+    elif data is None:
+        return ""
+    return str(data)
+
+
 def serialize(data, fmt: str, **options) -> str:
     """Convert Python data to config format string."""
     if fmt == "json":
@@ -1720,6 +1765,11 @@ def serialize(data, fmt: str, **options) -> str:
         item_name = options.get("item_name", "item")
         return _from_dict_to_xml(data, root_name, item_name)
 
+    elif fmt == "plist":
+        import plistlib
+        prepared = _plist_prepare(data)
+        return plistlib.dumps(prepared, fmt=plistlib.FMT_XML).decode("utf-8")
+
     else:
         raise ValueError(f"Unsupported output format: {fmt}")
 
@@ -1791,11 +1841,8 @@ def _to_toml(data, prefix="", root=False, null_handling="skip"):
         lines.append(f"# {len(data)} items (array)")
         return "\n".join(lines)
     elif isinstance(data, dict):
-        if prefix and not root:
-            # Quote each dot-separated segment of the prefix independently
-            quoted_prefix = ".".join(_toml_key(seg) for seg in prefix.split("."))
-            lines.append(f"\n[{quoted_prefix}]")
         deferred = []
+        scalar_lines = []
         for k, v in data.items():
             full_key = f"{prefix}.{k}" if prefix else k
             if isinstance(v, dict):
@@ -1803,16 +1850,23 @@ def _to_toml(data, prefix="", root=False, null_handling="skip"):
             elif isinstance(v, list) and any(isinstance(i, dict) for i in v):
                 deferred.append(("tablearray", full_key, v))
             elif isinstance(v, list):
-                lines.append(f"{_toml_key(k)} = [{', '.join(_toml_scalar(i) for i in v)}]")
+                scalar_lines.append(f"{_toml_key(k)} = [{', '.join(_toml_scalar(i) for i in v)}]")
             elif v is None:  # pragma: no branch (None already handled earlier)
                 if null_handling == "comment":
-                    lines.append(f"# {_toml_key(k)} = null")
+                    scalar_lines.append(f"# {_toml_key(k)} = null")
                 elif null_handling == "empty":
-                    lines.append(f'{_toml_key(k)} = ""')
+                    scalar_lines.append(f'{_toml_key(k)} = ""')
                 elif null_handling == "error":
                     raise ValueError(f"TOML cannot represent null value '{full_key}'")
             else:
-                lines.append(f"{_toml_key(k)} = {_toml_scalar(v)}")
+                scalar_lines.append(f"{_toml_key(k)} = {_toml_scalar(v)}")
+        # Only emit a [section] header when there are direct scalar values at this
+        # level — intermediate-only tables (like [tool] in pyproject.toml) are
+        # implicit in TOML and clutter the output unnecessarily.
+        if prefix and not root and scalar_lines:
+            quoted_prefix = ".".join(_toml_key(seg) for seg in prefix.split("."))
+            lines.append(f"\n[{quoted_prefix}]")
+        lines.extend(scalar_lines)
         for kind, full_key, v in deferred:
             if kind == "table":
                 lines.append(_to_toml(v, full_key, null_handling=null_handling).strip())
@@ -2014,7 +2068,7 @@ def convert_file(input_path: str, output_path: str = None, to_fmt: str = None, *
     ext_map = {".json": "json", ".yaml": "yaml", ".yml": "yaml",
                ".toml": "toml", ".xml": "xml", ".csv": "csv",
                ".ini": "ini", ".env": "env", ".hcl": "hcl",
-               ".properties": "properties"}
+               ".properties": "properties", ".plist": "plist"}
 
     input_fmt = ext_map.get(path.suffix.lower(), "auto")
     content = path.read_text(encoding="utf-8", errors="replace")
@@ -2201,7 +2255,7 @@ def validate_indentation(text: str, unit: int = 2) -> dict:
 
 # ── SUPPORTED FORMATS ──
 SUPPORTED_FORMATS = ["json", "yaml", "toml", "xml", "csv", "ini", "env", "hcl",
-                     "properties"]
+                     "properties", "plist"]
 
 # Telemetry opt-out: set DEVBENCH_NO_TELEMETRY=1 (canonical; the misspelled
 # DEVEBENCH_NO_TELEMETRY is also accepted for backward compatibility)
