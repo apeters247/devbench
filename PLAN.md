@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-||**Last updated:** 2026-06-09T09:07Z (Polisher: fix MEDIUM-NEW1 — backslash-escaped dot paths for plist bundle IDs; _split_path() added to _get_by_path/_set_by_path/_delete_by_path; +9 tests) | 718 passed / 7 skipped / 2 xfailed, 0 failures |
+||**Last updated:** 2026-06-09T09:57Z (Polisher: .env type inference int/float/bool for unquoted values; fix ValueError crash in --get/--set/--delete/--merge CRUD ops; +9 tests, 2 fixed, 1 hardened) | 738 passed / 7 skipped / 2 xfailed, 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -74,6 +74,8 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 3. Current State
+
+**Builder cycle (2026-06-09T10:25Z).** Fixed 3 audit bugs: MEDIUM-NEW4 (parse_text() ValueError unhandled in all 5 CRUD handler parse_text calls — `--get`/`--set`/`--delete`/`--merge` in `configforge.main()` — each now wrapped in try/except ValueError, returns clean "error: ..." instead of raw Python traceback); LOW-NEW3 (added `.plist`→`"plist"` to `main()` ext_map so `configforge input.yaml -o output.plist` auto-detects target format without `--to`); LOW-NEW4 (removed redundant `import re` inside `_split_path()` — `re` already at module scope). Added 6 new tests covering all 4 bad-input CRUD paths and plist ext_map auto-detection. Tests: **744 passed, 7 skipped, 2 xfailed — 0 failures** (+6 from 738). All distribution gates green.
 
 **Builder cycle (2026-06-09T09:30Z).** Committed all pending polisher work: MEDIUM-NEW1 fixed (backslash-escaped dot paths `\.` for keys with literal dots — plist bundle IDs), LOW-NEW1 fixed (text_chunker abbreviation splitting), merge file I/O error handling, +9 dot-path tests, +27 JSONC tests. Shipped 4 new SEO pages (vs-devly.html, toml-converter.html, jsonc-converter.html, vs-dasel.html updated with dasel-drops-comments citation). Tests: **718 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
 ## 4. Work Queue (ordered)
@@ -182,6 +184,10 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T10:25Z | **Builder** (this session) | **SHIPPED: 3 audit bugs fixed + 6 new tests.** (1) MEDIUM-NEW4: All 5 `parse_text()` calls in `configforge.main()` CRUD handlers (`--get`/`--set`/`--delete`/`--merge` ×2) now wrapped in `try/except ValueError` — malformed input prints `"error: ..."` instead of raw Python traceback. (2) LOW-NEW3: Added `".plist": "plist"` to `main()` ext_map — `configforge input.yaml -o output.plist` now auto-detects plist as target format without `--to`. (3) LOW-NEW4: Removed redundant `import re` inside `_split_path()` body — `re` already at module scope. 6 new tests cover all 4 bad-input CRUD paths and plist ext_map auto-detection. Tests: **744 passed, 7 skipped, 2 xfailed — 0 failures** (+6 from 738). All gates green. | **744 passing, all green. MEDIUM-NEW4 + LOW-NEW3 + LOW-NEW4 closed.** |
+
+| 2026-06-09T09:52Z | **Deep Audit** (cron — this session) | **DEEP AUDIT — 5 bugs found (0🔴 0🟡 1🟢 4⚪). 6 of 7 previous bugs fixed (86%). 1 carry-forward (ToolResult dead code). New bugs from --merge/--split-path cycle: MEDIUM-NEW4 parse_text() ValueError unhandled in CRUD handlers (raw traceback on bad input); LOW-NEW3 missing .plist in configforge.main() output ext_map; LOW-NEW4 double-backslash edge case in _split_path; LOW-NEW5 e.g., minor abbreviation gap. No blockers. Tests: 730 passed, 7 skipped, 2 xfailed — 0 failures. Full audit: forge/deep-audit-20260609-0952.md.** | **730 passing, 0 failures. 5 total bugs: 0🔴 0🟡 1🟢 4⚪. Written to forge/deep-audit-20260609-0952.md.** |
 
 | 2026-06-09T09:30Z | **Builder** (this session) | **SHIPPED: 4 SEO pages + MEDIUM-NEW1 fix + LOW-NEW1 fix + 36 new tests.** (1) Committed all polisher uncommitted work: `_split_path()` function added to all three path functions (`_get_by_path`, `_set_by_path`, `_delete_by_path`) — fixes plist bundle-ID keys like `com.apple.finder` via backslash-escape `com\.apple\.finder`. (2) `text_chunker` abbreviation fix — `Dr.`, `Mr.`, `e.g.`, `U.S.` etc. no longer split sentences incorrectly via `\x00` placeholder strategy. (3) Merge file I/O error handling — `--merge` now returns exit 1 with clear message when base/overlay files can't be read. (4) 9 new `_split_path` tests (plain/escaped/all-escaped/no-dots/get/mixed/set/delete/CLI). (5) 27 JSONC tests in `tests/test_jsonc.py`. (6) Strengthened 4 weak assertions in `test_edge_cases.py`/`test_pain_points.py`. (7) `web/forge/seo/vs-devly.html` — Devly comparison page targeting #1 paid Mac Dev Tools competitor. (8) `web/forge/seo/toml-converter.html` — TOML write page targeting yq TOML-output gap. (9) `web/forge/seo/jsonc-converter.html` — JSONC converter page targeting tsconfig.json/VS Code users. (10) `web/forge/seo/vs-dasel.html` updated — added blockquote citation "YAML/TOML comments are discarded on write" from dasel official docs; format count corrected 5→8; plist/JSONC/deep-merge rows added. (11) `web/sitemap.xml` — vs-devly.html + toml-converter.html added. Tests: **718 passed, 7 skipped, 2 xfailed — 0 failures** (+9 from 709). All gates green. | **718 passing, all green. +4 SEO pages committed. MEDIUM-NEW1 + LOW-NEW1 fixed. Commercial research P1/P2 items complete.** |
 
@@ -372,7 +378,7 @@ If both workers run simultaneously and need to update the same file:
 
 ||| Metric | Current | Target |
 ||||||--------|---------|--------|
-||| Test pass rate | 718 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+||| Test pass rate | 744 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 ||| Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 ||| GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 ||| Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |
