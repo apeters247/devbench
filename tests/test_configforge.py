@@ -1742,3 +1742,429 @@ def test_template_safe_via_devbench_cf():
     finally:
         sys.stdin = old_stdin
     assert rc == 0
+
+
+# ── _format_get_output / --raw round-trip safety (yq #2608) ──────────────────
+
+def test_format_get_output_plain_string():
+    """Plain strings are output as-is without quoting."""
+    from core.configforge import _format_get_output
+    assert _format_get_output("hello world") == "hello world"
+    assert _format_get_output("simple") == "simple"
+
+
+def test_format_get_output_ambiguous_strings_quoted():
+    """Strings that look like YAML scalars are quoted for round-trip safety."""
+    from core.configforge import _format_get_output
+    out_colon = _format_get_output("this: is a mapping")
+    assert yaml.safe_load(out_colon) == "this: is a mapping"
+    assert ":" in out_colon  # the colon survived
+    out_yes = _format_get_output("yes")
+    assert yaml.safe_load(out_yes) == "yes"
+    assert isinstance(yaml.safe_load(out_yes), str)
+
+
+def test_format_get_output_null_like_string():
+    """'null' string is quoted so it doesn't become NoneType when re-parsed."""
+    from core.configforge import _format_get_output
+    out = _format_get_output("null")
+    assert yaml.safe_load(out) == "null"
+    assert isinstance(yaml.safe_load(out), str)
+
+
+def test_format_get_output_date_like_string():
+    """ISO-8601 string is quoted so it doesn't become a date object."""
+    from core.configforge import _format_get_output
+    out = _format_get_output("2024-01-01")
+    reparsed = yaml.safe_load(out)
+    assert reparsed == "2024-01-01"
+    assert isinstance(reparsed, str)
+
+
+def test_format_get_output_scalar_types():
+    """Actual booleans, ints, and None emit as unquoted YAML scalars."""
+    from core.configforge import _format_get_output
+    assert _format_get_output(True) == "true"
+    assert _format_get_output(False) == "false"
+    assert _format_get_output(None) == "null"
+    assert _format_get_output(42) == "42"
+    assert _format_get_output(3.14) == "3.14"
+
+
+def test_format_get_output_raw_bypasses_quoting():
+    """--raw flag returns the bare string, matching jq -r / yq -r behaviour."""
+    from core.configforge import _format_get_output
+    assert _format_get_output("this: is a mapping", raw=True) == "this: is a mapping"
+    assert _format_get_output("yes", raw=True) == "yes"
+    assert _format_get_output("null", raw=True) == "null"
+
+
+def test_format_get_output_dict_and_list():
+    """Dicts and lists are emitted as JSON regardless of --raw."""
+    from core.configforge import _format_get_output
+    d = {"a": 1, "b": [2, 3]}
+    out = _format_get_output(d)
+    assert json.loads(out) == d
+    lst = [1, "two", None]
+    out2 = _format_get_output(lst)
+    assert json.loads(out2) == lst
+
+
+def test_get_via_cli_round_trip_safe(tmp_path):
+    """devbench cf --get emits YAML-safe output for ambiguous string scalars."""
+    from core.cli import main as cli_main
+    import io
+    # YAML file where the value would be mis-parsed if unquoted
+    p = tmp_path / "test.yaml"
+    p.write_text("label: 'host: example.com'\n")
+    buf = io.StringIO()
+    old_stdout, sys.stdout = sys.stdout, buf
+    try:
+        rc = cli_main(["cf", "--get", "label", str(p)])
+    finally:
+        sys.stdout = old_stdout
+    assert rc == 0
+    out = buf.getvalue().strip()
+    # Output must be a valid YAML scalar that re-parses to the original string
+    reparsed = yaml.safe_load(out)
+    assert reparsed == "host: example.com"
+    assert isinstance(reparsed, str)
+
+
+def test_get_raw_via_cli(tmp_path):
+    """devbench cf --raw --get emits the bare string value (no YAML quoting)."""
+    from core.cli import main as cli_main
+    import io
+    p = tmp_path / "test.yaml"
+    p.write_text("label: 'host: example.com'\n")
+    buf = io.StringIO()
+    old_stdout, sys.stdout = sys.stdout, buf
+    try:
+        rc = cli_main(["cf", "--raw", "--get", "label", str(p)])
+    finally:
+        sys.stdout = old_stdout
+    assert rc == 0
+    assert buf.getvalue().strip() == "host: example.com"
+
+
+# ── _list_keys / --keys tests ──────────────────────────────────────────────────
+
+def test_list_keys_flat_dict():
+    from core.configforge import _list_keys
+    data = {"a": 1, "b": 2, "c": 3}
+    assert _list_keys(data) == ["a", "b", "c"]
+
+
+def test_list_keys_nested_non_recursive():
+    from core.configforge import _list_keys
+    data = {"server": {"host": "localhost", "port": 8080}, "debug": True}
+    assert _list_keys(data) == ["server", "debug"]
+
+
+def test_list_keys_recursive():
+    from core.configforge import _list_keys
+    data = {"server": {"host": "localhost", "port": 8080}, "debug": True}
+    keys = _list_keys(data, recursive=True)
+    assert "server" in keys
+    assert "server.host" in keys
+    assert "server.port" in keys
+    assert "debug" in keys
+
+
+def test_list_keys_list_top_level():
+    from core.configforge import _list_keys
+    data = ["a", "b", "c"]
+    assert _list_keys(data) == ["0", "1", "2"]
+
+
+def test_list_keys_nested_list_recursive():
+    from core.configforge import _list_keys
+    data = {"items": [{"name": "x"}, {"name": "y"}]}
+    keys = _list_keys(data, recursive=True)
+    assert "items" in keys
+    assert "items.0" in keys
+    assert "items.0.name" in keys
+    assert "items.1.name" in keys
+
+
+def test_list_keys_empty():
+    from core.configforge import _list_keys
+    assert _list_keys({}) == []
+    assert _list_keys([]) == []
+
+
+def test_keys_flag_configforge_main(capsys):
+    from core.configforge import main as cf_main
+    import io, sys
+    yaml_text = "host: localhost\nport: 8080\ndebug: true\n"
+    buf = io.StringIO()
+    old_stdin, sys.stdin = sys.stdin, io.StringIO(yaml_text)
+    old_stdout, sys.stdout = sys.stdout, buf
+    try:
+        rc = cf_main(["--keys", "--from", "yaml"])
+    finally:
+        sys.stdin = old_stdin
+        sys.stdout = old_stdout
+    assert rc == 0
+    lines = buf.getvalue().strip().split("\n")
+    assert "host" in lines
+    assert "port" in lines
+    assert "debug" in lines
+
+
+def test_keys_recursive_configforge_main(capsys):
+    from core.configforge import main as cf_main
+    import io, sys
+    yaml_text = "server:\n  host: localhost\n  port: 8080\ndebug: true\n"
+    buf = io.StringIO()
+    old_stdin, sys.stdin = sys.stdin, io.StringIO(yaml_text)
+    old_stdout, sys.stdout = sys.stdout, buf
+    try:
+        rc = cf_main(["--keys", "--recursive", "--from", "yaml"])
+    finally:
+        sys.stdin = old_stdin
+        sys.stdout = old_stdout
+    assert rc == 0
+    lines = buf.getvalue().strip().split("\n")
+    assert "server" in lines
+    assert "server.host" in lines
+    assert "server.port" in lines
+    assert "debug" in lines
+
+
+def test_keys_flag_cli(tmp_path):
+    from core.cli import main as cli_main
+    import io, sys
+    p = tmp_path / "cfg.yaml"
+    p.write_text("host: localhost\nport: 8080\ndebug: true\n")
+    buf = io.StringIO()
+    old_stdout, sys.stdout = sys.stdout, buf
+    try:
+        rc = cli_main(["cf", "--keys", str(p)])
+    finally:
+        sys.stdout = old_stdout
+    assert rc == 0
+    lines = buf.getvalue().strip().split("\n")
+    assert "host" in lines
+    assert "port" in lines
+    assert "debug" in lines
+
+
+def test_keys_recursive_cli(tmp_path):
+    from core.cli import main as cli_main
+    import io, sys
+    p = tmp_path / "cfg.yaml"
+    p.write_text("server:\n  host: localhost\n  port: 8080\ndebug: true\n")
+    buf = io.StringIO()
+    old_stdout, sys.stdout = sys.stdout, buf
+    try:
+        rc = cli_main(["cf", "--keys", "--recursive", str(p)])
+    finally:
+        sys.stdout = old_stdout
+    assert rc == 0
+    lines = buf.getvalue().strip().split("\n")
+    assert "server" in lines
+    assert "server.host" in lines
+    assert "server.port" in lines
+    assert "debug" in lines
+
+
+def test_keys_json_input_cli(tmp_path):
+    from core.cli import main as cli_main
+    import io, sys
+    p = tmp_path / "cfg.json"
+    p.write_text('{"a": 1, "b": {"c": 2}}')
+    buf = io.StringIO()
+    old_stdout, sys.stdout = sys.stdout, buf
+    try:
+        rc = cli_main(["cf", "--keys", str(p)])
+    finally:
+        sys.stdout = old_stdout
+    assert rc == 0
+    lines = buf.getvalue().strip().split("\n")
+    assert "a" in lines
+    assert "b" in lines
+    assert "c" not in lines  # non-recursive: nested keys not exposed
+
+
+def test_keys_malformed_input_error(tmp_path, capsys):
+    from core.configforge import main as cf_main
+    import io, sys
+    buf = io.StringIO()
+    old_stdin, sys.stdin = sys.stdin, io.StringIO("not: valid: yaml: : :")
+    old_stderr, sys.stderr = sys.stderr, buf
+    try:
+        rc = cf_main(["--keys", "--from", "yaml"])
+    finally:
+        sys.stdin = old_stdin
+        sys.stderr = old_stderr
+    assert rc == 1
+    assert "error" in buf.getvalue().lower()
+
+
+# ── recursive batch glob tests ─────────────────────────────────────────────────
+
+def test_batch_convert_recursive(tmp_path):
+    """batch_convert with recursive=True finds files in subdirectories."""
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (tmp_path / "a.json").write_text('{"key": "top"}')
+    (sub / "b.json").write_text('{"key": "nested"}')
+    results = batch_convert(
+        str(tmp_path / "**" / "*.json"),
+        "yaml",
+        recursive=True,
+        show_progress=False,
+    )
+    assert len(results) == 2
+    assert all(r["success"] for r in results)
+
+
+def test_batch_convert_stream_recursive(tmp_path):
+    """batch_convert_stream with recursive=True finds files in subdirectories."""
+    sub = tmp_path / "deep"
+    sub.mkdir()
+    (tmp_path / "x.json").write_text('{"v": 1}')
+    (sub / "y.json").write_text('{"v": 2}')
+    results = list(batch_convert_stream(
+        str(tmp_path / "**" / "*.json"),
+        "yaml",
+        recursive=True,
+        show_progress=False,
+    ))
+    file_results = [r for r in results if "file" in r]
+    assert len(file_results) == 2
+    assert all(r["success"] for r in file_results)
+
+
+def test_batch_convert_recursive_false_skips_subdirs(tmp_path):
+    """recursive=False (default) does not match files in subdirectories."""
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (tmp_path / "top.json").write_text('{"k": 1}')
+    (sub / "nested.json").write_text('{"k": 2}')
+    results = batch_convert(
+        str(tmp_path / "*.json"),
+        "yaml",
+        recursive=False,
+        show_progress=False,
+    )
+    # Only the top-level file matches a non-recursive glob
+    assert len(results) == 1
+    assert results[0]["success"]
+
+
+# ---------------------------------------------------------------------------
+# --append: ergonomic array-append (yq v4 verbosity complaint)
+# ---------------------------------------------------------------------------
+
+def test_append_to_path_existing_list():
+    """_append_to_path adds a value to an existing list."""
+    from core.configforge import _append_to_path
+    data = {"servers": ["alpha", "beta"]}
+    _append_to_path(data, "servers", "gamma")
+    assert data["servers"] == ["alpha", "beta", "gamma"]
+
+
+def test_append_to_path_creates_list_when_key_missing():
+    """_append_to_path creates a new single-element list when key absent."""
+    from core.configforge import _append_to_path
+    data = {}
+    _append_to_path(data, "tags", "new-tag")
+    assert data["tags"] == ["new-tag"]
+
+
+def test_append_to_path_nested_key():
+    """_append_to_path traverses nested dicts before appending."""
+    from core.configforge import _append_to_path
+    data = {"app": {"features": ["auth"]}}
+    _append_to_path(data, "app.features", "logging")
+    assert data["app"]["features"] == ["auth", "logging"]
+
+
+def test_append_to_path_non_list_raises():
+    """_append_to_path raises KeyError when target is not a list."""
+    from core.configforge import _append_to_path
+    import pytest
+    data = {"host": "localhost"}
+    with pytest.raises(KeyError, match="str"):
+        _append_to_path(data, "host", "extra")
+
+
+def test_append_to_path_json_value():
+    """_append_to_path accepts numeric and boolean values."""
+    from core.configforge import _append_to_path
+    data = {"ports": [8080]}
+    _append_to_path(data, "ports", 9090)
+    assert data["ports"] == [8080, 9090]
+
+
+def test_append_cli_yaml(tmp_path, capsys):
+    """devbench cf --append adds to an existing YAML list."""
+    from core.configforge import main
+    src = tmp_path / "config.yaml"
+    src.write_text("servers:\n  - alpha\n  - beta\n")
+    rc = main([str(src), "--append", "servers", "gamma"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["servers"] == ["alpha", "beta", "gamma"]
+
+
+def test_append_cli_creates_new_list(tmp_path, capsys):
+    """devbench cf --append creates the list when key is absent."""
+    from core.configforge import main
+    src = tmp_path / "config.yaml"
+    src.write_text("name: myapp\n")
+    rc = main([str(src), "--append", "tags", "release"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["tags"] == ["release"]
+    assert result["name"] == "myapp"
+
+
+def test_append_cli_in_place(tmp_path):
+    """devbench cf --append --in-place modifies the file on disk."""
+    from core.configforge import main
+    src = tmp_path / "config.yaml"
+    src.write_text("envs:\n  - prod\n")
+    rc = main([str(src), "--append", "envs", "staging", "--in-place"])
+    assert rc == 0
+    result = yaml.safe_load(src.read_text())
+    assert result["envs"] == ["prod", "staging"]
+
+
+def test_append_cli_json_value(tmp_path, capsys):
+    """devbench cf --append parses numeric JSON value correctly."""
+    from core.configforge import main
+    src = tmp_path / "config.yaml"
+    src.write_text("ports:\n  - 8080\n")
+    rc = main([str(src), "--append", "ports", "9090"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["ports"] == [8080, 9090]
+
+
+def test_append_cli_non_list_error(tmp_path, capsys):
+    """devbench cf --append returns error when target is not a list."""
+    from core.configforge import main
+    src = tmp_path / "config.yaml"
+    src.write_text("host: localhost\n")
+    rc = main([str(src), "--append", "host", "extra"])
+    assert rc != 0
+    captured = capsys.readouterr()
+    assert "error" in captured.err.lower()
+
+
+def test_append_cli_json_format(tmp_path, capsys):
+    """devbench cf --append works on JSON input."""
+    from core.configforge import main
+    src = tmp_path / "config.json"
+    src.write_text('{"plugins": ["auth", "cache"]}')
+    rc = main([str(src), "--append", "plugins", "logging"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["plugins"] == ["auth", "cache", "logging"]

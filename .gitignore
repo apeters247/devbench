@@ -13,3 +13,16 @@ snapshots/
 *.swo
 .DS_Store
 *.db
+*.bak
+*.orig
+input.txt
+output.txt
+stderr.txt
+stdout.txt
+test_*
+tools/
+
+# Forge working directory (AI agent output)
+forge/archive/
+forge/*-task.txt
+forge/.last-cron-runner-change

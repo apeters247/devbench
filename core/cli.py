@@ -76,11 +76,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "batch", False):
         return _run_cf_batch(args)
 
+    # cf --keys  → list config keys
+    if args.command == "cf" and getattr(args, "keys", False):
+        return _run_cf_keys(args)
+
     # cf CRUD / merge ops — read input themselves (file path or stdin)
     if args.command == "cf" and getattr(args, "get", None):
         return _run_cf_get(args)
     if args.command == "cf" and getattr(args, "set_kv", None):
         return _run_cf_set(args)
+    if args.command == "cf" and getattr(args, "append_kv", None):
+        return _run_cf_append(args)
     if args.command == "cf" and getattr(args, "delete", None):
         return _run_cf_delete(args)
     if args.command == "cf" and getattr(args, "merge", None):
@@ -202,7 +208,13 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--api-port", type=int, default=8081, help="Port for --api (default: 8081)")
             tool_p.add_argument("--batch", action="store_true", help="Treat input as a glob and convert every match")
             tool_p.add_argument("--stream", action="store_true", help="Use streaming mode for memory-efficient batch conversion (10K+ files)")
+            tool_p.add_argument("--recursive", "-R", action="store_true",
+                                help="For --batch: recursively match files in subdirectories (supports ** glob patterns). "
+                                     "For --keys: list all nested key paths in dot-notation.")
             tool_p.add_argument("--output-dir", help="Output directory for --batch mode")
+            tool_p.add_argument("--keys", action="store_true",
+                                help="List all top-level keys from the input config. "
+                                     "Add --recursive (-R) to list every nested key in dot-notation.")
             tool_p.add_argument("--indent", type=int, default=2, help="Indentation width for YAML/JSON output (default: 2)")
             tool_p.add_argument("--flatten-xml", action="store_true", help="Flatten nested XML into dotted keys")
             tool_p.add_argument("--no-comments", action="store_true", help="Do not preserve comments")
@@ -215,11 +227,17 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--null-handling", default="skip", choices=["skip", "comment", "empty", "error"],
                                 help="How to represent null/None in TOML (default: skip)")
             tool_p.add_argument("--get", metavar="PATH", default=None,
-                                help="Extract a value by dot-notation path (e.g. server.port). Prints scalar or JSON for dicts/lists.")
+                                help="Extract a value by dot-notation path (e.g. server.port). "
+                                     "Prints YAML-safe scalar or JSON for dicts/lists. "
+                                     "Use top-level --raw / -r for bare string output.")
             tool_p.add_argument("--set", metavar=("PATH", "VALUE"), nargs=2, dest="set_kv",
                                 help="Set a value by dot-notation path. Value parsed as JSON (booleans, numbers, null); strings need no quoting.")
+            tool_p.add_argument("--append", metavar=("PATH", "VALUE"), nargs=2, dest="append_kv",
+                                help="Append VALUE to the list at PATH. Creates the list if the key is absent. "
+                                     "Value parsed as JSON (booleans, numbers, null); strings need no quoting. "
+                                     "Addresses yq v4 verbosity: no need for '.key += [\"v\"]' sub-expressions.")
             tool_p.add_argument("--in-place", "-i", action="store_true", dest="in_place",
-                                help="Write --set/--delete/--merge result back to the source file (requires a file path argument, not stdin).")
+                                help="Write --set/--append/--delete/--merge result back to the source file (requires a file path argument, not stdin).")
             tool_p.add_argument("--delete", metavar="PATH", default=None,
                                 help="Delete a key by dot-notation path. Output defaults to input format.")
             tool_p.add_argument("--merge", metavar="OVERLAY", default=None,
@@ -576,6 +594,9 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
     if hasattr(args, "null_handling"):
         options["null_handling"] = args.null_handling
 
+    if getattr(args, "recursive", False):
+        options["recursive"] = True
+
     if use_stream:
         # Streaming mode: process one file at a time, never build full result list
         success = True
@@ -610,6 +631,25 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
             return 1
         success = all(r.get("success") for r in results)
         return 0 if success else 1
+
+
+def _run_cf_keys(args) -> int:
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    recursive = getattr(args, "recursive", False)
+    for k in _cf._list_keys(data, recursive=recursive):
+        print(k)
+    return EXIT_SUCCESS
 
 
 def _run_cf_serve(port: int, host: str = "127.0.0.1") -> int:
@@ -969,21 +1009,13 @@ def _run_cf_get(args) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    if "error" in parsed:
-        print(f"error: {parsed['error']}", file=sys.stderr)
-        return EXIT_ERROR
     data = parsed.get("data", parsed)
     try:
         val = _cf._get_by_path(data, args.get)
     except (KeyError, IndexError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    if isinstance(val, (dict, list)):
-        sys.stdout.write(json.dumps(val, indent=2, ensure_ascii=False) + "\n")
-    elif val is None:
-        sys.stdout.write("null\n")
-    else:
-        sys.stdout.write(str(val) + "\n")
+    sys.stdout.write(_cf._format_get_output(val, raw=getattr(args, "raw", False)) + "\n")
     return EXIT_SUCCESS
 
 
@@ -1001,13 +1033,52 @@ def _run_cf_set(args) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    if "error" in parsed:
-        print(f"error: {parsed['error']}", file=sys.stderr)
-        return EXIT_ERROR
     detected_fmt = parsed.get("format")
     data = parsed.get("data", parsed)
     try:
         _cf._set_by_path(data, path, value)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    if not to_fmt:
+        print("error: cannot determine output format; use --to", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        output_text = _cf.serialize(data, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    if getattr(args, "in_place", False):
+        if file_path is None:
+            print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+            return EXIT_ERROR
+        file_path.write_text(output_text, encoding="utf-8")
+    else:
+        sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
+def _run_cf_append(args) -> int:
+    from . import configforge as _cf
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    path, raw_value = args.append_kv
+    value = _cf._coerce_set_value(raw_value)
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    detected_fmt = parsed.get("format")
+    data = parsed.get("data", parsed)
+    try:
+        _cf._append_to_path(data, path, value)
     except KeyError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -1043,9 +1114,6 @@ def _run_cf_delete(args) -> int:
                                 **_cf_parse_opts(args))
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return EXIT_ERROR
-    if "error" in parsed:
-        print(f"error: {parsed['error']}", file=sys.stderr)
         return EXIT_ERROR
     detected_fmt = parsed.get("format")
     data = parsed.get("data", parsed)
@@ -1087,9 +1155,6 @@ def _run_cf_merge(args) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    if "error" in base_parsed:
-        print(f"error: {base_parsed['error']}", file=sys.stderr)
-        return EXIT_ERROR
     detected_fmt = base_parsed.get("format")
     base_data = base_parsed.get("data", base_parsed)
     try:
@@ -1101,9 +1166,6 @@ def _run_cf_merge(args) -> int:
         overlay_parsed = _cf.parse_text(overlay_text, **_cf_parse_opts(args))
     except ValueError as exc:
         print(f"error reading overlay: {exc}", file=sys.stderr)
-        return EXIT_ERROR
-    if "error" in overlay_parsed:
-        print(f"error reading overlay: {overlay_parsed['error']}", file=sys.stderr)
         return EXIT_ERROR
     overlay_data = overlay_parsed.get("data", overlay_parsed)
     list_mode = getattr(args, "list_merge", "replace")

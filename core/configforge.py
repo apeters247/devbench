@@ -1828,6 +1828,50 @@ def _set_by_path(data, path: str, value):
         raise KeyError(f"cannot set '{last}' in {type(node).__name__}")
 
 
+def _append_to_path(data, path: str, value):
+    """Append *value* to the list at *path*.
+
+    Addresses the yq v4 verbosity complaint: instead of `.key += ["v"]` the
+    caller can simply pass PATH and VALUE.  If the key does not yet exist it is
+    created as a single-element list.  Raises KeyError when the existing value
+    at *path* is not a list.
+    Use backslash-escaped dots (\\.) to address keys containing literal dots."""
+    parts = _split_path(path)
+    node = data
+    for part in parts[:-1]:
+        if isinstance(node, list):
+            try:
+                node = node[int(part)]
+            except (ValueError, IndexError) as exc:
+                raise KeyError(f"index '{part}' not valid for list") from exc
+        elif isinstance(node, dict):
+            if part not in node:
+                node[part] = {}
+            node = node[part]
+        else:
+            raise KeyError(f"cannot traverse '{part}' in {type(node).__name__}")
+    last = parts[-1]
+    if isinstance(node, list):
+        try:
+            target = node[int(last)]
+        except ValueError:
+            raise KeyError(f"index '{last}' not valid for list")
+        except IndexError as exc:
+            raise KeyError(f"index '{last}' out of range") from exc
+        if not isinstance(target, list):
+            raise KeyError(f"value at '{last}' is {type(target).__name__}, not a list")
+        target.append(value)
+    elif isinstance(node, dict):
+        if last not in node:
+            node[last] = [value]
+        elif isinstance(node[last], list):
+            node[last].append(value)
+        else:
+            raise KeyError(f"value at '{last}' is {type(node[last]).__name__}, not a list")
+    else:
+        raise KeyError(f"cannot append to '{last}' in {type(node).__name__}")
+
+
 _PYTHON_LITERALS: dict = {"True": True, "False": False, "None": None}
 
 
@@ -1917,6 +1961,36 @@ def _flatten_dict(data, parent_key="", sep="."):
         else:
             items[new_key] = v
     return items
+
+
+def _format_get_output(val, raw: bool = False) -> str:
+    """Format a --get extracted value for stdout.
+
+    Implements round-trip safety (yq #2608): without --raw, string scalars that
+    contain YAML-parseable content (colons, booleans, numbers, etc.) are emitted
+    with YAML quoting so the output can be safely re-parsed as YAML.  --raw gives
+    the bare string value, matching jq -r / yq -r behaviour for scripting use.
+    """
+    if isinstance(val, (dict, list)):
+        return json.dumps(val, indent=2, ensure_ascii=False)
+    if val is None:
+        return "null"
+    if raw:
+        return str(val)
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, (int, float)):
+        return str(val)
+    # String: emit YAML-safe scalar — quote if the value would be misinterpreted.
+    # yaml.dump emits a trailing '\n...' document-end marker for plain scalars;
+    # strip it so the caller can add exactly one newline.
+    if HAS_YAML:
+        dumped = yaml.dump(str(val), default_flow_style=False, allow_unicode=True)
+        dumped = dumped.rstrip()
+        if dumped.endswith("\n..."):
+            dumped = dumped[: -len("\n...")].rstrip()
+        return dumped
+    return str(val)
 
 
 # ── Serializers ──
@@ -2457,6 +2531,28 @@ def convert_file(input_path: str, output_path: str = None, to_fmt: str = None, *
     return result
 
 
+def _list_keys(data, prefix: str = "", recursive: bool = False) -> list:
+    """Return key names (or dot-notation paths when recursive) from a nested structure.
+
+    Non-recursive (default): returns top-level keys only.
+    Recursive: returns all leaf and intermediate keys in dot-notation.
+    """
+    keys = []
+    if isinstance(data, dict):
+        for k in data:
+            full = f"{prefix}.{k}" if prefix else str(k)
+            keys.append(full)
+            if recursive and isinstance(data[k], (dict, list)):
+                keys.extend(_list_keys(data[k], prefix=full, recursive=True))
+    elif isinstance(data, list):
+        for i, v in enumerate(data):
+            full = f"{prefix}.{i}" if prefix else str(i)
+            keys.append(full)
+            if recursive and isinstance(v, (dict, list)):
+                keys.extend(_list_keys(v, prefix=full, recursive=True))
+    return keys
+
+
 def batch_convert_stream(input_glob: str, to_fmt: str, output_dir: str = None, **options):
     """Generator that lazily converts matching files, yielding results one at a time.
 
@@ -2470,7 +2566,8 @@ def batch_convert_stream(input_glob: str, to_fmt: str, output_dir: str = None, *
     import glob
 
     show_progress = options.pop("show_progress", True)
-    files = sorted(glob.glob(input_glob))
+    recursive = options.pop("recursive", False)
+    files = sorted(glob.glob(input_glob, recursive=recursive))
     total = len(files)
 
     if total == 0:
@@ -2540,8 +2637,9 @@ def batch_convert(input_glob: str, to_fmt: str, output_dir: str = None, **option
     """
     import glob
     show_progress = options.pop("show_progress", True)
+    recursive = options.pop("recursive", False)
 
-    files = sorted(glob.glob(input_glob))
+    files = sorted(glob.glob(input_glob, recursive=recursive))
     total = len(files)
     if total == 0:
         if show_progress:
@@ -2688,7 +2786,16 @@ Compared to yq/jq:
     parser.add_argument("-o", "--output", help="Output file (default: stdout).")
     parser.add_argument("--batch", action="store_true",
                         help="Treat input as a glob and convert every match.")
+    parser.add_argument("--recursive", "-R", action="store_true",
+                        help="For --batch: recursively match files in subdirectories. "
+                             "Use with ** glob patterns, e.g. '**/*.yaml'.")
     parser.add_argument("--output-dir", help="Output directory for --batch mode.")
+    parser.add_argument("--keys", action="store_true",
+                        help="List all top-level keys from the input config. "
+                             "Add --recursive to list every nested key in dot-notation.")
+    parser.add_argument("--raw-keys", action="store_true", dest="raw_keys",
+                        help="With --keys: output each key on its own line with no formatting "
+                             "(default behaviour — flag exists for explicitness).")
     parser.add_argument("--indent", type=int, default=2,
                         help="Indentation width for YAML/JSON output.")
     parser.add_argument("--flatten-xml", action="store_true",
@@ -2713,14 +2820,23 @@ Compared to yq/jq:
                         help="Extract a single value by dot-notation path "
                              "(e.g. server.port, items.0.name). "
                              "--to is not required when --get is used.")
+    parser.add_argument("--raw", "-r", action="store_true",
+                        help="Raw string output for --get: print the string value without "
+                             "YAML quoting. By default --get emits a YAML-safe scalar "
+                             "(quoted if needed for round-trip safety, like jq -r).")
     parser.add_argument("--set", metavar=("PATH", "VALUE"), nargs=2,
                         help="Set a value by dot-notation path and write the result. "
                              "VALUE is parsed as JSON (booleans, numbers, null, "
                              "arrays, objects); strings need no quoting. "
                              "Output format defaults to the input format. "
                              "Use --in-place to overwrite the source file.")
+    parser.add_argument("--append", metavar=("PATH", "VALUE"), nargs=2,
+                        help="Append VALUE to the list at PATH. Creates the list if the key "
+                             "is absent. VALUE is parsed as JSON; strings need no quoting. "
+                             "Output format defaults to the input format. "
+                             "Use --in-place to overwrite the source file.")
     parser.add_argument("--in-place", "-i", action="store_true", dest="in_place",
-                        help="Write --set/--delete output back to the input file (requires "
+                        help="Write --set/--append/--delete output back to the input file (requires "
                              "a file argument, not stdin).")
     parser.add_argument("--delete", metavar="PATH",
                         help="Delete a key by dot-notation path and write the result. "
@@ -2759,8 +2875,22 @@ Compared to yq/jq:
         if not args.to:
             print("error: --batch requires --to", file=sys.stderr)
             return 2
-        results = batch_convert(args.input, args.to, args.output_dir, **options)
+        results = batch_convert(args.input, args.to, args.output_dir,
+                                recursive=args.recursive, **options)
         return 0 if results and all(r.get("success") for r in results) else 1
+
+    if args.keys:
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        for k in _list_keys(data, recursive=args.recursive):
+            print(k)
+        return 0
 
     if args.get:
         text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
@@ -2776,12 +2906,7 @@ Compared to yq/jq:
         except (KeyError, IndexError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        if isinstance(val, (dict, list)):
-            sys.stdout.write(json.dumps(val, indent=2, ensure_ascii=False) + "\n")
-        elif val is None:
-            sys.stdout.write("null\n")
-        else:
-            sys.stdout.write(str(val) + "\n")
+        sys.stdout.write(_format_get_output(val, raw=getattr(args, "raw", False)) + "\n")
         return 0
 
     if args.set:
@@ -2807,6 +2932,43 @@ Compared to yq/jq:
             return 2
         try:
             output_text = serialize(data, to_fmt_set, **options)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        if not output_text.endswith("\n"):
+            output_text += "\n"
+        if args.in_place:
+            if not args.input:
+                print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+                return 2
+            Path(args.input).write_text(output_text, encoding="utf-8")
+        else:
+            sys.stdout.write(output_text)
+        return 0
+
+    if args.append:
+        path_app, raw_val_app = args.append
+        value_app = _coerce_set_value(raw_val_app)
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        from_fmt_app = args.from_fmt if args.from_fmt != "auto" else None
+        try:
+            parsed = parse_text(text, fmt=from_fmt_app, **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        detected_fmt = parsed.get("format")
+        data = parsed.get("data", parsed)
+        try:
+            _append_to_path(data, path_app, value_app)
+        except KeyError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        to_fmt_app = args.to or detected_fmt
+        if not to_fmt_app:
+            print("error: cannot determine output format; use --to", file=sys.stderr)
+            return 2
+        try:
+            output_text = serialize(data, to_fmt_app, **options)
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

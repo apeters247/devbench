@@ -1,0 +1,6 @@
+defaults: &d
+  adapter: postgres
+  timeout: 30
+dev:
+  <<: *d
+  database: devdb

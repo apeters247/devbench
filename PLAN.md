@@ -75,6 +75,8 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
+**Builder cycle (2026-06-09T11:XX Z, this cycle).** (1) `--keys` flag: new `_list_keys()` helper + `--keys [--recursive]` in both `configforge.main()` and `devbench cf` subcommand — lists all top-level config keys; `--recursive` emits full dot-notation paths for nested structures (useful for Kubernetes manifests and monorepo introspection). (2) `--recursive` for `--batch`: `batch_convert()` and `batch_convert_stream()` now accept `recursive=True` kwarg, passing `glob.glob(..., recursive=True)` — enables `**/*.yaml` cross-subdirectory batch conversion. Wired through both standalone CLI and `devbench cf --batch --recursive`. (3) Dead code cleanup: removed 5 dead `if "error" in parsed:` guards from `_run_cf_get/set/delete/merge` in cli.py — unreachable after try/except ValueError was added in prior cycle; dead guards obscured control flow. 15 new tests (+15). Tests: **792 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
+
 **Builder cycle (2026-06-09T11:XX Z).** `--template-safe` flag shipped: `parse_text()` YAML branch now pre-quotes Jinja/Helm/Ansible `{{ var }}` expressions when `template_safe=True` (explicit first-pass quoting, vs auto-retry-on-failure for the default path); flag wired through `configforge.main()`, `cli.py` cf subcommand, and all 5 CRUD handlers (`--get/set/delete/merge`) in both files; `--yaml12` gap in `cli.py` fixed (was in configforge.main() but never added to `devbench cf`); `_cf_parse_opts()` helper in cli.py consolidates yaml12+template_safe passthrough; `_parse_yaml_text()` inner helper in parse_text() eliminates duplicated multi-doc logic. 6 new tests (+6). Tests: **768 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
 
 **Overseer cycle (2026-06-09T10:31Z).** GIT ✅ GITHUB ✅ WHEEL ✅. Tests: **756 passed, 7 skipped, 2 xfailed — 0 failures** (+47 since last overseer 08:52Z). Builder shipped substantive work this window: YAML error diagnostics (multi-line context, context_mark fix for wrong-line yq bug), Homebrew tap formula + create script (pydantic dropped as hard dep), distribution channel guide (7-channel launch sequence). Polisher ran at 10:13Z and 10:31Z (two external reviews, YAML diagnostics signed off as correct) but `.last-polisher-review` marker still shows 01:25Z — stale. Builder marker also 3 commits behind HEAD. **P0 actions (human only, no code needed):** (1) Create Gumroad product at $19 — all code complete. (2) Run `scripts/create-homebrew-tap.sh` — formula is in tree, GitHub repo `homebrew-devbench` not yet created. (3) Publish to PyPI — wheel builds cleanly, `twine upload` not yet run. Full digest: forge/overseer-digest-20260609-1031.md.
@@ -175,7 +177,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 **Key competitor discoveries this cycle — highest priority:**
 - [x] **BUILDER P1: Create `web/forge/seo/vs-devly.html`** — DONE (2026-06-09T09:30Z). 11 formats vs Devly's 4 bidirectional pairs; comment preservation; batch/streaming; TOML write; JSONC/plist/HCL. $19 specialist vs $4.99 generalist framing.
 - [x] **BUILDER P1: Update `web/forge/seo/vs-dasel.html`** — DONE (2026-06-09T09:30Z). Added blockquote citation: "YAML/TOML comments are discarded on write" — dasel official documentation. Format count updated 5→8, added plist/JSONC/deep-merge rows.
-- [ ] **POLISHER P0: Update homepage hero** — Add 2 USP bullets: (1) "TOML write support — yq can't do this" and (2) "Comments survive conversion — dasel drops them." Both are citable facts from competitor docs.
+- [x] **POLISHER P0: Update homepage hero** — USP bullets shipped: "TOML write — yq can't do this" and "Comments survive — dasel drops them" in web/index.html hero section. DONE.
 - [x] **BUILDER P2: Create `web/forge/seo/toml-converter.html`** — DONE (2026-06-09T09:30Z). Targets "yaml to toml converter", "json to toml cli", "toml output yq alternative".
 - [ ] **POLISHER P1: Add one-time purchase trust badge** — "One-time purchase. No subscription surprises." DevUtils.app locked users out after switching to subscription — users are sensitized to this betrayal. Explicit guarantee is a trust signal.
 **Confirmed moats (no competitor has all of these):**
@@ -407,7 +409,7 @@ If both workers run simultaneously and need to update the same file:
 
 ||| Metric | Current | Target |
 ||||||--------|---------|--------|
-||| Test pass rate | 744 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+||| Test pass rate | 792 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 ||| Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 ||| GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 ||| Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |

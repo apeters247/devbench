@@ -1,0 +1,36 @@
+*** Begin Patch
+*** Update File: tests/test_configforge.py
+@@ -334,0 +334 @@
+ def test_yaml_comment_preservation_json_roundtrip():
+     yaml_with_comments = """
+# This is a block comment
+key: value  # inline comment
+another:
+  # comment inside nested
+  nested_key: nested_value  # another inline
+"""
+     # Convert YAML to JSON
+     r1 = convert(yaml_with_comments, "json")
+     assert r1["success"], "Conversion failed: " + str(r1.get("error"))
+     json_output = r1["output"]
+     # The JSON should contain the data and metadata keys
+     assert "__cf_comments__" in json_output
+     assert "__cf_blanks__" in json_output
+     # The data should be present as top-level keys
+     import json
+     data = json.loads(json_output)
+     assert "key" in data
+     assert "another" in data
+     assert data["key"] == "value"
+     assert data["another"]["nested_key"] == "nested_value"
+     # Convert JSON back to YAML
+     r2 = convert(json_output, "yaml")
+     assert r2["success"], "Conversion back failed: " + str(r2.get("error"))
+     yaml_output = r2["output"]
+     # Check that the comments appear in the YAML output
+     assert "# This is a block comment" in yaml_output
+     assert "key: value  # inline comment" in yaml_output
+     assert "another:" in yaml_output
+     assert "  # comment inside nested" in yaml_output
+     assert "  nested_key: nested_value  # another inline" in yaml_output
+*** End Patch
