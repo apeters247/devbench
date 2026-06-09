@@ -22,6 +22,7 @@ tests/test_core.py
 tests/test_edge_cases.py
 tests/test_hcl.py
 tests/test_license.py
+tests/test_llm_tools.py
 tests/test_pain_points.py
 tests/test_properties.py
 tests/test_serve.py

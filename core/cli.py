@@ -85,8 +85,10 @@ def main(argv: list[str] | None = None) -> int:
             return _run_license_activate(args.key, args.server, args.machine_id)
         elif lc == "verify":
             return _run_license_verify(args.key, args.server)
+        elif lc == "trial":
+            return _run_license_trial(args.server, getattr(args, "email", ""))
         else:
-            print("usage: devbench license {activate|verify|server}", file=sys.stderr)
+            print("usage: devbench license {activate|verify|server|trial}", file=sys.stderr)
             return EXIT_ERROR
 
     # detect or specific tool command
@@ -102,12 +104,27 @@ def main(argv: list[str] | None = None) -> int:
         result_str = _run_cf(input_text, args)
     elif args.command in tools.TOOL_NAMES:
         # Route to a specific tool
-        result_str = tools.run_tool(args.command, input_text)
+        # The tool function will handle its specific arguments if any
+        # All arguments are passed through `args` and accessed in the tool function.
+        if args.command == "token":
+            result_str = tools.token_counter(input_text, model_name=args.model)
+        elif args.command == "chunk":
+            result_str = tools.text_chunker(input_text, chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap)
+        else:
+            result_str = tools.run_tool(args.command, input_text)
     else:
         print(f"Unknown command: {args.command}", file=sys.stderr)
         return EXIT_ERROR
 
     _emit_output(result_str, args)
+    
+    try:
+        parsed_result = json.loads(result_str)
+        if parsed_result.get("error"):
+            return EXIT_ERROR
+    except json.JSONDecodeError:
+        pass # Not a JSON result, assume success if no other errors.
+
     return EXIT_SUCCESS
 
 
@@ -119,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="devbench",
-        description="Developer tools — 9 utilities in one CLI: json, base64, jwt, hash, url, timestamp, uuid, diff, cf (config converter).",
+        description="Developer tools — 11 utilities in one CLI: json, base64, jwt, hash, url, timestamp, uuid, diff, token, chunk, cf (config converter).",
         epilog="Try: devbench detect 'some content' or pipe input: echo 'text' | devbench json",
     )
 
@@ -183,6 +200,11 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--no-infer-dates", action="store_true", help="Keep ISO-8601 date strings as strings (TOML)")
             tool_p.add_argument("--null-handling", default="skip", choices=["skip", "comment", "empty", "error"],
                                 help="How to represent null/None in TOML (default: skip)")
+        elif tool_name == "token":
+            tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
+        elif tool_name == "chunk":
+            tool_p.add_argument("--chunk-size", type=int, default=500, help="Max tokens per chunk (default: 500)")
+            tool_p.add_argument("--chunk-overlap", type=int, default=100, help="Overlap between chunks (default: 100)")
         tool_p.add_argument("text", nargs="?", default=None, help="Input text")
         _add_common_args(tool_p)
 
@@ -210,6 +232,9 @@ def _build_parser() -> argparse.ArgumentParser:
     license_verify_p.add_argument("key", help="License key to verify")
     license_verify_p.add_argument("--server", default="http://127.0.0.1:9001", help="License server URL (default: http://127.0.0.1:9001)")
 
+    license_trial_p = license_sub.add_parser("trial", help="Start a time-limited trial")
+    license_trial_p.add_argument("--server", default="http://127.0.0.1:9001", help="License server URL (default: http://127.0.0.1:9001)")
+    license_trial_p.add_argument("--email", default="", help="Email address for the trial (optional)")
     license_server_p = license_sub.add_parser("server", help="Start the license server")
     license_server_p.add_argument("--port", type=int, default=9001, help="Port (default: 9001)")
     license_server_p.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
@@ -650,6 +675,31 @@ def _run_license_activate(key: str, server_url: str, machine_id: str | None = No
 
     print(f"✓ License activated on machine: {machine_id}")
     print(f"  Activations: {data.get('activations', 0)}/3 used")
+    return EXIT_SUCCESS
+
+
+def _run_license_trial(server_url: str, email: str = "") -> int:
+    """Request a 14-day trial license key from the license server."""
+    url = f"{server_url.rstrip('/')}/license/trial"
+    payload = json.dumps({"email": email} if email else {}).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError as e:
+        print(f"Error contacting license server at {server_url}: {e}", file=sys.stderr)
+        return EXIT_ERROR
+    except json.JSONDecodeError:
+        print("Error: invalid response from license server", file=sys.stderr)
+        return EXIT_ERROR
+
+    if data.get("error"):
+        print(f"Trial request failed: {data.get('message', 'unknown error')}", file=sys.stderr)
+        return EXIT_ERROR
+
+    print(f"✓ Trial license key: {data.get('license_key', 'N/A')}")
+    print(f"  Valid for 14 days. Activate with: devbench license activate --key <KEY>")
     return EXIT_SUCCESS
 
 

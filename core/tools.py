@@ -308,8 +308,15 @@ def hash_generator(input_text: str) -> str:
 
     data = input_text.encode("utf-8")
 
+    # Wrap MD5 in try/except for FIPS systems where MD5 is completely disabled
+    try:
+        md5_hash = hashlib.md5(data, usedforsecurity=False).hexdigest()
+    except (ValueError, TypeError):
+        # FIPS mode: MD5 is unavailable, use SHA-256 as fallback
+        md5_hash = f"SHA256({hashlib.sha256(data).hexdigest()})"
+
     hashes = {
-        "MD5": hashlib.md5(data, usedforsecurity=False).hexdigest(),
+        "MD5": md5_hash,
         "SHA-1": hashlib.sha1(data, usedforsecurity=False).hexdigest(),
         "SHA-256": hashlib.sha256(data).hexdigest(),
         "SHA-512": hashlib.sha512(data).hexdigest(),
@@ -801,6 +808,17 @@ TOOLS: dict[str, Callable[[str], str]] = {
     "cf": configforge_tool,
 }
 
+_LLM_TOOLS_REGISTERED = False
+
+
+def _ensure_llm_tools():
+    """Lazily register token/chunk tools once the module is fully loaded."""
+    global _LLM_TOOLS_REGISTERED
+    if not _LLM_TOOLS_REGISTERED:
+        TOOLS["token"] = token_counter
+        TOOLS["chunk"] = text_chunker
+        _LLM_TOOLS_REGISTERED = True
+
 TOOL_ALIASES: dict[str, str] = {
     "json_formatter": "json",
     "base64_codec": "base64",
@@ -814,6 +832,8 @@ TOOL_ALIASES: dict[str, str] = {
     "configforge": "cf",
     "convert": "cf",
     "cf_tool": "cf",
+    "token_counter": "token",
+    "text_chunker": "chunk",
 }
 
 TOOL_HELP: dict[str, str] = {
@@ -826,19 +846,23 @@ TOOL_HELP: dict[str, str] = {
     "uuid": "Generate UUIDs (v4) → uuid_generator(input)",
     "diff": "Show text diff → text_diff(input)",
     "cf": "Convert config files: JSON/YAML/TOML/XML/CSV/INI/ENV",
+    "token": "Count tokens for LLMs (tiktoken) → token_counter(input)",
+    "chunk": "Chunk text for RAG (retrieval-augmented generation) → text_chunker(input)",
 }
 
-TOOL_NAMES: list[str] = ["json", "base64", "jwt", "hash", "url", "timestamp", "uuid", "diff", "cf"]
+TOOL_NAMES: list[str] = ["json", "base64", "jwt", "hash", "url", "timestamp", "uuid", "diff", "cf", "token", "chunk"]
 
 
 def get_tool(name: str) -> Optional[Callable[[str], str]]:
     """Resolve a tool name / alias to its callable."""
+    _ensure_llm_tools()
     canonical = TOOL_ALIASES.get(name, name)
     return TOOLS.get(canonical)
 
 
 def run_tool(name: str, input_text: str) -> str:
     """Run a named tool with the given input. Returns error string if not found."""
+    _ensure_llm_tools()
     tool = get_tool(name)
     if tool is None:
         return _err("unknown", f"Unknown tool: {name!r}. Available: {', '.join(TOOLS)}")
@@ -877,6 +901,198 @@ def _truncate(text: str, max_len: int = 80) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
+
+# ---------------------------------------------------------------------------
+# 10. Token Counter (for LLMs)
+# ---------------------------------------------------------------------------
+
+
+def _try_get_tiktoken_encoding(model_name: str = "cl100k_base"):
+    """Try to get a tiktoken encoding. Returns None if tiktoken not installed."""
+    try:
+        import tiktoken
+    except ImportError:
+        return None
+    try:
+        return tiktoken.get_encoding(model_name)
+    except Exception:
+        try:
+            return tiktoken.encoding_for_model(model_name)
+        except Exception:
+            return None
+
+
+_TOKEN_ESTIMATE_RATIO = 4  # ~1 token per 4 chars for English text
+
+
+def token_counter(input_text: str, model_name: str = "cl100k_base") -> str:
+    """Count tokens in text. Uses tiktoken if available, falls back to
+    character-based estimation (≈1 token / 4 chars)."""
+    input_text = input_text.strip()
+    if not input_text:
+        return _err("token", "Empty input — provide text to count tokens.")
+
+    encoding = _try_get_tiktoken_encoding(model_name)
+    if encoding is not None:
+        tokens = encoding.encode(input_text)
+        token_count = len(tokens)
+        method = "tiktoken"
+    else:
+        # Fallback: estimate by char count
+        token_count = max(1, len(input_text) // _TOKEN_ESTIMATE_RATIO)
+        method = "estimate"
+
+    return _ok(
+        "token", str(token_count),
+        token_count=token_count,
+        model=model_name,
+        method=method,
+        char_count=len(input_text),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 11. Text Chunker (for RAG)
+# ---------------------------------------------------------------------------
+
+
+def text_chunker(input_text: str, chunk_size: int = 500, chunk_overlap: int = 100) -> str:
+    """Chunk text into smaller pieces for RAG applications.
+
+    Splits text by paragraphs → sentences → fitting within chunk_size.
+    Uses tiktoken if available, falls back to character estimation.
+    Applies overlap between adjacent chunks.
+    """
+    input_text = input_text.strip()
+    if not input_text:
+        return _err("chunk", "Empty input — provide text to chunk.")
+    if chunk_size <= 0:
+        return _err("chunk", "Chunk size must be greater than 0.")
+    if chunk_overlap < 0:
+        return _err("chunk", "Chunk overlap cannot be negative.")
+    if chunk_overlap >= chunk_size:
+        return _err("chunk", "Chunk overlap must be less than chunk size.")
+
+    encoding = _try_get_tiktoken_encoding("cl100k_base")
+    use_tiktoken = encoding is not None
+
+    def _count_units(text: str) -> int:
+        if use_tiktoken:
+            return len(encoding.encode(text))
+        return max(1, len(text) // _TOKEN_ESTIMATE_RATIO)
+
+    def _decode_units(token_src) -> str:
+        if use_tiktoken:
+            if isinstance(token_src, list) and all(isinstance(t, int) for t in token_src):
+                return encoding.decode(token_src)
+            return str(token_src)
+        return str(token_src)
+
+    def _encode_unit(text: str):
+        if use_tiktoken:
+            return encoding.encode(text)
+        return text  # pass-through for char-based
+
+    def _unit_len(item) -> int:
+        if use_tiktoken and isinstance(item, list):
+            return len(item)
+        return _count_units(str(item))
+
+    # Normalize the text for chunking
+    # Token-level chunker
+    chunks = []
+    current_chunk = []  # list of piece texts
+    current_unit_count = 0
+    current_unit_items = []  # list of token lists or strings
+
+    # Split into paragraphs, then sentences
+    paragraphs = [p for p in input_text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        paragraphs = [input_text]
+
+    for para in paragraphs:
+        sentences = re.split(r"(?<=[.!?])\s+", para)
+        sentences = [s.strip() for s in sentences if s.strip()]
+
+        for sentence in sentences:
+            sentence_item = _encode_unit(sentence + " ")
+            sentence_units = _unit_len(sentence_item)
+
+            # If a single sentence exceeds chunk_size, force-chunk it word-by-word
+            if sentence_units > chunk_size:
+                # Flush current chunk first
+                if current_chunk:
+                    chunk_str = " ".join(str(p) for p in current_chunk)
+                    chunks.append(chunk_str)
+                    current_chunk = []
+                    current_unit_count = 0
+                    current_unit_items = []
+
+                # Split oversized sentence by words
+                words = sentence.split()
+                word_chunk = []
+                word_units = 0
+                for w in words:
+                    w_item = _encode_unit(w + " ")
+                    w_units = _unit_len(w_item)
+                    if word_units + w_units > chunk_size and word_chunk:
+                        chunks.append(" ".join(word_chunk))
+                        # Apply overlap: keep last words
+                        overlap_words = []
+                        overlap_units = 0
+                        for ow in reversed(word_chunk):
+                            ow_units = _count_units(ow + " ")
+                            if overlap_units + ow_units > chunk_overlap:
+                                break
+                            overlap_words.insert(0, ow)
+                            overlap_units += ow_units
+                        word_chunk = list(overlap_words)
+                        word_units = overlap_units
+                    word_units += w_units
+                    word_chunk.append(w)
+                if word_chunk:
+                    chunks.append(" ".join(word_chunk))
+                continue
+
+            # Normal case: try to add sentence to current chunk
+            if current_unit_count + sentence_units > chunk_size and current_chunk:
+                # Finalize current chunk
+                chunk_str = " ".join(str(p) for p in current_chunk)
+                chunks.append(chunk_str)
+
+                # Apply overlap: keep last N units from current chunk
+                overlap_items = []
+                overlap_units = 0
+                for piece in reversed(current_chunk):
+                    piece_units = _count_units(str(piece) + " ")
+                    if overlap_units + piece_units > chunk_overlap:
+                        break
+                    overlap_items.insert(0, piece)
+                    overlap_units += piece_units
+                current_chunk = list(overlap_items)
+                current_unit_count = overlap_units
+                current_unit_items = []
+
+            current_chunk.append(sentence)
+            current_unit_count += sentence_units
+            current_unit_items.append(sentence_item)
+
+    # Flush last chunk
+    if current_chunk:
+        chunk_str = " ".join(str(p) for p in current_chunk)
+        chunks.append(chunk_str)
+
+    chunks = [c.strip() for c in chunks if c.strip()]
+
+    return _ok(
+        "chunk",
+        json.dumps(chunks, indent=2, ensure_ascii=False),
+        chunk_count=len(chunks),
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        total_chars=len(input_text),
+        method="tiktoken" if use_tiktoken else "estimate",
+    )
 
 
 # ---------------------------------------------------------------------------

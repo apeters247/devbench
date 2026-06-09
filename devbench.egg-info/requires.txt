@@ -1,2 +1,15 @@
 pydantic>=2.0
 pyyaml>=6.0
+tiktoken>=0.7.0
+
+[all]
+devbench[hcl]
+devbench[toml]
+
+[hcl]
+python-hcl2
+
+[toml]
+
+[toml:python_version < "3.11"]
+tomli

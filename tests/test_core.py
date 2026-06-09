@@ -89,15 +89,15 @@ def test_json_tabs_vs_spaces():
 
 def test_json_trailing_comma():
     r = parse(json_formatter('{"a": 1,}'))
-    assert r["error"] is not None  # Invalid JSON
+    assert r["error"] is not None and "Invalid JSON" in r["error"]
 
 def test_json_single_quotes():
     r = parse(json_formatter("{'a': 1}"))
-    assert r["error"] is not None  # Invalid JSON
+    assert r["error"] is not None and "Invalid JSON" in r["error"]
 
 def test_json_no_quotes():
     r = parse(json_formatter("{a: 1}"))
-    assert r["error"] is not None  # Invalid JSON
+    assert r["error"] is not None and "Invalid JSON" in r["error"]
 
 
 # ═══════════════════════════════════════════════
@@ -117,11 +117,11 @@ def test_base64_unicode():
 
 def test_base64_empty_decode():
     r = parse(base64_codec(""))
-    assert r["error"] is not None
+    assert r["error"] == "Empty input."
 
 def test_base64_invalid_chars():
     r = parse(base64_codec("!!!invalid!!!"))
-    assert r["error"] is not None
+    assert r["error"] is not None and "not valid in Base64" in r["error"]
 
 def test_base64_very_long():
     data = "A" * 100000
@@ -164,11 +164,11 @@ def test_jwt_malformed_payload():
 
 def test_jwt_short_segments():
     r = parse(jwt_decoder("a.b.c"))
-    assert r["error"] is not None
+    assert r["error"] is not None and "Not a valid JWT" in r["error"]
 
 def test_jwt_empty_parts():
     r = parse(jwt_decoder(".."))
-    assert r["error"] is not None
+    assert r["error"] is not None and "Not a valid JWT" in r["error"]
 
 
 # ═══════════════════════════════════════════════
@@ -217,8 +217,7 @@ def test_url_mailto():
 def test_url_data_uri():
     r = parse(url_codec("data:text/plain;base64,SGVsbG8="))
     assert r["error"] is None
-    # data is in known scheme but has no query string → encode
-    assert r.get("metadata", {}).get("operation") is not None
+    assert r.get("metadata", {}).get("operation") == "encode"
 
 def test_url_empty_query():
     r = parse(url_codec("https://example.com?"))
@@ -268,7 +267,7 @@ def test_timestamp_human_readable():
 
 def test_timestamp_invalid_date():
     r = parse(timestamp_converter("not a date at all"))
-    assert r["error"] is not None
+    assert r["error"] is not None and "Cannot parse" in r["error"]
 
 def test_timestamp_leap_year():
     r = parse(timestamp_converter("2024-02-29"))
@@ -277,7 +276,7 @@ def test_timestamp_leap_year():
 
 def test_timestamp_feb_30():
     r = parse(timestamp_converter("2023-02-30"))
-    assert r["error"] is not None  # Invalid date
+    assert r["error"] is not None and "Cannot parse" in r["error"]
 
 
 # ═══════════════════════════════════════════════
@@ -329,7 +328,7 @@ def test_diff_empty_vs_content():
     # undetectable by the \n---\n separator. This is a known limitation.
     # Test with a proper separator-compatible input instead.
     r = parse(text_diff("hello\n---\n"))
-    assert r["error"] is not None  # Empty right block after strip = no separator
+    assert r["error"] is not None and "Cannot find a separator" in r["error"]
     assert r.get("tool_name") == "text_diff"
 
 def test_diff_1000_lines():
@@ -345,58 +344,58 @@ def test_diff_1000_lines():
 # ═══════════════════════════════════════════════
 def test_detector_empty():
     r = detect("")
-    assert r.get("tool") is not None  # "unknown"
+    assert r.get("tool") == "unknown"
     assert r.get("detection_type") == "empty"
 
 def test_detector_whitespace():
     r = detect("   \n\t   ")
-    assert r.get("tool") is not None
+    assert r.get("tool") == "unknown"
     assert r.get("detection_type") == "empty"
 
 def test_detector_special_chars():
     r = detect("!@#$%^&*()")
     # Currently detected as implicit URL (urlparse doesn't reject pure symbols)
-    assert r.get("tool") is not None
-    assert r.get("detection_type") is not None
+    assert r.get("tool") == "url"
+    assert r.get("detection_type") == "Domain or implicit URL detected"
 
 def test_detector_html():
     r = detect("<html><body>Hello</body></html>")
-    # Should be detected as XML
-    assert r.get("tool") is not None
+    # Currently detected as implicit URL (not XML)
+    assert r.get("tool") == "url"
 
 def test_detector_sql():
     r = detect("SELECT * FROM users WHERE id = 1")
     # Currently detected as implicit URL (urlparse accepts domain-like patterns)
-    assert r.get("tool") is not None
+    assert r.get("tool") == "url"
 
 def test_detector_ip_address():
     r = detect("192.168.1.1")
-    assert r.get("tool") is not None  # Matches URL detector
-    assert r.get("detection_type") is not None
+    assert r.get("tool") == "url"
+    assert r.get("detection_type") == "Domain or implicit URL detected"
 
 def test_detector_mac_address():
     r = detect("00:1A:2B:3C:4D:5E")
-    assert r.get("tool") is not None
+    assert r.get("tool") == "url"
 
 def test_detector_semver():
     r = detect("1.2.3-beta.4")
-    assert r.get("tool") is not None
+    assert r.get("tool") == "url"
 
 def test_detector_emoji():
     r = detect("💻🔥🚀")
     # Currently detected as implicit URL
-    assert r.get("tool") is not None
-    assert r.get("detection_type") is not None
+    assert r.get("tool") == "url"
+    assert r.get("detection_type") == "Domain or implicit URL detected"
 
 def test_detector_very_long():
     r = detect("x" * 100000)
-    assert r.get("detection_type") is not None  # Should not hang
+    assert r.get("detection_type") == "Domain or implicit URL detected"
 
 def test_detector_mixed_content():
-    """String that matches multiple detectors — should pick the best one."""
+    """String that matches multiple detectors — JSON wins over URL."""
     r = detect('{"url": "https://example.com", "timestamp": 1625097600}')
-    assert r.get("tool") is not None
-    assert r.get("detection_type") is not None
+    assert r.get("tool") == "json"
+    assert r.get("detection_type") == "JSON detected"
 
 
 # ═══════════════════════════════════════════════

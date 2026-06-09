@@ -79,7 +79,7 @@ class TestLicenseKeyFormat:
         sig = key.split(KEY_SEP)[2]
         assert len(sig) > 20, f"Signature should be non-trivial: {sig}"
 
-    def test_key_is_deterministic_secret(self):
+    def test_key_generation_produces_unique_keys(self):
         """Same secret + same metadata → different keys (random hex differs)."""
         lm = _make_mgr()
         k1 = lm.generate("a@b.com", "cus_1")
@@ -234,7 +234,7 @@ class TestLicenseRevoke:
         # Verification should now fail (expired)
         # Note: revoke sets expiry to now, so check verify
         info = lm.get_key_info(key)
-        assert info is not None
+        assert info is not None and info["email"] == "a@b.com"
 
 
 class TestEdgeCases:
@@ -315,8 +315,7 @@ class TestEdgeCases:
         lm = _make_mgr(tmp_db=True)
         key = lm.generate("info@test.com", "cus_info", "pi_info")
         info = lm.get_key_info(key)
-        assert info is not None
-        assert info["email"] == "info@test.com"
+        assert info is not None and info["email"] == "info@test.com"
         assert info["customer_id"] == "cus_info"
         assert info["payment_intent"] == "pi_info"
 

@@ -523,4 +523,5 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="ConfigForge web UI")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port (default: 8080)")
     ap.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
-    raise SystemExit(run_server(ap.parse_args().port, ap.parse_args().host))
+    args = ap.parse_args()
+    raise SystemExit(run_server(args.port, args.host))

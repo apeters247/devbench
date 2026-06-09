@@ -239,6 +239,8 @@ class LicenseHandler(BaseHTTPRequestHandler):
         elif path == "/license/revoke":
             self._handle_revoke(body_text)
 
+        elif path == "/license/trial":
+            self._handle_trial(body_text)
         else:
             self._respond(*_error(404, f"Unknown path: {path}"))
 
@@ -481,6 +483,40 @@ class LicenseHandler(BaseHTTPRequestHandler):
         self._respond(*_json_response(200, {
             "revoked": ok,
             "message": "License revoked" if ok else "Key not found in database",
+        }))
+
+
+    def _handle_trial(self, body_text: str | None) -> None:
+        """Generate a 14-day trial license key."""
+        if not body_text:
+            body_text = '{}'
+        try:
+            data = json.loads(body_text)
+        except json.JSONDecodeError:
+            self._respond(*_error(400, "Invalid JSON"))
+            return
+
+        email = data.get("email", "trial@example.com")
+        trial_days = 14
+        expiry = int(time.time()) + trial_days * 86400
+        try:
+            license_key = lm.generate(
+                email=email,
+                customer_id=f"trial_{int(time.time())}",
+                payment_intent="",
+                expiry=expiry,
+            )
+        except Exception as e:
+            self._respond(*_error(500, f"Failed to generate trial key: {e}"))
+            return
+
+        self._respond(*_json_response(200, {
+            "received": True,
+            "type": "trial",
+            "license_key": license_key,
+            "email": email,
+            "expires_at": expiry,
+            "message": f"Trial license key generated. Valid for {trial_days} days.",
         }))
 
     # ── Response Helper ──────────────────────────────────────────────────────

@@ -25,8 +25,9 @@ dependencies = [
 
 [project.optional-dependencies]
 hcl = ["python-hcl2"]
+tiktoken = ["tiktoken>=0.7.0"]
 toml = ["tomli; python_version < \"3.11\""]
-all = ["devbench[hcl]", "devbench[toml]"]
+all = ["devbench[hcl]", "devbench[tiktoken]", "devbench[toml]"]
 
 # When installed via `pip install devbench` or `pip install devbench[all]`,
 # all optional deps are included. The `hcl` extra enables HCL format support.
