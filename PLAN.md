@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-**Builder cycle (2026-06-09T07:00Z).** Shipped `web/sitemap.xml` (25 URLs: 5 core pages + 20 SEO pages, with `priority` and `changefreq`). Fixed `web/robots.txt` — sitemap directive was pointing at `https://naxiai.com/sitemap.xml` (wrong root); now correctly points to `https://naxiai.com/tools/devbench/sitemap.xml`. Tests: **647 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green. Critical path to revenue: Gumroad listing ($19, manual task). macOS .app blocked on Mac Mini (~3 days).
+**Builder cycle (2026-06-09T09:00Z).** (1) Committed polisher's plist format (10th format) + TOML empty-header fix + batch_convert_stream/TOML tests from working tree. (2) Updated all marketing: "9 formats" → "10 formats", added plist to format lists across index.html, value-proposition.html, og/twitter meta. (3) Created 2 new SEO pages: `llm-token-counter.html` (CLI token counter + RAG text chunker) and `plist-converter.html` (plist↔YAML/JSON macOS CI). (4) Updated `sitemap.xml` to 27 URLs (+2 new pages). (5) Linked new pages from index.html SEO section and "how it compares" nav. Tests: **654 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
 
 ## 4. Work Queue (ordered)
 
@@ -167,6 +167,8 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T09:00Z | **Builder** (cron — this session) | **SHIPPED: 10th format (plist), 2 new SEO pages, marketing 9→10 formats.** (1) Committed polisher's plist work from working tree — detect/parse/serialize Apple plist via stdlib plistlib, 12 new tests (batch_convert_stream + TOML empty-header + plist). (2) TOML empty-header fix: `_to_toml` no longer emits `[section]` headers for intermediate-only tables (fixes pyproject.toml-style output). (3) Updated all marketing from "9 formats" to "10 formats" across index.html + value-proposition.html; updated ROI: $19/10 = $1.90/format, added plist row to comparison table. (4) Created `web/forge/seo/llm-token-counter.html` — targets "CLI token counter LLM", "tiktoken CLI", "RAG text chunker"; showcases devbench token + chunk tools. (5) Created `web/forge/seo/plist-converter.html` — targets "plist to yaml", "PlistBuddy alternative", "macOS CI plist"; showcases plist format. (6) Updated sitemap.xml from 25 to 27 URLs, linked both new pages from index.html nav. Tests: **654 passed, 7 skipped, 2 xfailed — 0 failures**. | **654/663 passing, all green. +2 SEO pages. plist is 10th format. LLM tools featured.** |
 
 | 2026-06-09T04:59Z | **Polisher** (cron — this session) | **SHIPPED: plist format support** (macOS developer complaint: `defaults write`/PlistBuddy painful in CI/CD). `detect_format` detects XML plist before generic XML; `parse_text` uses stdlib `plistlib`; `serialize` emits valid XML plist via `plistlib.FMT_XML`. Helpers: `_plist_normalize` (bytes→base64, datetime→ISO string), `_plist_prepare` (coerce to plist-compatible types). `.plist` added to ext_map; `"plist"` added to `SUPPORTED_FORMATS`. 7 new tests including the key CI use case: `--set CFBundleVersion 2.1.0 -i Info.plist`. Tests: **654 passed, 7 skipped, 2 xfailed — 0 failures.** | **654/663 passing, all green. +7 tests.** |
 

@@ -7,12 +7,12 @@
   <title>Why ConfigForge Is Worth $19 — ROI for DevOps and Developer Teams</title>
   <meta name="description" content="Is ConfigForge worth $19? See the ROI calculation: $2.11 per format, vs hours of shell scripting, vs online tools that see your secrets, vs chaining 5+ open-source tools. One-time purchase, no subscription.">
   <meta property="og:title" content="Why $19 Is Fair for ConfigForge — The Real Cost of Config Conversion">
-  <meta property="og:description" content="ConfigForge at $19 covers 9 formats, preserves comments, works offline, and replaces hours of shell scripting. The ROI calculation is straightforward.">
+  <meta property="og:description" content="ConfigForge at $19 covers 10 formats, preserves comments, works offline, and replaces hours of shell scripting. The ROI calculation is straightforward.">
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/value-proposition.html">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Why $19 Is Fair for ConfigForge">
-  <meta name="twitter:description" content="ConfigForge at $19 covers 9 formats, preserves comments, works offline, and replaces hours of shell scripting. The ROI calculation is straightforward.">
+  <meta name="twitter:description" content="ConfigForge at $19 covers 10 formats, preserves comments, works offline, and replaces hours of shell scripting. The ROI calculation is straightforward.">
   <link rel="stylesheet" href="/tools/devbench/style.css">
   <script type="application/ld+json">
   {
@@ -22,7 +22,7 @@
     "operatingSystem": "macOS 13+",
     "applicationCategory": "DeveloperApplication",
     "applicationSubCategory": "Developer Utilities",
-    "description": "9 essential developer tools in your macOS menubar. Includes ConfigForge (9-format config converter), JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, token counter, text chunker, and more.",
+    "description": "Essential developer tools in your macOS menubar. Includes ConfigForge (10-format config converter), JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, LLM token counter, text chunker, clipboard auto-detect, and more.",
     "url": "https://naxiai.com/tools/devbench/",
     "author": {
       "@type": "Organization",
@@ -69,26 +69,27 @@
 <p>Software developer tools often get evaluated on a "is this free?" axis rather than a value axis. This page breaks down what $19 buys you, what the alternatives actually cost (in time, risk, and ongoing subscriptions), and why a one-time purchase is the right pricing model for this kind of tool.</p>
 <br />
 
-<h2>The Math: $2.11 Per Format</h2>
+<h2>The Math: $1.90 Per Format</h2>
 <br />
-<p>ConfigForge supports <strong>9 formats</strong> with bidirectional conversion: JSON, YAML, TOML, XML, CSV, INI, .env, HCL, and Java .properties. Divide $19 by 9 and you get <strong>$2.11 per format</strong>.</p>
+<p>ConfigForge supports <strong>10 formats</strong> with bidirectional conversion: JSON, YAML, TOML, XML, CSV, INI, .env, HCL, Java .properties, and Apple plist. Divide $19 by 10 and you get <strong>$1.90 per format</strong>.</p>
 <br />
-<p>That's the cost of a fraction of a coffee to never worry about that format again. Any engineer who has spent 45 minutes wrestling a legacy INI file into YAML has spent more than $19 in billable hours on that one task.</p>
+<p>That's less than a fraction of a coffee to never worry about that format again. Any engineer who has spent 45 minutes wrestling a legacy INI file into YAML has spent more than $19 in billable hours on that one task.</p>
 <br />
 <table>
 <thead>
 <tr><th>Format</th><th>Cost (amortized)</th><th>Typical manual effort saved</th></tr>
 </thead>
 <tbody>
-<tr><td>JSON ↔ YAML</td><td>$2.11</td><td>Scripting, jq pipelines, online tools</td></tr>
-<tr><td>TOML ↔ YAML</td><td>$2.11</td><td>Custom Python script or manual rewrite</td></tr>
-<tr><td>XML ↔ JSON</td><td>$2.11</td><td>xmltodict, xq, or browser tool</td></tr>
-<tr><td>CSV ↔ JSON</td><td>$2.11</td><td>jq workaround, Python pandas</td></tr>
-<tr><td>INI ↔ YAML</td><td>$2.11</td><td>configparser + manual flatten</td></tr>
-<tr><td>.env ↔ JSON</td><td>$2.11</td><td>dotenv parsing + custom serializer</td></tr>
-<tr><td>HCL ↔ YAML</td><td>$2.11</td><td>python-hcl2 script + manual tweaks</td></tr>
-<tr><td>.properties ↔ JSON</td><td>$2.11</td><td>Java tooling or custom parser</td></tr>
-<tr><td>All 9 in one CLI</td><td><strong>$19.00 once</strong></td><td>Every conversion scenario, forever</td></tr>
+<tr><td>JSON ↔ YAML</td><td>$1.90</td><td>Scripting, jq pipelines, online tools</td></tr>
+<tr><td>TOML ↔ YAML</td><td>$1.90</td><td>Custom Python script or manual rewrite</td></tr>
+<tr><td>XML ↔ JSON</td><td>$1.90</td><td>xmltodict, xq, or browser tool</td></tr>
+<tr><td>CSV ↔ JSON</td><td>$1.90</td><td>jq workaround, Python pandas</td></tr>
+<tr><td>INI ↔ YAML</td><td>$1.90</td><td>configparser + manual flatten</td></tr>
+<tr><td>.env ↔ JSON</td><td>$1.90</td><td>dotenv parsing + custom serializer</td></tr>
+<tr><td>HCL ↔ YAML</td><td>$1.90</td><td>python-hcl2 script + manual tweaks</td></tr>
+<tr><td>.properties ↔ JSON</td><td>$1.90</td><td>Java tooling or custom parser</td></tr>
+<tr><td>plist ↔ YAML</td><td>$1.90</td><td>PlistBuddy/defaults write + manual</td></tr>
+<tr><td>All 10 in one CLI</td><td><strong>$19.00 once</strong></td><td>Every conversion scenario, forever</td></tr>
 </tbody>
 </table>
 <br />
@@ -104,7 +105,7 @@
 <ul>
 <li><strong>Setup time</strong>: Each tool has different install paths, different argument conventions, different error messages, and different edge cases. Learning five tools is five times the cognitive overhead.</li>
 <li><strong>Script maintenance</strong>: The shell scripts that glue these tools together drift over time. When a tool updates its output format, your script breaks silently.</li>
-<li><strong>Inconsistent behavior</strong>: Each tool has different handling for Unicode, null values, boolean serialization, numeric precision. ConfigForge applies consistent rules across all 9 formats.</li>
+<li><strong>Inconsistent behavior</strong>: Each tool has different handling for Unicode, null values, boolean serialization, numeric precision. ConfigForge applies consistent rules across all 10 formats.</li>
 <li><strong>No comment preservation</strong>: Most OSS tools strip comments silently. When your infrastructure-as-code loses its operational context, you pay in debugging time months later.</li>
 </ul>
 <br />

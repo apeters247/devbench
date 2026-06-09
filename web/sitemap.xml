@@ -97,6 +97,20 @@
     <priority>0.8</priority>
   </url>
 
+  <!-- SEO — LLM / AI developer tools -->
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/llm-token-counter.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- SEO — plist / macOS CI format -->
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/plist-converter.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
   <!-- SEO — use-case / ecosystem pages -->
   <url>
     <loc>https://naxiai.com/tools/devbench/forge/seo/toml-vs-yaml.html</loc>

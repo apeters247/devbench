@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>CLI Token Counter for LLMs + RAG Text Chunker — Devbench</title>
+  <meta name="description" content="Count tokens for GPT-4, Claude, and other LLMs from the command line. Chunk text for RAG pipelines. Devbench includes a tiktoken-based CLI token counter and sentence-aware text chunker — offline, no API calls.">
+  <meta property="og:title" content="CLI Token Counter for LLMs + Text Chunker for RAG — Devbench">
+  <meta property="og:description" content="Count LLM tokens and chunk text for RAG from the command line. Devbench's token counter uses tiktoken; the text chunker is sentence-aware with configurable overlap. 100% offline.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/llm-token-counter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CLI Token Counter for LLMs + Text Chunker for RAG — Devbench">
+  <meta name="twitter:description" content="Count LLM tokens and chunk text for RAG from the command line. tiktoken-based, sentence-aware, 100% offline.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "AI / LLM Developer Utilities",
+    "description": "CLI token counter and text chunker for LLM and RAG development. Uses tiktoken for accurate GPT/Claude token counts. Sentence-aware chunking with configurable size and overlap. Part of the Devbench developer toolkit.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<div class="container" style="max-width:860px;margin:0 auto;padding:2rem 1rem;">
+
+<nav style="margin-bottom:1.5rem;font-size:0.9rem;">
+  <a href="/tools/devbench/">← Devbench home</a>
+</nav>
+
+<h1>CLI Token Counter for LLMs + Text Chunker for RAG</h1>
+<br />
+<p>If you're building LLM applications, you need two things regularly: <strong>how many tokens is this text?</strong> and <strong>how do I split this document into chunks that fit my context window?</strong> Most developers write throwaway Python scripts for both. Devbench ships both as first-class CLI tools — <code>devbench token</code> and <code>devbench chunk</code>.</p>
+<br />
+
+<h2>Token Counter (<code>devbench token</code>)</h2>
+<br />
+<p>Count tokens for any text using <a href="https://github.com/openai/tiktoken">tiktoken</a> — the same tokenizer used by GPT-4, GPT-3.5-turbo, and Claude models.</p>
+<br />
+<pre><code># Count tokens in a string
+echo "Hello, world!" | devbench token
+
+# Count tokens in a file
+devbench token &lt; prompt.txt
+
+# Count tokens in a long system prompt
+cat system-prompt.md | devbench token
+</code></pre>
+<br />
+<p>Example output:</p>
+<pre><code>{
+  "tool": "token",
+  "output": "4",
+  "metadata": {
+    "model": "cl100k_base",
+    "token_count": 4,
+    "char_count": 13
+  },
+  "success": true,
+  "error": null
+}
+</code></pre>
+<br />
+<p>The <code>cl100k_base</code> encoding is used by GPT-4, GPT-3.5, and Claude models via the tiktoken library. When tiktoken is not installed, Devbench falls back to a character-based estimate (approximately 4 chars per token) and notes the estimate in the output.</p>
+<br />
+
+<h3>Why a dedicated token counter?</h3>
+<br />
+<p>The common Python one-liner for counting tokens is:</p>
+<pre><code>python3 -c "import tiktoken; enc = tiktoken.get_encoding('cl100k_base'); print(len(enc.encode(open('file.txt').read())))"
+</code></pre>
+<br />
+<p>That's 90 characters you have to remember, re-type, or copy-paste every time. <code>devbench token &lt; file.txt</code> is 24 characters and returns structured JSON you can pipe into <code>jq</code>:</p>
+<br />
+<pre><code># Is this prompt over 4096 tokens?
+devbench token &lt; long-prompt.txt | jq '.metadata.token_count &gt; 4096'
+
+# Get just the count as a number
+devbench token &lt; docs.txt | jq -r '.metadata.token_count'
+</code></pre>
+<br />
+
+<h2>Text Chunker for RAG (<code>devbench chunk</code>)</h2>
+<br />
+<p>Split long documents into overlapping chunks for retrieval-augmented generation (RAG). The chunker is sentence-aware — it doesn't split mid-sentence — with configurable chunk size (in tokens) and overlap.</p>
+<br />
+<pre><code># Default: 500-token chunks with 100-token overlap
+cat docs/architecture.md | devbench chunk
+
+# Smaller chunks for embedding with dense retrieval
+cat paper.txt | devbench chunk --chunk-size 256 --chunk-overlap 50
+
+# No overlap (non-overlapping windows)
+cat transcript.txt | devbench chunk --chunk-size 1000 --chunk-overlap 0
+</code></pre>
+<br />
+<p>Example output for a multi-paragraph document:</p>
+<pre><code>{
+  "tool": "chunk",
+  "output": "3 chunks",
+  "metadata": {
+    "chunk_count": 3,
+    "chunk_size": 500,
+    "chunk_overlap": 100,
+    "chunks": [
+      { "index": 0, "text": "Chapter 1: Introduction\n\nThis document covers...", "token_estimate": 487 },
+      { "index": 1, "text": "...continued from the introduction. The core idea...", "token_estimate": 512 },
+      { "index": 2, "text": "...In conclusion, the system provides...", "token_estimate": 201 }
+    ]
+  },
+  "success": true
+}
+</code></pre>
+<br />
+
+<h3>Sentence-aware splitting</h3>
+<br />
+<p>Most naive chunkers split on fixed character counts, cutting mid-sentence. Devbench's chunker splits on sentence boundaries so each chunk is coherent and readable — important for embedding quality and LLM context coherence.</p>
+<br />
+<table>
+<thead>
+<tr><th>Approach</th><th>Splits on</th><th>Mid-sentence cuts?</th><th>Overlap support?</th></tr>
+</thead>
+<tbody>
+<tr><td><code>devbench chunk</code></td><td>Sentence boundaries</td><td>No</td><td>Yes (configurable)</td></tr>
+<tr><td>LangChain <code>RecursiveCharacterTextSplitter</code></td><td>Characters</td><td>Yes (by default)</td><td>Yes</td></tr>
+<tr><td>Manual <code>text[i:i+n]</code></td><td>Fixed characters</td><td>Yes</td><td>Manual</td></tr>
+<tr><td><code>textwrap.wrap()</code></td><td>Words</td><td>No</td><td>No</td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Installation</h2>
+<br />
+<pre><code># Install with tiktoken for accurate token counts
+pip install devbench-cf[tiktoken]
+
+# Or install the base (uses character-based estimate)
+pip install devbench-cf
+</code></pre>
+<br />
+<p>Both <code>devbench token</code> and <code>devbench chunk</code> work on macOS, Linux, and Windows. No API key, no network calls, no data leaves your machine.</p>
+<br />
+
+<h2>Part of the Devbench Toolkit</h2>
+<br />
+<p>The LLM tools ship alongside ConfigForge (10-format config converter), JSON formatter, base64 encoder/decoder, UUID generator, JWT decoder, hash generator, URL encoder/decoder, timestamp converter, and diff tool — all in a single <code>pip install devbench-cf</code>.</p>
+<br />
+<pre><code>devbench --list
+  json      Format and validate JSON
+  base64    Encode/decode base64
+  jwt       Decode JWT tokens
+  hash      MD5/SHA256/SHA512 hashes
+  url       URL encode/decode
+  timestamp Unix ↔ human time
+  uuid      Generate UUID v4
+  diff      Unified diff two strings
+  cf        ConfigForge config converter (10 formats)
+  token     Count LLM tokens (tiktoken)
+  chunk     Chunk text for RAG
+</code></pre>
+<br />
+<p>
+  <a href="/tools/devbench/" style="display:inline-block;margin-right:1rem;">← Back to Devbench home</a>
+  <a href="/tools/devbench/forge/seo/value-proposition.html" style="display:inline-block;">Why $19? →</a>
+</p>
+
+<hr style="margin:3rem 0;opacity:0.3;">
+<p style="font-size:0.85rem;opacity:0.7;"><em>Devbench — developer tools for macOS, CLI-first. One-time purchase $19. No subscriptions, no data collection, no network calls.</em></p>
+
+</div>
+</body>
+</html>

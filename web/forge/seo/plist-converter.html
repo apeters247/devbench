@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>plist to YAML/JSON Converter CLI — macOS CI/CD — Devbench</title>
+  <meta name="description" content="Convert Apple plist files to YAML, JSON, or TOML from the command line. Replaces PlistBuddy and defaults write in macOS CI/CD pipelines. 100% offline, no Xcode required.">
+  <meta property="og:title" content="CLI plist Converter — plist ↔ YAML/JSON/TOML — Devbench">
+  <meta property="og:description" content="Convert Info.plist to YAML for review, bump CFBundleVersion in CI/CD, or convert any Apple plist to JSON/TOML. Replaces PlistBuddy with a cross-platform CLI. No Xcode, no network calls.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/plist-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CLI plist Converter — plist ↔ YAML/JSON/TOML — Devbench">
+  <meta name="twitter:description" content="Convert Apple plist files from the command line. Replaces PlistBuddy in macOS CI/CD. Cross-platform, 100% offline.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "macOS Developer Utilities",
+    "description": "CLI tool for converting Apple plist files to YAML, JSON, and TOML. Replaces PlistBuddy and defaults write in CI/CD pipelines. Part of the Devbench developer toolkit.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<div class="container" style="max-width:860px;margin:0 auto;padding:2rem 1rem;">
+
+<nav style="margin-bottom:1.5rem;font-size:0.9rem;">
+  <a href="/tools/devbench/">← Devbench home</a>
+</nav>
+
+<h1>plist Converter CLI — plist ↔ YAML / JSON / TOML</h1>
+<br />
+<p>macOS and iOS CI/CD pipelines regularly need to read and edit <code>Info.plist</code> files — bumping <code>CFBundleVersion</code>, toggling feature flags, setting environment-specific keys. The native tools are painful:</p>
+<br />
+<ul>
+  <li><strong><code>defaults write</code></strong> — can't handle nested dicts/arrays at all without rewriting entire keys</li>
+  <li><strong><code>PlistBuddy</code></strong> — obscure syntax, <em>macOS only</em>, not available in Linux CI runners (GitHub Actions, GitLab CI)</li>
+  <li><strong><code>plutil</code></strong> — converts between plist formats but doesn't work on Linux</li>
+</ul>
+<br />
+<p>ConfigForge (<code>devbench cf</code>) supports plist as a first-class format using Python's stdlib <code>plistlib</code> — no dependencies, no Xcode, works on macOS and Linux CI runners alike.</p>
+<br />
+
+<h2>Common macOS CI/CD Use Cases</h2>
+<br />
+
+<h3>Bump <code>CFBundleVersion</code> in CI/CD</h3>
+<br />
+<pre><code># Was: PlistBuddy -c "Set :CFBundleVersion 2.1.0" Info.plist
+# Now:
+devbench cf Info.plist --set CFBundleVersion 2.1.0 --in-place
+
+# Verify
+devbench cf Info.plist --get CFBundleVersion
+</code></pre>
+<br />
+<p>Works on macOS and Linux CI runners (GitHub Actions <code>ubuntu-latest</code>, GitLab, Jenkins) — no <code>PlistBuddy</code> required.</p>
+<br />
+
+<h3>Inspect plist as YAML for human review</h3>
+<br />
+<pre><code># Was: plutil -convert json Info.plist -o - | python3 -m json.tool
+# Now:
+devbench cf Info.plist --to yaml
+
+# Output:
+# CFBundleIdentifier: com.example.MyApp
+# CFBundleVersion: 1.0.0
+# NSAppTransportSecurity:
+#   NSAllowsArbitraryLoads: false
+# UIRequiredDeviceCapabilities:
+#   - armv7
+</code></pre>
+<br />
+
+<h3>Convert Info.plist to JSON for jq processing</h3>
+<br />
+<pre><code># Extract a nested value with jq
+devbench cf Info.plist --to json | jq '.NSAppTransportSecurity.NSAllowsArbitraryLoads'
+# false
+
+# Check minimum iOS version
+devbench cf Info.plist --to json | jq -r '.MinimumOSVersion'
+# 15.0
+</code></pre>
+<br />
+
+<h3>Set a nested key</h3>
+<br />
+<pre><code># Enable arbitrary loads (for debug builds)
+devbench cf Info.plist --set NSAppTransportSecurity.NSAllowsArbitraryLoads true --in-place
+
+# Add a new key
+devbench cf Info.plist --set CFBuildEnvironment staging --in-place
+</code></pre>
+<br />
+
+<h3>Round-trip: plist → YAML → plist</h3>
+<br />
+<pre><code># Edit plist values in YAML (more readable), then convert back
+devbench cf Info.plist --to yaml &gt; info.yaml
+# ... edit info.yaml in your editor ...
+devbench cf info.yaml --to plist &gt; Info.plist
+</code></pre>
+<br />
+
+<h2>Supported plist Features</h2>
+<br />
+<table>
+<thead>
+<tr><th>plist Type</th><th>Converted to</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>&lt;string&gt;</code></td><td>str</td><td>Direct mapping</td></tr>
+<tr><td><code>&lt;integer&gt;</code></td><td>int</td><td>Direct mapping</td></tr>
+<tr><td><code>&lt;real&gt;</code></td><td>float</td><td>Direct mapping</td></tr>
+<tr><td><code>&lt;true/&gt;</code> / <code>&lt;false/&gt;</code></td><td>bool</td><td>Direct mapping</td></tr>
+<tr><td><code>&lt;dict&gt;</code></td><td>dict</td><td>Direct mapping</td></tr>
+<tr><td><code>&lt;array&gt;</code></td><td>list</td><td>Direct mapping</td></tr>
+<tr><td><code>&lt;data&gt;</code></td><td>base64 string</td><td>For cross-format compat</td></tr>
+<tr><td><code>&lt;date&gt;</code></td><td>ISO-8601 string</td><td>e.g., <code>2024-01-15T10:30:00</code></td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>vs PlistBuddy</h2>
+<br />
+<table>
+<thead>
+<tr><th>Feature</th><th>PlistBuddy</th><th>ConfigForge</th></tr>
+</thead>
+<tbody>
+<tr><td>macOS support</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Linux CI support</td><td>No</td><td>Yes (pure Python)</td></tr>
+<tr><td>Nested key access</td><td><code>-c "Set :key:subkey val"</code></td><td><code>--set key.subkey val</code></td></tr>
+<tr><td>Convert to YAML/JSON</td><td>No (plist-only)</td><td>Yes — any of 10 formats</td></tr>
+<tr><td>Batch mode</td><td>No</td><td>Yes (<code>--batch "*.plist"</code>)</td></tr>
+<tr><td>JSON output</td><td>Via <code>plutil -convert json</code></td><td>Direct: <code>--to json</code></td></tr>
+<tr><td>Dot-notation key paths</td><td>No (colon-separated)</td><td>Yes</td></tr>
+<tr><td>Install required</td><td>Built-in macOS</td><td><code>pip install devbench-cf</code></td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Installation</h2>
+<br />
+<pre><code>pip install devbench-cf
+
+# Verify
+devbench cf --list-formats
+# json yaml toml xml csv ini env hcl properties plist
+</code></pre>
+<br />
+<p>Works on Python 3.10–3.13, macOS and Linux. Uses stdlib <code>plistlib</code> — no additional dependencies for plist support.</p>
+<br />
+<p>
+  <a href="/tools/devbench/" style="display:inline-block;margin-right:1rem;">← Back to Devbench home</a>
+  <a href="/tools/devbench/forge/seo/use-cases.html" style="display:inline-block;">More use cases →</a>
+</p>
+
+<hr style="margin:3rem 0;opacity:0.3;">
+<p style="font-size:0.85rem;opacity:0.7;"><em>ConfigForge — 10 formats, 100% offline, cross-platform. Part of Devbench ($19 one-time). No subscriptions, no data collection.</em></p>
+
+</div>
+</body>
+</html>
