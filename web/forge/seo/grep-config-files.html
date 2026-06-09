@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grep YAML / JSON / TOML Files from the CLI — ConfigForge</title>
+  <meta name="description" content="Search across YAML, JSON, TOML, and any config format with a regex pattern. ConfigForge --grep finds matching keys and values across all 11 formats — no jq, no yq filter expressions needed.">
+  <meta name="keywords" content="grep yaml files, search yaml values cli, grep json keys, grep toml, search config files bash, find yaml key command line, yq grep, kubectl grep yaml, kubernetes audit config, grep helm values">
+  <meta property="og:title" content="Grep YAML / JSON / TOML Config Files — ConfigForge">
+  <meta property="og:description" content="Search keys and values across any config format with a regex. ConfigForge --grep works on YAML, JSON, TOML, INI, ENV, HCL, plist, and more.">
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="https://naxiai.com/tools/devbench/seo/grep-config-files.html">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "How to Grep YAML, JSON, and TOML Config Files from the CLI",
+    "description": "ConfigForge --grep searches config file keys and values using regex patterns across 11 formats.",
+    "author": {"@type": "Organization", "name": "Naxiai"},
+    "datePublished": "2026-06-09"
+  }
+  </script>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:860px;margin:0 auto;padding:2rem 1.5rem;color:#1a1a2e;line-height:1.7}
+    h1{font-size:2rem;margin-bottom:.5rem}
+    h2{font-size:1.4rem;margin-top:2.5rem;border-bottom:2px solid #e8e8f0;padding-bottom:.4rem}
+    h3{font-size:1.1rem;color:#333}
+    pre{background:#1a1a2e;color:#a8e6cf;padding:1.2rem 1.5rem;border-radius:8px;overflow-x:auto;font-size:.88rem;line-height:1.5}
+    code{background:#f0f0f8;padding:.15em .4em;border-radius:4px;font-size:.9em;font-family:'SF Mono',Monaco,monospace}
+    .badge{display:inline-block;background:#4CAF50;color:#fff;padding:.25rem .7rem;border-radius:20px;font-size:.8rem;font-weight:600;margin-right:.4rem}
+    .badge.red{background:#e74c3c}
+    table{border-collapse:collapse;width:100%;margin:1.5rem 0}
+    th,td{border:1px solid #ddd;padding:.6rem 1rem;text-align:left}
+    th{background:#f8f8ff;font-weight:600}
+    .checkmark{color:#4CAF50;font-weight:700}
+    .cross{color:#e74c3c;font-weight:700}
+    .cta{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:2rem;border-radius:12px;margin-top:3rem;text-align:center}
+    .cta a{color:#fff;text-decoration:none;font-weight:700;border:2px solid #fff;padding:.6rem 1.5rem;border-radius:6px;display:inline-block;margin-top:.8rem}
+    .tip{background:#fff8e1;border-left:4px solid #ffc107;padding:1rem 1.2rem;border-radius:0 8px 8px 0;margin:1.5rem 0}
+    .note{background:#e3f2fd;border-left:4px solid #2196F3;padding:1rem 1.2rem;border-radius:0 8px 8px 0;margin:1.5rem 0}
+  </style>
+</head>
+<body>
+
+<h1>Grep YAML, JSON &amp; TOML Config Files from the CLI</h1>
+<p>
+  <span class="badge">ConfigForge 1.0</span>
+  <span class="badge">11 formats</span>
+  <span class="badge">regex search</span>
+</p>
+<p>
+  DevOps engineers spend hours <code>grep</code>-ing YAML files — but standard grep doesn't understand
+  structure. It returns raw YAML lines, not key paths. If the value you're looking for appears in a
+  multi-line block scalar or is deeply nested, you miss it.
+</p>
+<p>
+  <strong>ConfigForge <code>--grep</code></strong> parses the config first, flattens it to
+  dot-notation paths, then applies your regex. You get structured results:
+  <code>spec.template.spec.containers[0].image: 'nginx:1.21'</code>, not a raw line dump.
+</p>
+
+<h2>Quick Start</h2>
+<pre># Install
+pip install devbench
+
+# Search a Kubernetes manifest for any nginx reference
+devbench cf deploy.yaml --grep 'nginx'
+
+# Find all image references (regex)
+devbench cf deploy.yaml --grep 'image'
+
+# Security audit: find any password/secret key in all YAML files
+devbench cf '*.yaml' --batch --grep 'password|secret|token'
+
+# Structured JSON output for scripting
+devbench cf config.yaml --grep 'host' --raw</pre>
+
+<h2>Why <code>grep -r</code> Falls Short for Config Files</h2>
+
+<p>Standard <code>grep</code> treats config files as plain text. Problems:</p>
+<ul>
+  <li><strong>No path context</strong> — you see <code>image: nginx</code> but not <em>which</em> container</li>
+  <li><strong>Misses block scalars</strong> — multi-line YAML values split across lines</li>
+  <li><strong>Cross-format blind</strong> — can't grep a mix of YAML, JSON, and TOML in one pass</li>
+  <li><strong>No value types</strong> — can't distinguish a value of <code>80</code> from a comment containing <code>80</code></li>
+</ul>
+
+<p><strong>ConfigForge parses first, then matches.</strong> You always get structured key-path results.</p>
+
+<h2>Real-World Use Cases</h2>
+
+<h3>1. Kubernetes Security Audit</h3>
+<pre># Find any hardcoded secrets in all manifests
+devbench cf 'k8s/*.yaml' --batch --grep 'password|token|secret|key' --raw
+
+# Find containers using the latest tag (unstable)
+devbench cf deploy.yaml --grep ':latest'
+
+# Find all service account references
+devbench cf '**/*.yaml' --batch --grep 'serviceAccount' --recursive</pre>
+
+<h3>2. Docker Compose Dependency Discovery</h3>
+<pre># Find all image references across services
+devbench cf docker-compose.yaml --grep 'image:'
+
+# Find all port mappings
+devbench cf docker-compose.yaml --grep '^ports\.'
+
+# Find which services have health checks
+devbench cf docker-compose.yaml --grep 'healthcheck'</pre>
+
+<h3>3. CI/CD Pipeline Config Audit</h3>
+<pre># Search GitHub Actions workflows for deprecated actions
+devbench cf '.github/workflows/*.yaml' --batch --grep 'actions/checkout@v1' --recursive
+
+# Find all environment variable references
+devbench cf .github/workflows/deploy.yaml --grep '\$\{\{.*secrets\.'
+
+# Check Terraform variables for defaults
+devbench cf '*.tfvars' --batch --grep 'region'</pre>
+
+<h3>4. Cross-Format Grep</h3>
+<pre># Grep across mixed YAML and JSON config dirs
+devbench cf 'config/**' --batch --grep 'localhost' --recursive
+
+# Find debug flags across all formats
+devbench cf '*.{yaml,json,toml,ini}' --batch --grep 'debug.*true'</pre>
+
+<h2>Output Formats</h2>
+
+<h3>Human-readable (default)</h3>
+<pre>$ devbench cf deploy.yaml --grep 'image'
+spec.template.spec.containers[0].image: 'nginx:1.21'
+spec.template.spec.containers[1].image: 'redis:7'
+spec.initContainers[0].image: 'busybox:latest'</pre>
+
+<h3>JSON output (<code>--raw</code>)</h3>
+<pre>$ devbench cf deploy.yaml --grep 'image' --raw
+{
+  "file": "deploy.yaml",
+  "pattern": "image",
+  "matches": [
+    {"path": "spec.template.spec.containers[0].image", "value": "nginx:1.21"},
+    {"path": "spec.template.spec.containers[1].image", "value": "redis:7"},
+    {"path": "spec.initContainers[0].image", "value": "busybox:latest"}
+  ],
+  "count": 3
+}</pre>
+
+<h3>Batch output (<code>--batch</code>)</h3>
+<pre>$ devbench cf '*.yaml' --batch --grep 'password'
+--- db.yaml (2 matches) ---
+  database.primary.password: 'hunter2'
+  database.replica.password: 'hunter2'
+--- app.yaml (0 matches) ---</pre>
+
+<h2>Flags</h2>
+
+<table>
+  <tr><th>Flag</th><th>Description</th></tr>
+  <tr><td><code>--grep PATTERN</code></td><td>Regex pattern to match against key paths and values</td></tr>
+  <tr><td><code>--grep-case-sensitive</code></td><td>Case-sensitive match (default: case-insensitive)</td></tr>
+  <tr><td><code>--raw</code></td><td>JSON output — file, pattern, matches array, count</td></tr>
+  <tr><td><code>--batch</code></td><td>Treat text argument as a glob; grep each matched file</td></tr>
+  <tr><td><code>--recursive / -R</code></td><td>Enable <code>**</code> glob recursion in <code>--batch</code></td></tr>
+  <tr><td><code>--from</code></td><td>Force input format (default: auto-detect)</td></tr>
+</table>
+
+<p><strong>Exit codes:</strong> 0 = matches found, 1 = no matches — same as GNU grep, scripts can use <code>if devbench cf config.yaml --grep secret; then ...</code></p>
+
+<h2>How It Compares to Alternatives</h2>
+
+<table>
+  <tr>
+    <th>Tool</th>
+    <th>Formats</th>
+    <th>Structured results</th>
+    <th>Batch multi-file</th>
+    <th>Regex</th>
+    <th>JSON output</th>
+  </tr>
+  <tr>
+    <td><strong>ConfigForge --grep</strong></td>
+    <td class="checkmark">11 (YAML, JSON, TOML, INI, ENV, HCL, plist…)</td>
+    <td class="checkmark">✓ dot-notation paths</td>
+    <td class="checkmark">✓ glob + recursive</td>
+    <td class="checkmark">✓ Python re</td>
+    <td class="checkmark">✓ --raw</td>
+  </tr>
+  <tr>
+    <td>grep -r</td>
+    <td class="cross">Plain text only</td>
+    <td class="cross">✗ raw line context</td>
+    <td class="checkmark">✓</td>
+    <td class="checkmark">✓</td>
+    <td class="cross">✗</td>
+  </tr>
+  <tr>
+    <td>yq (YAML only)</td>
+    <td class="cross">YAML / JSON only</td>
+    <td class="checkmark">✓ with filter expr</td>
+    <td class="cross">✗ no native batch</td>
+    <td class="cross">✗ no native grep</td>
+    <td class="checkmark">✓</td>
+  </tr>
+  <tr>
+    <td>jq (JSON only)</td>
+    <td class="cross">JSON only</td>
+    <td class="checkmark">✓ with filter expr</td>
+    <td class="cross">✗ no native batch</td>
+    <td class="checkmark">✓ test()</td>
+    <td class="checkmark">✓</td>
+  </tr>
+  <tr>
+    <td>dasel</td>
+    <td>YAML/JSON/TOML/XML/CSV</td>
+    <td class="checkmark">✓ with selector</td>
+    <td class="cross">✗</td>
+    <td class="cross">✗ no grep mode</td>
+    <td class="checkmark">✓</td>
+  </tr>
+</table>
+
+<div class="note">
+  <strong>No competitor has a native <code>--grep</code> equivalent.</strong> yq and jq require
+  you to know the exact path first, or write complex <code>.. | select(test("pattern"))</code>
+  expressions. ConfigForge just takes a pattern.
+</div>
+
+<h2>Shell Script Examples</h2>
+
+<pre># Count secrets in a directory (CI gate)
+SECRET_COUNT=$(devbench cf 'k8s/*.yaml' --batch --grep 'password' --raw \
+  | python3 -c 'import json,sys; data=json.load(sys.stdin); print(sum(f["count"] for f in data))')
+
+if [ "$SECRET_COUNT" -gt 0 ]; then
+  echo "ERROR: $SECRET_COUNT hardcoded secrets found"
+  exit 1
+fi
+
+# Find all image tags and check for :latest
+devbench cf deploy.yaml --grep ':latest' && {
+  echo "Warning: :latest tags found — pin versions for reproducibility"
+}
+
+# Extract all unique hostnames from config files
+devbench cf config.yaml --grep 'host' --raw \
+  | jq -r '.matches[].value' \
+  | sort -u</pre>
+
+<h2>Install</h2>
+<pre>pip install devbench
+
+# All 11 formats including HCL, plist, JSONC
+pip install devbench[all]</pre>
+
+<div class="cta">
+  <h3 style="margin:0 0 .5rem">ConfigForge — Structured Config Search &amp; Conversion</h3>
+  <p style="margin:.5rem 0">$19 one-time · Offline · 11 formats · grep, diff, pick, validate &amp; more</p>
+  <a href="https://naxiai.com/tools/devbench/">Get ConfigForge →</a>
+</div>
+
+<h2>More ConfigForge Tools</h2>
+<ul>
+  <li><a href="extract-yaml-field.html">Extract specific YAML fields (--pick)</a></li>
+  <li><a href="validate-config-ci.html">Validate config files in CI/CD (--validate)</a></li>
+  <li><a href="../seo/vs-yq.html">ConfigForge vs yq comparison</a></li>
+  <li><a href="../seo/vs-dasel.html">ConfigForge vs dasel comparison</a></li>
+</ul>
+
+</body>
+</html>

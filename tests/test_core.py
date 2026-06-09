@@ -398,6 +398,36 @@ def test_detector_mixed_content():
     assert r.get("detection_type") == "JSON detected"
 
 
+def test_detector_pkl_simple():
+    """Detect Apple Pkl configuration language."""
+    pkl_content = """
+name = "app"
+version = "1.0"
+config {
+  debug = true
+  port = 8080
+}
+"""
+    r = detect(pkl_content)
+    assert "Pkl" in r.get("detection_type", "")
+    assert r.get("confidence", 0) > 0.7
+
+
+def test_detector_pkl_with_comments():
+    """Detect Pkl with comments."""
+    pkl_content = """
+// Configuration for my app
+name = "myapp"
+// Settings
+settings {
+  timeout = 30
+  retries = 3
+}
+"""
+    r = detect(pkl_content)
+    assert "Pkl" in r.get("detection_type", "")
+
+
 # ═══════════════════════════════════════════════
 # PERFORMANCE / STRESS
 # ═══════════════════════════════════════════════
@@ -1097,3 +1127,270 @@ def test_cf_pick_three_paths(tmp_path, capsys):
     assert data["version"] == "2.1.0"
     assert data["enabled"] is True
     assert "secret" not in data
+
+
+# ── --env-expand: substitute ${VAR} / $VAR in config values ──────────────────
+
+def test_cf_env_expand_curly_braces(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("APP_PORT", "9090")
+    monkeypatch.setenv("APP_HOST", "myserver.local")
+    f = tmp_path / "config.yaml"
+    f.write_text("host: ${APP_HOST}\nport: ${APP_PORT}\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--env-expand", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    envelope = json.loads(out)
+    data = json.loads(envelope["output"])
+    assert data["host"] == "myserver.local"
+    assert data["port"] == "9090"
+
+
+def test_cf_env_expand_bare_dollar(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("DB_NAME", "mydb")
+    f = tmp_path / "config.yaml"
+    f.write_text("database: $DB_NAME\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--env-expand", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    envelope = json.loads(out)
+    data = json.loads(envelope["output"])
+    assert data["database"] == "mydb"
+
+
+def test_cf_env_expand_missing_var_left_unchanged(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("key: ${DEVBENCH_NONEXISTENT_VAR_XYZ}\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--env-expand", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    envelope = json.loads(out)
+    data = json.loads(envelope["output"])
+    assert data["key"] == "${DEVBENCH_NONEXISTENT_VAR_XYZ}"
+
+
+def test_cf_env_expand_in_json_input(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", "s3cr3t")
+    f = tmp_path / "config.json"
+    f.write_text('{"api_key": "${SECRET_KEY}", "debug": false}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--env-expand", "--to", "yaml"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "s3cr3t" in out
+
+
+def test_cf_env_expand_nested_values(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("REPLICAS", "3")
+    f = tmp_path / "deploy.yaml"
+    f.write_text("spec:\n  replicas: ${REPLICAS}\n  image: nginx\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--env-expand", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    envelope = json.loads(out)
+    data = json.loads(envelope["output"])
+    assert data["spec"]["replicas"] == "3"
+    assert data["spec"]["image"] == "nginx"
+
+
+def test_cf_env_expand_with_get(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("LISTEN_PORT", "8080")
+    f = tmp_path / "config.yaml"
+    f.write_text("server:\n  port: ${LISTEN_PORT}\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--env-expand", "--get", "server.port"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "8080" in out
+
+
+def test_cf_env_expand_multiple_in_one_value(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("PROTO", "https")
+    monkeypatch.setenv("HOSTNAME", "example.com")
+    f = tmp_path / "config.yaml"
+    f.write_text("url: ${PROTO}://${HOSTNAME}/api\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--env-expand", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    envelope = json.loads(out)
+    data = json.loads(envelope["output"])
+    assert data["url"] == "https://example.com/api"
+
+
+def test_cf_env_expand_from_api_expand_env_vars():
+    from core.configforge import _expand_env_vars
+    import os
+    os.environ["TEST_EV_KEY"] = "hello"
+    try:
+        result = _expand_env_vars({"a": "${TEST_EV_KEY}", "b": [1, "${TEST_EV_KEY}"]})
+        assert result["a"] == "hello"
+        assert result["b"][1] == "hello"
+        assert result["b"][0] == 1
+    finally:
+        del os.environ["TEST_EV_KEY"]
+
+
+def test_cf_env_expand_does_not_alter_non_strings(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("PORT", "9999")
+    f = tmp_path / "config.json"
+    f.write_text('{"port": 8080, "enabled": true, "label": "${PORT}"}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--env-expand", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    envelope = json.loads(out)
+    data = json.loads(envelope["output"])
+    assert data["port"] == 8080
+    assert data["enabled"] is True
+    assert data["label"] == "9999"
+
+
+# ---------------------------------------------------------------------------
+# cf --grep tests
+# ---------------------------------------------------------------------------
+
+_GREP_YAML = """\
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.21
+        - name: redis
+          image: redis:7
+      initContainers:
+        - name: setup
+          image: busybox:latest
+"""
+
+_GREP_JSON = '{"database":{"host":"localhost","port":5432,"password":"secret123"},"debug":false}'
+
+
+def test_cf_grep_matches_value(tmp_path, capsys):
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_GREP_YAML)
+    from core.cli import main
+    rc = main(["cf", str(f), "--grep", "nginx"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "nginx" in out
+
+
+def test_cf_grep_matches_key(tmp_path, capsys):
+    f = tmp_path / "config.json"
+    f.write_text(_GREP_JSON)
+    from core.cli import main
+    rc = main(["cf", str(f), "--grep", "password"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "password" in out
+    assert "secret123" in out
+
+
+def test_cf_grep_no_match_returns_exit_1(tmp_path, capsys):
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_GREP_YAML)
+    from core.cli import main
+    rc = main(["cf", str(f), "--grep", "nonexistent_xyz_12345"])
+    assert rc == 1
+
+
+def test_cf_grep_multiple_matches(tmp_path, capsys):
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_GREP_YAML)
+    from core.cli import main
+    rc = main(["cf", str(f), "--grep", "image"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Should find all three container image entries
+    lines = [l for l in out.splitlines() if l.strip()]
+    assert len(lines) >= 3
+    assert all("image" in l for l in lines)
+
+
+def test_cf_grep_case_insensitive_by_default(tmp_path, capsys):
+    f = tmp_path / "config.json"
+    f.write_text(_GREP_JSON)
+    from core.cli import main
+    rc = main(["cf", str(f), "--grep", "LOCALHOST"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "localhost" in out
+
+
+def test_cf_grep_case_sensitive_flag(tmp_path, capsys):
+    f = tmp_path / "config.json"
+    f.write_text(_GREP_JSON)
+    from core.cli import main
+    # Uppercase pattern should NOT match lowercase value when case-sensitive
+    rc = main(["cf", str(f), "--grep", "LOCALHOST", "--grep-case-sensitive"])
+    assert rc == 1
+
+
+def test_cf_grep_regex_pattern(tmp_path, capsys):
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_GREP_YAML)
+    from core.cli import main
+    rc = main(["cf", str(f), "--grep", r"^\d+$"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Should match replicas: 3 (value is integer 3)
+    assert "replicas" in out or "3" in out
+
+
+def test_cf_grep_raw_json_output(tmp_path, capsys):
+    f = tmp_path / "config.json"
+    f.write_text(_GREP_JSON)
+    from core.cli import main
+    rc = main(["cf", str(f), "--grep", "host", "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    result = json.loads(out)
+    assert result["count"] >= 1
+    assert "matches" in result
+    assert any(m["path"] == "database.host" for m in result["matches"])
+
+
+def test_cf_grep_invalid_regex(tmp_path, capsys):
+    f = tmp_path / "config.json"
+    f.write_text(_GREP_JSON)
+    from core.cli import main
+    rc = main(["cf", str(f), "--grep", "[invalid(regex"])
+    assert rc == 1
+
+
+def test_cf_grep_batch_mode(tmp_path, capsys):
+    (tmp_path / "a.yaml").write_text("service: nginx\nport: 80\n")
+    (tmp_path / "b.yaml").write_text("service: apache\nport: 443\n")
+    from core.cli import main
+    rc = main(["cf", str(tmp_path / "*.yaml"), "--grep", "nginx", "--batch"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "nginx" in out
+
+
+def test_cf_grep_batch_no_matches_exit_1(tmp_path, capsys):
+    (tmp_path / "a.yaml").write_text("service: nginx\nport: 80\n")
+    from core.cli import main
+    rc = main(["cf", str(tmp_path / "*.yaml"), "--grep", "nonexistent_xyz", "--batch"])
+    assert rc == 1
+
+
+def test_cf_grep_nested_config(tmp_path, capsys):
+    f = tmp_path / "nested.yaml"
+    f.write_text("db:\n  primary:\n    host: db.prod.example.com\n  replica:\n    host: db.ro.example.com\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--grep", r"example\.com"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "db.primary.host" in out
+    assert "db.replica.host" in out

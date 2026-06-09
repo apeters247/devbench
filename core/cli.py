@@ -76,6 +76,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "validate", False):
         return _run_cf_validate(args)
 
+    # cf --grep  → regex search over config keys/values (supports --batch)
+    if args.command == "cf" and getattr(args, "grep", None):
+        return _run_cf_grep(args)
+
     # cf --batch  → batch convert files matching a glob (handle before reading stdin)
     if args.command == "cf" and getattr(args, "batch", False):
         return _run_cf_batch(args)
@@ -279,6 +283,19 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Multiple paths: outputs a new config dict of {path: value} pairs. "
                                      "Use --to to control output format. "
                                      "Example: devbench cf deploy.yaml --pick spec.replicas spec.template.spec.containers --to yaml")
+            tool_p.add_argument("--env-expand", action="store_true", dest="env_expand",
+                                help="Substitute ${VAR} and $VAR references in config values with live environment variables. "
+                                     "Missing vars are left unchanged. Works across all 11 formats. "
+                                     "Example: APP_PORT=8080 devbench cf config.yaml --env-expand --to json")
+            tool_p.add_argument("--grep", metavar="PATTERN", default=None,
+                                help="Search config keys and values matching a regex pattern (case-insensitive by default). "
+                                     "Flattens the config to dot-notation paths and filters by PATTERN. "
+                                     "Exit 0=matches found, 1=no matches (grep semantics). "
+                                     "Use --raw for JSON output, --batch for multi-file search. "
+                                     "Example: devbench cf deploy.yaml --grep 'image'  "
+                                     "         devbench cf '*.yaml' --batch --grep 'password'")
+            tool_p.add_argument("--grep-case-sensitive", action="store_true", dest="grep_case_sensitive",
+                                help="Make --grep case-sensitive (default: case-insensitive)")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -340,9 +357,18 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _get_input(args: argparse.Namespace) -> str:
-    """Get input text from argument or stdin."""
-    if hasattr(args, "text") and args.text is not None:
-        return args.text
+    """Get input text from argument or stdin. If args.text is a file path, read it."""
+    text_arg = getattr(args, "text", None)
+    if text_arg is not None:
+        p = Path(text_arg)
+        if p.is_file():
+            try:
+                return p.read_text(encoding="utf-8")
+            except OSError:
+                return text_arg  # Fall back to treating as content if read fails
+
+    if text_arg is not None:
+        return text_arg
 
     # Try stdin (pipe)
     if not sys.stdin.isatty():
@@ -543,6 +569,8 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
         options["infer_dates"] = False
     if hasattr(args, "null_handling"):
         options["null_handling"] = args.null_handling
+    if hasattr(args, "env_expand") and args.env_expand:
+        options["env_expand"] = True
 
     if to_fmt:
         # Format specified; run conversion with options
@@ -627,6 +655,8 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
         options["infer_dates"] = False
     if hasattr(args, "null_handling"):
         options["null_handling"] = args.null_handling
+    if hasattr(args, "env_expand") and args.env_expand:
+        options["env_expand"] = True
 
     if getattr(args, "recursive", False):
         options["recursive"] = True
@@ -1049,6 +1079,8 @@ def _cf_parse_opts(args) -> dict:
         opts["yaml12"] = True
     if getattr(args, "template_safe", False):
         opts["template_safe"] = True
+    if getattr(args, "env_expand", False):
+        opts["env_expand"] = True
     return opts
 
 
@@ -1549,6 +1581,125 @@ def _run_cf_pick(args) -> int:
     if not output_text.endswith("\n"):
         output_text += "\n"
     sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# cf --grep: regex search across flattened config keys and values
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_grep(args) -> int:
+    """Search config keys/values matching a regex pattern.
+
+    Parses the config, flattens all key→value pairs to dot-notation paths,
+    and prints entries where the path or string-repr of the value matches
+    the regex (case-insensitive by default).
+
+    Single-file: reads one file (or stdin).
+    Batch mode (--batch also set): loops over glob matches, searches each.
+
+    Exit 0 if any matches found, exit 1 if no matches — grep semantics.
+    """
+    import re
+    import glob as _glob
+    from . import configforge as _cf
+
+    pattern_str = args.grep
+    flags = 0 if getattr(args, "grep_case_sensitive", False) else re.IGNORECASE
+    try:
+        pattern = re.compile(pattern_str, flags)
+    except re.error as exc:
+        print(f"error: invalid regex pattern: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    raw = getattr(args, "raw", False)
+    from_fmt = getattr(args, "from_fmt", "auto")
+    parse_opts = _cf_parse_opts(args)
+    is_batch = getattr(args, "batch", False)
+
+    def _grep_content(content: str, label: str) -> list:
+        """Return list of {path, value} dicts for matching entries."""
+        try:
+            parsed = _cf.parse_text(
+                content,
+                fmt=None if from_fmt == "auto" else from_fmt,
+                **parse_opts,
+            )
+        except Exception as exc:
+            print(f"error parsing {label}: {exc}", file=sys.stderr)
+            return []
+        data = parsed.get("data", parsed)
+        flat = _flatten_for_diff(data)
+        matches = []
+        for path, val in sorted(flat.items()):
+            val_str = str(val) if val is not None else ""
+            if pattern.search(path) or pattern.search(val_str):
+                matches.append({"path": path, "value": val})
+        return matches
+
+    if is_batch:
+        input_glob = getattr(args, "text", None)
+        if not input_glob:
+            print("error: --grep --batch requires a glob pattern as the text argument", file=sys.stderr)
+            print("  Usage: devbench cf --grep PATTERN --batch '*.yaml'", file=sys.stderr)
+            return EXIT_ERROR
+        recursive = getattr(args, "recursive", False)
+        files = sorted(_glob.glob(input_glob, recursive=recursive))
+        if not files:
+            print(f"error: no files matched: {input_glob}", file=sys.stderr)
+            return EXIT_ERROR
+
+        any_matches = False
+        batch_results = []
+        for f in files:
+            try:
+                content = Path(f).read_text(encoding="utf-8")
+            except OSError as e:
+                print(f"error reading {f}: {e}", file=sys.stderr)
+                continue
+            matches = _grep_content(content, f)
+            if matches:
+                any_matches = True
+            batch_results.append({"file": f, "matches": matches, "count": len(matches)})
+
+        if raw:
+            print(json.dumps(batch_results, indent=2, default=str))
+        else:
+            for br in batch_results:
+                if br["matches"]:
+                    n = br["count"]
+                    print(f"--- {br['file']} ({n} match{'es' if n != 1 else ''}) ---")
+                    for m in br["matches"]:
+                        print(f"  {m['path']}: {m['value']!r}")
+            if not any_matches:
+                print(f"no matches for {pattern_str!r}", file=sys.stderr)
+
+        return EXIT_SUCCESS if any_matches else EXIT_ERROR
+
+    # Single-file / stdin mode
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    label = str(file_path) if file_path else "stdin"
+    matches = _grep_content(content, label)
+
+    if raw:
+        result = {
+            "file": label,
+            "pattern": pattern_str,
+            "matches": matches,
+            "count": len(matches),
+        }
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        for m in matches:
+            print(f"{m['path']}: {m['value']!r}")
+
+    if not matches:
+        print(f"no matches for {pattern_str!r}", file=sys.stderr)
+        return EXIT_ERROR
+
     return EXIT_SUCCESS
 
 
