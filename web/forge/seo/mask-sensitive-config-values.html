@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Redact Sensitive Config Values — ConfigForge --mask CLI</title>
+  <meta name="description" content="Mask passwords, tokens, and API keys from YAML/JSON/TOML configs before logging or sharing. devbench cf config.yaml --mask 'password|secret|token' — no jq pipelines required.">
+  <meta property="og:title" content="Redact Sensitive Config Values from YAML, JSON, TOML — ConfigForge --mask">
+  <meta property="og:description" content="One flag strips secrets from any config format. Combine with --to to convert format while masking. CI/CD-safe config logging in one pip install.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/mask-sensitive-config-values.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Mask Secrets in Config Files — devbench cf --mask">
+  <meta name="twitter:description" content="Redact passwords, tokens, API keys from YAML/JSON/TOML/INI configs before CI/CD logs. One flag, 11 formats, zero dependencies beyond pip.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config tool with --mask flag for redacting sensitive values from YAML, JSON, TOML, INI, .env, HCL, .properties, plist, XML, CSV, JSONC. Useful for CI/CD logging, audit exports, documentation sanitization.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD",
+      "description": "One-time purchase. No subscription."
+    }
+  }
+  </script>
+</head>
+<body>
+
+<nav><a href="/tools/devbench/">← Devbench</a></nav>
+
+<main>
+<h1>Redact Sensitive Config Values with <code>--mask</code></h1>
+
+<p class="subtitle">
+  Strip passwords, tokens, and API keys from any config format before logging, sharing, or committing.
+  One flag works across all 11 formats ConfigForge supports.
+</p>
+
+<pre class="hero-code"><code># Mask credentials from a Kubernetes Secret or deployment config
+devbench cf k8s-secret.yaml --mask 'password|secret|token'
+
+# Convert YAML to JSON while redacting sensitive keys
+devbench cf prod.yaml --mask 'password|api_key|private_key' --to json
+
+# Custom redaction string
+devbench cf .env --mask '.*' --mask-value '[REDACTED]' --to yaml
+
+# Machine-readable output with redaction count
+devbench cf config.yaml --mask 'password|secret' --raw | jq .redacted_count</code></pre>
+
+<h2>The Problem: Secrets in Config Logs</h2>
+
+<p>
+  CI/CD pipelines often print configs for debugging:
+</p>
+
+<pre><code>echo "Deployed with config:"
+cat deploy.yaml  # ← leaks DB_PASSWORD, API_KEY, JWT_SECRET to build logs</code></pre>
+
+<p>
+  Fixing this without a dedicated tool requires complex <code>jq</code> expressions that only work for
+  JSON, <code>yq</code> filter chains that don't handle all formats, or custom Python/bash scripts that
+  you have to maintain.
+</p>
+
+<p>
+  ConfigForge's <code>--mask PATTERN</code> solves it in one flag across all 11 config formats:
+  YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC.
+</p>
+
+<h2>How It Works</h2>
+
+<p>
+  <code>--mask PATTERN</code> takes a regex pattern and replaces the <em>value</em> of any key
+  whose name matches the pattern. The replacement string defaults to <code>***REDACTED***</code>
+  and can be customized with <code>--mask-value</code>.
+</p>
+
+<ul>
+  <li><strong>Case-insensitive</strong> — <code>--mask 'password'</code> matches <code>Password</code>, <code>PASSWORD</code>, <code>db_password</code></li>
+  <li><strong>Recursive</strong> — walks all nested dicts and lists</li>
+  <li><strong>Regex patterns</strong> — use alternation (<code>password|secret|token</code>), wildcards (<code>.*key</code>), anchors</li>
+  <li><strong>Non-destructive</strong> — outputs a new config, never modifies the original file</li>
+  <li><strong>Format-preserving</strong> — output stays in the same format unless you add <code>--to</code></li>
+</ul>
+
+<pre class="example"><code># Input (prod.yaml)
+database:
+  host: db.internal
+  password: "sUp3rS3cr3t!"
+  port: 5432
+api:
+  url: https://api.example.com
+  secret_key: "aBcDeF123456"
+  timeout: 30
+
+# Output: devbench cf prod.yaml --mask 'password|secret'
+database:
+  host: db.internal
+  password: '***REDACTED***'
+  port: 5432
+api:
+  url: https://api.example.com
+  secret_key: '***REDACTED***'
+  timeout: 30</code></pre>
+
+<h2>Real-World Use Cases</h2>
+
+<h3>1. CI/CD Pipeline Logging</h3>
+<p>Log your merged config after templating without exposing credentials:</p>
+<pre><code># GitHub Actions step
+- name: Log deployment config
+  run: devbench cf ${{ env.CONFIG_FILE }} --mask 'password|secret|token|key' | tee /tmp/deploy-log.yaml</code></pre>
+
+<h3>2. Creating Sanitized Documentation Configs</h3>
+<p>Generate example configs from real configs with secrets stripped:</p>
+<pre><code># Produce docs/config-example.yaml from prod config
+devbench cf config/production.yaml --mask 'password|secret|token|key|credential' \
+    --mask-value '&lt;your-value-here&gt;' \
+    --to yaml > docs/config-example.yaml</code></pre>
+
+<h3>3. Bug Report Sharing</h3>
+<p>Share configs with support or teammates without exposing production secrets:</p>
+<pre><code>devbench cf broken-config.yaml --mask '(?i)(pass|secret|key|token|auth|credential)' | pbcopy</code></pre>
+
+<h3>4. Audit Log Export</h3>
+<p>Export masked configs to an audit log store:</p>
+<pre><code>devbench cf /etc/app/config.yaml --mask 'password|secret|api_key' --raw \
+  | jq '{file: .file, redacted: .redacted_count, config: .output}' \
+  >> /var/log/config-audit.jsonl</code></pre>
+
+<h3>5. Kubernetes Secret Sanitization</h3>
+<p>Kubernetes Secrets have base64-encoded values under <code>data.*</code> keys — mask them before printing:</p>
+<pre><code>kubectl get secret my-secret -o yaml \
+  | devbench cf - --from yaml --mask 'data' --to yaml</code></pre>
+
+<h3>6. .env File Sharing</h3>
+<p>Share your .env structure with a new team member without exposing values:</p>
+<pre><code>devbench cf .env --mask '.*' --mask-value '&lt;fill-in&gt;' --to env > .env.example</code></pre>
+
+<h2>Comparison: ConfigForge vs. Alternatives</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Redact by key name</th>
+      <th>Works on YAML</th>
+      <th>Works on TOML</th>
+      <th>Works on .env</th>
+      <th>Works on INI</th>
+      <th>Custom replacement</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>ConfigForge <code>--mask</code></strong></td>
+      <td>✅ Regex pattern</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅ <code>--mask-value</code></td>
+    </tr>
+    <tr>
+      <td>yq</td>
+      <td>⚠️ Complex filter expressions</td>
+      <td>✅</td>
+      <td>❌ No TOML output</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>⚠️ Manual</td>
+    </tr>
+    <tr>
+      <td>jq</td>
+      <td>⚠️ Complex <code>walk</code> expressions</td>
+      <td>❌ JSON only</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>⚠️ Manual</td>
+    </tr>
+    <tr>
+      <td>dasel</td>
+      <td>❌ No built-in redaction</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>❌</td>
+    </tr>
+    <tr>
+      <td>sed / grep</td>
+      <td>⚠️ Line-based, fragile</td>
+      <td>⚠️</td>
+      <td>⚠️</td>
+      <td>⚠️</td>
+      <td>⚠️</td>
+      <td>⚠️</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  The <code>jq</code> equivalent for masking nested password keys looks like this:
+</p>
+<pre><code># jq — JSON only, complex, hard to maintain
+jq 'walk(if type == "object" then with_entries(if (.key | test("password|secret|token"; "i")) then .value = "***REDACTED***" else . end) else . end)'</code></pre>
+
+<p>vs. ConfigForge's one flag that works on all 11 formats:</p>
+<pre><code>devbench cf config.yaml --mask 'password|secret|token'</code></pre>
+
+<h2>Install</h2>
+
+<pre><code>pip install devbench
+# or with all optional format support:
+pip install devbench[all]</code></pre>
+
+<p>Works on Python 3.10–3.13. macOS, Linux, Windows.</p>
+
+<h2>Related Features</h2>
+<ul>
+  <li><a href="validate-config-ci.html"><code>--validate</code></a> — check config syntax in CI/CD pipelines</li>
+  <li><a href="extract-yaml-field.html"><code>--pick</code></a> — extract specific fields from configs</li>
+  <li><a href="diff-config-files.html"><code>--diff</code></a> — compare two config files structurally</li>
+  <li><a href="grep-config-files.html"><code>--grep</code></a> — search config keys and values by regex</li>
+</ul>
+
+</main>
+
+<footer>
+  <p><a href="https://naxiai.com/tools/devbench/">Devbench</a> — 11-format config converter + 9 developer tools. $19 one-time, no subscription.</p>
+</footer>
+
+</body>
+</html>

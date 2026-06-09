@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Rename YAML / JSON Key from CLI — devbench cf --rename | ConfigForge</title>
+  <meta name="description" content="Rename any config key with one command. devbench cf deploy.yaml --rename server.host server.hostname works across YAML, JSON, TOML, INI, and 7 more formats. No jq, no sed, no Python script.">
+  <meta property="og:title" content="Rename YAML / JSON Key from CLI — devbench cf --rename | ConfigForge">
+  <meta property="og:description" content="One flag to rename or move a key in any config file. Works across YAML, JSON, TOML, HCL, and 7 more formats. In-place edit, backup, JSON output — all from pip install devbench.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/rename-yaml-key.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Rename YAML / JSON Key from CLI — devbench cf --rename">
+  <meta name="twitter:description" content="Rename a key in any config file without a script. devbench cf app.yaml --rename server.host server.hostname — works across 11 formats.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config key renamer and converter. Rename / move keys across YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC. In-place edit, backup, JSON output.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<nav>
+  <a href="/tools/devbench/">DevBench</a> /
+  <a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a> /
+  <strong>Rename Config Key</strong>
+</nav>
+
+<main>
+
+<h1>Rename a YAML / JSON / TOML Key — <code>devbench cf --rename</code></h1>
+
+<p>
+  <strong>The problem:</strong> A config key needs to be renamed as part of a refactor —
+  <code>server.host</code> → <code>server.hostname</code>, <code>db_password</code> → <code>database.password</code>,
+  or <code>redis.url</code> → <code>cache.url</code>. In any other tool this means writing a custom script,
+  reaching for sed (and getting the quoting wrong), or hand-editing dozens of files. DevBench makes it one flag.
+</p>
+
+<pre><code># Rename a key in a YAML file — output to stdout
+devbench cf app.yaml --rename server.host server.hostname
+
+# Edit the file in-place with a backup
+devbench cf deploy.yaml --rename spec.replicas spec.replicaCount --in-place --backup
+
+# Move a key to a different parent
+devbench cf config.yaml --rename database.password secrets.db_password
+
+# Rename and convert format at the same time
+devbench cf app.yaml --rename db.url db.connection_string --to json
+
+# Machine-readable output for scripting
+devbench cf app.yaml --rename old_key new_key --raw</code></pre>
+
+<p>
+  Works across all 11 config formats: YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC.
+  Dot-notation paths for nested keys. In-place editing with optional backup. Fully offline — no API calls.
+</p>
+
+<hr>
+
+<h2>Why <code>--rename</code> matters in real projects</h2>
+
+<p>
+  Config key renames are a constant source of friction in infrastructure work. A Kubernetes Deployment field
+  gets deprecated. An Ansible variable is renamed upstream. A Spring Boot property is reorganized across YAML
+  levels. Each change requires touching the same key in dev, staging, and prod configs — and doing it correctly,
+  without accidentally breaking neighboring keys.
+</p>
+
+<p>
+  The alternatives are painful:
+</p>
+
+<ul>
+  <li><strong>sed</strong> — operates on raw text, breaks with complex values, fails on multi-line strings</li>
+  <li><strong>jq</strong> — JSON only; requires a function (<code>with_entries(if .key == "old" then .key = "new" else . end)</code>)</li>
+  <li><strong>yq</strong> — YAML only; no native rename flag; requires <code>yq e 'with_entries(select(.key == "old").key = "new")' file.yaml</code></li>
+  <li><strong>Python script</strong> — fine for one format, not eleven</li>
+</ul>
+
+<p>
+  DevBench parses the config structurally, renames the key, and re-serializes — preserving all other keys,
+  types, and (for YAML) comment metadata wherever possible.
+</p>
+
+<hr>
+
+<h2>Real-world use cases</h2>
+
+<h3>1. Kubernetes field migration</h3>
+
+<p>
+  Kubernetes deprecated <code>spec.template.spec.hostNetwork</code> in favor of structured networking in newer API versions.
+  Bulk-rename across your cluster manifests:
+</p>
+
+<pre><code># Rename in all deployment manifests
+for f in k8s/deployments/*.yaml; do
+  devbench cf "$f" --rename spec.replicas spec.replicaCount --in-place --backup .orig
+done</code></pre>
+
+<h3>2. Spring Boot YAML property migration</h3>
+
+<p>
+  Spring Boot 3 renamed <code>spring.datasource.url</code> to <code>spring.datasource.jdbc-url</code> for HikariCP.
+  Update all environment configs at once:
+</p>
+
+<pre><code>devbench cf src/main/resources/application.yaml \
+  --rename spring.datasource.url spring.datasource.jdbc-url \
+  --in-place</code></pre>
+
+<h3>3. Terraform variable refactor</h3>
+
+<p>
+  Rename an HCL variable across all <code>.tfvars</code> files when your module API changes:
+</p>
+
+<pre><code>for f in environments/**/*.tfvars; do
+  devbench cf "$f" --rename instance_count replica_count --in-place
+done</code></pre>
+
+<h3>4. Ansible role variable rename</h3>
+
+<p>
+  An Ansible role renamed <code>postgres_db</code> to <code>postgresql_database</code>. Update your inventory:
+</p>
+
+<pre><code>devbench cf inventory/group_vars/all.yaml \
+  --rename postgres_db postgresql_database \
+  --in-place --backup</code></pre>
+
+<h3>5. Move a key to a different parent (config restructure)</h3>
+
+<p>
+  Restructure a config from a flat layout to grouped namespaces:
+</p>
+
+<pre><code># Before: {db_host: "localhost", db_port: 5432}
+devbench cf config.json --rename db_host database.host --rename db_port database.port</code></pre>
+
+<h3>6. CI/CD pre-flight: verify rename succeeded</h3>
+
+<p>
+  Chain with <code>--assert</code> in a GitHub Actions step:
+</p>
+
+<pre><code>- name: Rename deprecated key
+  run: devbench cf app.yaml --rename legacy.endpoint api.url --in-place
+- name: Verify rename
+  run: devbench cf app.yaml --assert api.url=https://api.example.com</code></pre>
+
+<hr>
+
+<h2>Competitor comparison</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th>DevBench <code>--rename</code></th>
+      <th>yq</th>
+      <th>jq</th>
+      <th>dasel</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Native rename flag</td>
+      <td>✅ <code>--rename OLD NEW</code></td>
+      <td>❌ Complex expression required</td>
+      <td>❌ JSON only, function required</td>
+      <td>❌ No rename flag</td>
+    </tr>
+    <tr>
+      <td>YAML support</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>❌</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>TOML support</td>
+      <td>✅</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>HCL support</td>
+      <td>✅</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>❌</td>
+    </tr>
+    <tr>
+      <td>Move key to different parent</td>
+      <td>✅</td>
+      <td>Partial</td>
+      <td>Manual</td>
+      <td>❌</td>
+    </tr>
+    <tr>
+      <td>In-place edit with backup</td>
+      <td>✅ <code>--in-place --backup</code></td>
+      <td>✅ <code>-i</code></td>
+      <td>❌</td>
+      <td>✅ <code>-w</code></td>
+    </tr>
+    <tr>
+      <td>JSON output (scriptable)</td>
+      <td>✅ <code>--raw</code></td>
+      <td>❌</td>
+      <td>✅</td>
+      <td>❌</td>
+    </tr>
+    <tr>
+      <td>Formats supported</td>
+      <td>11</td>
+      <td>2 (YAML/JSON)</td>
+      <td>1 (JSON)</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <td>Offline</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>Price</td>
+      <td>$19 one-time</td>
+      <td>Free (OSS)</td>
+      <td>Free (OSS)</td>
+      <td>Free (OSS)</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2>Install</h2>
+
+<pre><code>pip install devbench
+devbench cf app.yaml --rename server.host server.hostname</code></pre>
+
+<p>Or install extras for HCL and XML:</p>
+
+<pre><code>pip install devbench[all]</code></pre>
+
+<h2>All <code>--rename</code> options</h2>
+
+<pre><code>devbench cf INPUT --rename OLD_PATH NEW_PATH [options]
+
+Options:
+  --in-place, -i        Edit the file in-place (requires a file path)
+  --backup [SUFFIX]     Save original to FILE.bak before overwriting
+  --to FORMAT           Output format (default: same as input)
+  --from FORMAT         Force input format (default: auto-detect)
+  --raw                 JSON output: {"success": true, "renamed_from": "...", "renamed_to": "..."}
+
+Dot-notation path examples:
+  server.host           Nested key
+  containers.0.image    List index
+  server\.port          Literal dot in key name (backslash-escape)
+
+Exit codes:
+  0   Rename succeeded
+  1   Key not found or path error</code></pre>
+
+<hr>
+
+<p>
+  <a href="https://naxiai.com/tools/devbench/">← Back to DevBench</a> |
+  <a href="/tools/devbench/forge/seo/diff-config-files.html">Diff config files →</a>
+</p>
+
+</main>
+</body>
+</html>

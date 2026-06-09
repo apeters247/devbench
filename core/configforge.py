@@ -1992,6 +1992,21 @@ def _delete_by_path(data, path: str):
         raise KeyError(f"cannot delete '{last}' from {type(node).__name__}")
 
 
+def _rename_by_path(data, old_path: str, new_path: str):
+    """Move the value at old_path to new_path (rename / move key).
+
+    Fetches the value, writes it to new_path (creating intermediate dicts as
+    needed via _set_by_path), then deletes old_path.  If old_path == new_path
+    this is a no-op.  Raises KeyError if old_path does not exist or if either
+    path cannot be traversed.
+    Use backslash-escaped dots (\\.) to address keys containing literal dots."""
+    if old_path == new_path:
+        return
+    value = _get_by_path(data, old_path)
+    _set_by_path(data, new_path, value)
+    _delete_by_path(data, old_path)
+
+
 def _flatten_dict(data, parent_key="", sep="."):
     """Collapse nested dicts into dotted keys to defeat XML-style verbosity.
 

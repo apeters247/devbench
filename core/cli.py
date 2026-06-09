@@ -97,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_cf_append(args)
     if args.command == "cf" and getattr(args, "delete", None):
         return _run_cf_delete(args)
+    if args.command == "cf" and getattr(args, "rename_paths", None):
+        return _run_cf_rename(args)
     if args.command == "cf" and getattr(args, "merge", None):
         return _run_cf_merge(args)
     if args.command == "cf" and getattr(args, "diff", None):
@@ -281,6 +283,11 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Example: --backup → file.yaml.bak; --backup .orig → file.yaml.orig")
             tool_p.add_argument("--delete", metavar="PATH", default=None,
                                 help="Delete a key by dot-notation path. Output defaults to input format.")
+            tool_p.add_argument("--rename", metavar=("OLD_PATH", "NEW_PATH"), nargs=2, dest="rename_paths",
+                                default=None,
+                                help="Rename/move a key: copies value at OLD_PATH to NEW_PATH then deletes OLD_PATH. "
+                                     "Use dot-notation paths. Combine with --in-place to edit the file. "
+                                     "Exit 0=success, 1=key not found. Use --raw for JSON output.")
             tool_p.add_argument("--merge", metavar="OVERLAY", default=None,
                                 help="Deep-merge OVERLAY file onto the base input. Output defaults to base format.")
             tool_p.add_argument("--list-merge", metavar="MODE", dest="list_merge", default="replace",
@@ -1415,6 +1422,73 @@ def _run_cf_delete(args) -> int:
     return EXIT_SUCCESS
 
 
+def _run_cf_rename(args) -> int:
+    """Rename/move a config key from OLD_PATH to NEW_PATH.
+
+    Reads the config, fetches the value at OLD_PATH, writes it to NEW_PATH
+    (creating intermediate dicts as needed), then deletes OLD_PATH.
+    Supports all 11 formats; outputs in input format by default.
+    Combine with --in-place to edit the file in-place with optional --backup.
+    --raw outputs JSON: {success, renamed_from, renamed_to}.
+    Exit 0 = success, exit 1 = key not found or path error.
+    """
+    from . import configforge as _cf
+    raw = getattr(args, "raw", False)
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        msg = f"error: {exc}"
+        if raw:
+            print(json.dumps({"success": False, "error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+    detected_fmt = parsed.get("format")
+    data = parsed.get("data", parsed)
+    old_path, new_path = args.rename_paths
+    try:
+        _cf._rename_by_path(data, old_path, new_path)
+    except KeyError as exc:
+        msg = f"error: {exc}"
+        if raw:
+            print(json.dumps({"success": False, "error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    if not to_fmt:
+        print("error: cannot determine output format; use --to", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        output_text = _cf.serialize(data, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        msg = f"error: {exc}"
+        if raw:
+            print(json.dumps({"success": False, "error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    if raw:
+        print(json.dumps({"success": True, "renamed_from": old_path, "renamed_to": new_path}))
+        return EXIT_SUCCESS
+    if getattr(args, "in_place", False):
+        if file_path is None:
+            print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+            return EXIT_ERROR
+        if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
+            return EXIT_ERROR
+    else:
+        sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
 def _run_cf_merge(args) -> int:
     from . import configforge as _cf
     content, file_path = _cf_read_file_or_content(args)
@@ -2298,7 +2372,7 @@ def _run_cf_unflatten(args) -> int:
 # ---------------------------------------------------------------------------
 
 _CF_FLAGS = (
-    "--to --from --get --set --append --delete --merge --list-merge "
+    "--to --from --get --set --append --delete --rename --merge --list-merge "
     "--in-place -i --backup --diff --validate --count --keys "
     "--recursive -R --pick --grep --grep-case-sensitive "
     "--flatten --unflatten --sep --env-expand "
@@ -2451,6 +2525,7 @@ _devbench() {{
                         '--set=[Set value: --set PATH VALUE]:path value:' \\
                         '--append=[Append value: --append PATH VALUE]:path value:' \\
                         '--delete=[Delete value at path]:path:' \\
+                        '--rename=[Rename key: OLD_PATH NEW_PATH]:old_path new_path:' \\
                         '--merge=[Merge overlay file]:file:_files' \\
                         '--list-merge=[List merge strategy]:mode:(replace merge append)' \\
                         '--diff=[Structural diff against file]:file:_files' \\

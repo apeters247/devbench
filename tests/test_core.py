@@ -2404,3 +2404,177 @@ def test_mask_completion_zsh_includes_flag(capsys):
     main(["completion", "zsh"])
     out = capsys.readouterr().out
     assert "--mask" in out
+
+
+# ---------------------------------------------------------------------------
+# --rename OLD_PATH NEW_PATH
+# ---------------------------------------------------------------------------
+
+def test_rename_basic_yaml(tmp_path, capsys):
+    """Rename a top-level key in a YAML file."""
+    from core.cli import main
+    f = tmp_path / "app.yaml"
+    f.write_text("host: localhost\nport: 8080\n")
+    result = main(["cf", str(f), "--rename", "host", "hostname"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "hostname: localhost" in out
+    assert "host:" not in out
+
+
+def test_rename_nested_key_yaml(tmp_path, capsys):
+    """Rename a nested key in YAML."""
+    from core.cli import main
+    f = tmp_path / "app.yaml"
+    f.write_text("server:\n  host: localhost\n  port: 8080\n")
+    result = main(["cf", str(f), "--rename", "server.host", "server.hostname"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "hostname: localhost" in out
+    assert "host:" not in out
+    assert "port: 8080" in out
+
+
+def test_rename_json_input(tmp_path, capsys):
+    """Rename key in JSON input."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"database": {"url": "postgres://localhost/db", "pool": 5}}')
+    result = main(["cf", str(f), "--rename", "database.url", "database.connection_string"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert "connection_string" in data["database"]
+    assert "url" not in data["database"]
+    assert data["database"]["connection_string"] == "postgres://localhost/db"
+
+
+def test_rename_cross_format_output(tmp_path, capsys):
+    """Rename key and output as different format."""
+    from core.cli import main
+    f = tmp_path / "app.yaml"
+    f.write_text("host: localhost\nport: 8080\n")
+    result = main(["cf", str(f), "--rename", "host", "hostname", "--to", "json"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["hostname"] == "localhost"
+    assert "host" not in data
+
+
+def test_rename_missing_key_exits_1(tmp_path, capsys):
+    """--rename with non-existent old_path exits 1."""
+    from core.cli import main
+    f = tmp_path / "app.yaml"
+    f.write_text("host: localhost\n")
+    result = main(["cf", str(f), "--rename", "nonexistent", "other"])
+    assert result == 1
+    err = capsys.readouterr().err
+    assert "error" in err.lower()
+
+
+def test_rename_raw_output_success(tmp_path, capsys):
+    """--rename --raw outputs JSON on success."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"old_key": "value"}')
+    result = main(["cf", str(f), "--rename", "old_key", "new_key", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["success"] is True
+    assert data["renamed_from"] == "old_key"
+    assert data["renamed_to"] == "new_key"
+
+
+def test_rename_raw_output_failure(tmp_path, capsys):
+    """--rename --raw outputs JSON on failure."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"key": "val"}')
+    result = main(["cf", str(f), "--rename", "missing", "other", "--raw"])
+    assert result == 1
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["success"] is False
+    assert "error" in data
+
+
+def test_rename_in_place(tmp_path):
+    """--rename --in-place modifies the file."""
+    from core.cli import main
+    f = tmp_path / "app.yaml"
+    f.write_text("host: localhost\nport: 8080\n")
+    result = main(["cf", str(f), "--rename", "host", "hostname", "--in-place"])
+    assert result == 0
+    content = f.read_text()
+    assert "hostname: localhost" in content
+    assert "host:" not in content
+
+
+def test_rename_move_to_different_parent(tmp_path, capsys):
+    """--rename can move a key to a different parent."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"a": {"x": 42}, "b": {}}')
+    result = main(["cf", str(f), "--rename", "a.x", "b.x"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert "x" not in data["a"]
+    assert data["b"]["x"] == 42
+
+
+def test_rename_same_path_noop(tmp_path, capsys):
+    """--rename with old_path == new_path is a no-op."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"key": "val"}')
+    result = main(["cf", str(f), "--rename", "key", "key"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["key"] == "val"
+
+
+def test_rename_toml_input(tmp_path, capsys):
+    """Rename key in TOML input."""
+    from core.cli import main
+    f = tmp_path / "app.toml"
+    f.write_text('[server]\nhost = "localhost"\nport = 8080\n')
+    result = main(["cf", str(f), "--rename", "server.host", "server.hostname"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "hostname" in out
+    assert "localhost" in out
+
+
+def test_rename_preserves_value_type(tmp_path, capsys):
+    """--rename preserves value type (int, bool, list)."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"count": 42, "enabled": true, "tags": ["a", "b"]}')
+    result = main(["cf", str(f), "--rename", "count", "num_items"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["num_items"] == 42
+    assert isinstance(data["num_items"], int)
+    assert data["enabled"] is True
+    assert data["tags"] == ["a", "b"]
+
+
+def test_rename_completion_bash_includes_flag(capsys):
+    """Shell completion includes --rename flag."""
+    from core.cli import main
+    main(["completion", "bash"])
+    out = capsys.readouterr().out
+    assert "--rename" in out
+
+
+def test_rename_completion_zsh_includes_flag(capsys):
+    """Shell completion includes --rename flag."""
+    from core.cli import main
+    main(["completion", "zsh"])
+    out = capsys.readouterr().out
+    assert "--rename" in out
