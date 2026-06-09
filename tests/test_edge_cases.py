@@ -220,11 +220,17 @@ def test_malformed_json_trailing_comma():
 
 
 def test_malformed_json_single_quotes():
-    assert not convert("{'a': 1}", "json")["success"]
+    # With JSON5 support, single quotes are now valid (auto-detected as json5)
+    r = convert("{'a': 1}", "json")
+    assert r["success"]
+    assert json.loads(r["output"]) == {"a": 1}
 
 
 def test_malformed_json_no_quotes():
-    assert not convert("{a: 1}", "json")["success"]
+    # With JSON5 support, unquoted keys are now valid (auto-detected as json5)
+    r = convert("{a: 1}", "json")
+    assert r["success"]
+    assert json.loads(r["output"]) == {"a": 1}
 
 
 def test_malformed_yaml_tab_indent():

@@ -109,7 +109,7 @@ def test_empty_input():
     assert r["error"]
 
 def test_supported_formats():
-    expected_formats = ["json", "jsonc", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties", "plist"]
+    expected_formats = ["json", "jsonc", "json5", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties", "plist"]
     assert set(SUPPORTED_FORMATS) == set(expected_formats)
 
 def test_convert_file(tmp_path):
@@ -2282,3 +2282,200 @@ def test_main_template_missing_file(tmp_path, capsys):
     rc = main([str(src), "--template", str(tmp_path / "nonexistent.tmpl")])
     assert rc != 0
     assert "error" in capsys.readouterr().err.lower()
+
+
+def test_detect_json5_with_single_quotes():
+    """JSON5 with single quotes should be detected as json5."""
+    text = "{ 'name': 'test', 'value': 42 }"
+    assert detect_format(text) == "json5"
+
+
+def test_detect_json5_with_unquoted_keys():
+    """JSON5 with unquoted keys should be detected as json5."""
+    text = "{ name: 'test', value: 42 }"
+    assert detect_format(text) == "json5"
+
+
+def test_detect_json5_mixed_features():
+    """JSON5 with unquoted keys and comments should be detected as json5."""
+    text = """{
+  // configuration
+  name: 'test',
+  value: 42
+}"""
+    assert detect_format(text) == "json5"
+
+
+def test_parse_json5_with_comments():
+    """JSON5 with comments should parse correctly."""
+    text = """{
+  // this is a comment
+  "name": "test",
+  "value": 42
+}"""
+    result = parse_text(text, "json5")
+    assert result["format"] == "json5"
+    assert result["data"]["name"] == "test"
+    assert result["data"]["value"] == 42
+
+
+def test_parse_json5_with_single_quotes():
+    """JSON5 with single quotes should parse correctly."""
+    text = "{ 'name': 'test', 'value': 42 }"
+    result = parse_text(text, "json5")
+    assert result["data"]["name"] == "test"
+    assert result["data"]["value"] == 42
+
+
+def test_parse_json5_with_trailing_commas():
+    """JSON5 with trailing commas should parse correctly."""
+    text = """{
+  "name": "test",
+  "items": [1, 2, 3,],
+}"""
+    result = parse_text(text, "json5")
+    assert result["data"]["name"] == "test"
+    assert result["data"]["items"] == [1, 2, 3]
+
+
+def test_convert_json5_to_yaml():
+    """JSON5 should convert to YAML correctly."""
+    text = "{ name: 'test', value: 42 }"
+    result = convert(text, "yaml")
+    assert result["success"]
+    parsed = yaml.safe_load(result["output"])
+    assert parsed == {"name": "test", "value": 42}
+
+
+def test_convert_json5_auto_detect():
+    """JSON5 should auto-detect and convert correctly."""
+    text = """{
+  // config
+  name: 'test',
+  value: 42,
+}"""
+    result = convert(text, "json")
+    assert result["success"]
+    parsed = json.loads(result["output"])
+    assert parsed["name"] == "test"
+    assert parsed["value"] == 42
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# --each KEY — extract a field from every list element
+# ══════════════════════════════════════════════════════════════════════════════
+
+def test_each_simple_string_field(tmp_path, capsys):
+    """Extract a string field from each list element."""
+    from core.cli import main as cli_main
+    src = tmp_path / "containers.yaml"
+    src.write_text("- name: nginx\n  image: nginx:latest\n- name: redis\n  image: redis:7\n")
+    rc = cli_main(["cf", str(src), "--each", "name", "--to", "json"])
+    assert rc == 0
+    import json
+    result = json.loads(capsys.readouterr().out)
+    assert result == ["nginx", "redis"]
+
+
+def test_each_simple_int_field(tmp_path, capsys):
+    """Extract an integer field from each list element."""
+    from core.cli import main as cli_main
+    src = tmp_path / "ports.yaml"
+    src.write_text("- port: 80\n  protocol: TCP\n- port: 443\n  protocol: TCP\n")
+    rc = cli_main(["cf", str(src), "--each", "port", "--to", "json", "--compact"])
+    assert rc == 0
+    import json
+    assert json.loads(capsys.readouterr().out.strip()) == [80, 443]
+
+
+def test_each_json_array_output(tmp_path, capsys):
+    """--each with --to json produces a JSON array."""
+    from core.cli import main as cli_main
+    src = tmp_path / "items.yaml"
+    src.write_text("- id: 1\n  name: foo\n- id: 2\n  name: bar\n")
+    rc = cli_main(["cf", str(src), "--each", "name", "--to", "json"])
+    assert rc == 0
+    import json
+    assert json.loads(capsys.readouterr().out) == ["foo", "bar"]
+
+
+def test_each_nested_dot_path(tmp_path, capsys):
+    """--each with a nested dot-path extracts deeply nested values."""
+    from core.cli import main as cli_main
+    src = tmp_path / "deploy.yaml"
+    src.write_text(
+        "containers:\n"
+        "  - metadata:\n      name: web\n    spec:\n      image: nginx\n"
+        "  - metadata:\n      name: cache\n    spec:\n      image: redis\n"
+    )
+    rc = cli_main(["cf", str(src), "--get", "containers", "--each", "metadata.name", "--to", "json"])
+    assert rc == 0
+    import json
+    assert json.loads(capsys.readouterr().out) == ["web", "cache"]
+
+
+def test_each_missing_key_skipped(tmp_path, capsys):
+    """Items missing the target key are silently omitted."""
+    from core.cli import main as cli_main
+    src = tmp_path / "mixed.yaml"
+    src.write_text("- name: a\n  port: 80\n- name: b\n- name: c\n  port: 443\n")
+    rc = cli_main(["cf", str(src), "--each", "port", "--to", "json"])
+    assert rc == 0
+    import json
+    assert json.loads(capsys.readouterr().out.strip()) == [80, 443]
+
+
+def test_each_with_select_filter(tmp_path, capsys):
+    """--each combined with --select filters before extracting."""
+    from core.cli import main as cli_main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: nginx\n  status: Running\n"
+        "- name: redis\n  status: Running\n"
+        "- name: debug\n  status: Pending\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "status=Running", "--each", "name", "--to", "json"])
+    assert rc == 0
+    import json
+    assert set(json.loads(capsys.readouterr().out)) == {"nginx", "redis"}
+
+
+def test_each_raw_scalar_one_per_line(tmp_path, capsys):
+    """--raw outputs scalar values one per line."""
+    from core.cli import main as cli_main
+    src = tmp_path / "names.yaml"
+    src.write_text("- name: a\n- name: b\n- name: c\n")
+    rc = cli_main(["cf", str(src), "--each", "name", "--raw"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip().splitlines() == ["a", "b", "c"]
+
+
+def test_each_non_list_exits_error(tmp_path):
+    """--each on non-list input returns error exit."""
+    from core.cli import main as cli_main
+    src = tmp_path / "scalar.yaml"
+    src.write_text("name: foo\nport: 8080\n")
+    rc = cli_main(["cf", str(src), "--each", "name"])
+    assert rc != 0
+
+
+def test_each_empty_list(tmp_path, capsys):
+    """--each on empty list outputs empty JSON array."""
+    from core.cli import main as cli_main
+    src = tmp_path / "empty.yaml"
+    src.write_text("[]\n")
+    rc = cli_main(["cf", str(src), "--each", "name", "--to", "json"])
+    assert rc == 0
+    import json
+    assert json.loads(capsys.readouterr().out.strip()) == []
+
+
+def test_each_json5_input(tmp_path, capsys):
+    """--each works when input is JSON5."""
+    from core.cli import main as cli_main
+    src = tmp_path / "services.json5"
+    src.write_text("[{name: 'alpha', port: 8080}, {name: 'beta', port: 9090}]")
+    rc = cli_main(["cf", str(src), "--from", "json5", "--each", "name", "--to", "json"])
+    assert rc == 0
+    import json
+    assert set(json.loads(capsys.readouterr().out)) == {"alpha", "beta"}

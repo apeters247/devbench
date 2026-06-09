@@ -1166,13 +1166,99 @@ def _strip_jsonc(text: str) -> str:
     return re.sub(r',(\s*[}\]])', r'\1', stripped)
 
 
+def _strip_json5(text: str) -> str:
+    """Convert JSON5 to JSON: strip comments, convert single quotes to double,
+    quote unquoted keys, remove trailing commas."""
+    # First strip comments and trailing commas like JSONC
+    text = _strip_jsonc(text)
+
+    result = []
+    i, n = 0, len(text)
+    in_string = False
+    string_char = None  # '"' or "'" for the active string type
+
+    while i < n:
+        ch = text[i]
+
+        if in_string:
+            # Handle escape sequences
+            if ch == '\\' and i + 1 < n:
+                result.append(ch)
+                result.append(text[i + 1])
+                i += 2
+                continue
+            # Check for string terminator
+            if ch == string_char:
+                # If we're in a single-quoted string, convert to double quote
+                if string_char == "'":
+                    result.append('"')
+                else:
+                    result.append(ch)
+                in_string = False
+                string_char = None
+                i += 1
+                continue
+            # Regular char in string
+            result.append(ch)
+            i += 1
+            continue
+
+        # Outside of strings: check for string start
+        if ch == '"':
+            in_string = True
+            string_char = '"'
+            result.append(ch)
+            i += 1
+            continue
+
+        if ch == "'":
+            # Start of single-quoted string: convert opening quote to double
+            in_string = True
+            string_char = "'"
+            result.append('"')
+            i += 1
+            continue
+
+        # Detect and quote unquoted keys (JSON5 feature)
+        # Look for pattern: { or , followed by spaces, then identifier, then :
+        if ch in ('{', ','):
+            # Scan ahead to find identifier
+            j = i + 1
+            while j < n and text[j] in (' ', '\t', '\n', '\r'):
+                j += 1
+
+            if j < n and (text[j].isalpha() or text[j] == '_' or text[j] == '$'):
+                # Found potential unquoted key
+                key_start = j
+                while j < n and (text[j].isalnum() or text[j] in ('_', '$')):
+                    j += 1
+                # Check if followed by colon
+                k = j
+                while k < n and text[k] in (' ', '\t'):
+                    k += 1
+                if k < n and text[k] == ':':
+                    # It's an unquoted key, quote it
+                    result.append(ch)
+                    result.append(text[i + 1:key_start])
+                    result.append('"')
+                    result.append(text[key_start:j])
+                    result.append('"')
+                    i = j
+                    continue
+
+        result.append(ch)
+        i += 1
+
+    return ''.join(result)
+
+
 def detect_format(text: str) -> str:
     """Detect config format from text content."""
     text = text.strip()
     if not text:
         return "unknown"
 
-    # JSON / JSONC: starts with { or [
+    # JSON / JSONC / JSON5: starts with { or [
     if text.startswith("{") or text.startswith("["):
         try:
             json.loads(text)
@@ -1183,7 +1269,12 @@ def detect_format(text: str) -> str:
                 json.loads(_strip_jsonc(text))
                 return "jsonc"
             except (json.JSONDecodeError, Exception):
-                pass
+                # Could be JSON5 (single quotes, unquoted keys, etc.)
+                try:
+                    json.loads(_strip_json5(text))
+                    return "json5"
+                except (json.JSONDecodeError, Exception):
+                    pass
 
     # HCL: terraform-style block headers — `name "label" "label2" {` or a bare
     # `name {`, optionally alongside top-level `key = value` lines. This brace
@@ -1250,7 +1341,7 @@ def detect_format(text: str) -> str:
     if ":" in text or text.strip().startswith("---"):
         for line in text.strip().split("\n"):
             line = line.strip()
-            if re.match(r"^[\w\-\"]+:(?:\s|$)", line) or line == "---":
+            if re.match(r"^(?:- )?[\w\-\"]+:(?:\s|$)", line) or line == "---":
                 try:
                     if HAS_YAML:
                         # safe_load rejects multi-doc YAML, so try safe_load_all as fallback
@@ -1482,6 +1573,9 @@ def _parse_text_impl(text: str, fmt: str = None, **options) -> dict:
 
     elif fmt == "jsonc":
         return {"data": json.loads(_strip_jsonc(text)), "format": "jsonc"}
+
+    elif fmt == "json5":
+        return {"data": json.loads(_strip_json5(text)), "format": "json5"}
 
     elif fmt == "yaml" and HAS_YAML:
         # Handle multi-document YAML (--- separator)
@@ -2169,7 +2263,7 @@ def _plist_prepare(data):
 
 def serialize(data, fmt: str, **options) -> str:
     """Convert Python data to config format string."""
-    if fmt in ("json", "jsonc"):
+    if fmt in ("json", "jsonc", "json5"):
         indent = options.get("indent", 2)
         sort_keys = options.get("sort_keys", False)
         sort_keys_reverse = options.get("sort_keys_reverse", False)
@@ -2911,8 +3005,8 @@ def schema_validate(data, schema: dict) -> dict:
 
 
 # ── SUPPORTED FORMATS ──
-SUPPORTED_FORMATS = ["json", "jsonc", "yaml", "toml", "xml", "csv", "ini", "env", "hcl",
-                     "properties", "plist"]
+SUPPORTED_FORMATS = ["json", "jsonc", "json5", "yaml", "toml", "xml", "csv", "ini", "env",
+                     "hcl", "properties", "plist"]
 
 # Telemetry opt-out: set DEVBENCH_NO_TELEMETRY=1 (canonical; the misspelled
 # DEVEBENCH_NO_TELEMETRY is also accepted for backward compatibility)

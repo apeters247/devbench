@@ -1828,7 +1828,7 @@ def test_completion_bash_contains_key_fragments(capsys):
     assert "_devbench_complete" in out
     assert "complete -F _devbench_complete devbench" in out
     assert "--to" in out
-    assert "json jsonc yaml" in out
+    assert "json jsonc json5 yaml" in out
     assert "bash zsh fish" in out
 
 
@@ -1949,7 +1949,7 @@ def test_check_env_formats_all_keys(capsys):
     from core.cli import main
     main(["cf", "--check-env", "--raw"])
     data = json.loads(capsys.readouterr().out)
-    expected = {"json", "jsonc", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties", "plist"}
+    expected = {"json", "jsonc", "json5", "yaml", "toml", "xml", "csv", "ini", "env", "hcl", "properties", "plist"}
     assert set(data["formats"].keys()) == expected
 
 

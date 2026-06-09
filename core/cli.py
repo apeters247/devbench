@@ -88,6 +88,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "keys", False):
         return _run_cf_keys(args)
 
+    # cf --each  → extract a field from every list element (check before --select and --get)
+    if args.command == "cf" and getattr(args, "each_key", None):
+        return _run_cf_each(args)
+
     # cf --select  → filter list items by field condition (check before --get)
     if args.command == "cf" and getattr(args, "select_expr", None):
         return _run_cf_select(args)
@@ -356,6 +360,16 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Combine with --get to navigate to the list first. "
                                      "Example: devbench cf pods.yaml --select status=Running  "
                                      "         devbench cf deploy.yaml --get spec.containers --select name=nginx")
+            tool_p.add_argument("--each", metavar="KEY", default=None, dest="each_key",
+                                help="Extract KEY from each element of a list and output the resulting list. "
+                                     "Equivalent to jq '[.[] | .key]' or yq '.[].key'. "
+                                     "KEY uses dot-notation (e.g. metadata.name, spec.ports.0.port). "
+                                     "Items missing the key are omitted. "
+                                     "Combine with --get to navigate to the list first, "
+                                     "or with --select to filter before extracting. "
+                                     "Exit 0=ok, 1=input is not a list. "
+                                     "Example: devbench cf deploy.yaml --get spec.containers --each name  "
+                                     "         devbench cf pods.yaml --select status=Running --each metadata.name")
             tool_p.add_argument("--grep", metavar="PATTERN", default=None,
                                 help="Search config keys and values matching a regex pattern (case-insensitive by default). "
                                      "Flattens the config to dot-notation paths and filters by PATTERN. "
@@ -2777,6 +2791,112 @@ def _run_cf_select(args) -> int:
     return EXIT_SUCCESS
 
 
+def _run_cf_each(args) -> int:
+    """Extract a field (KEY) from every element in a list and output the results.
+
+    Equivalent to jq '[.[] | .key]' or yq '.[].key'.  Navigates to --get
+    PATH first if provided.  Optionally applies --select filtering before
+    extraction so you can chain: --select status=Running --each metadata.name.
+    Items that do not contain KEY are silently omitted.
+
+    Examples:
+        devbench cf deploy.yaml --get spec.containers --each name
+        devbench cf pods.yaml --select status=Running --each metadata.name
+        devbench cf services.yaml --each spec.ports.0.port --to json
+    """
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    detected_fmt = parsed.get("format", "yaml")
+
+    # Navigate to path via --get if specified
+    if getattr(args, "get", None):
+        try:
+            data = _cf._get_by_path(data, args.get)
+        except (KeyError, IndexError) as exc:
+            default = getattr(args, "get_default", None)
+            if default is not None:
+                sys.stdout.write(default + "\n")
+                return EXIT_SUCCESS
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
+    # Apply --select filter before --each if both are present
+    if getattr(args, "select_expr", None):
+        expr = args.select_expr
+        if "!=" in expr:
+            field, raw_val = expr.split("!=", 1)
+            negate = True
+        elif "=" in expr:
+            field, raw_val = expr.split("=", 1)
+            negate = False
+        else:
+            print(f"error: invalid --select expression {expr!r}; expected FIELD=VALUE or FIELD!=VALUE",
+                  file=sys.stderr)
+            return EXIT_ERROR
+        coerced_val = _cf._coerce_set_value(raw_val)
+
+        def _item_matches(item):
+            if not isinstance(item, dict):
+                return False
+            try:
+                return (_cf._get_by_path(item, field) == coerced_val) != negate
+            except (KeyError, IndexError, TypeError):
+                return False
+
+        if isinstance(data, list):
+            data = [item for item in data if _item_matches(item)]
+
+    if not isinstance(data, list):
+        print("error: --each requires a list; input is not a list (use --get PATH to navigate to one)",
+              file=sys.stderr)
+        return EXIT_ERROR
+
+    key = args.each_key
+    extracted = []
+    for item in data:
+        try:
+            extracted.append(_cf._get_by_path(item, key))
+        except (KeyError, IndexError, TypeError):
+            pass  # silently skip items missing the key
+
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    indent = getattr(args, "indent", 2)
+    compact = getattr(args, "compact", False)
+    raw = getattr(args, "raw", False)
+
+    # Scalar list with --raw: one value per line
+    if raw and all(not isinstance(v, (dict, list)) for v in extracted):
+        for v in extracted:
+            sys.stdout.write(str(v) + "\n")
+        return EXIT_SUCCESS
+
+    if to_fmt in ("yaml", "yml"):
+        import yaml as _yaml
+        output_text = _yaml.dump(extracted, default_flow_style=False, allow_unicode=True, indent=indent)
+    elif to_fmt in ("json", "jsonc", "json5"):
+        output_text = (json.dumps(extracted) if compact else json.dumps(extracted, indent=indent)) + "\n"
+    else:
+        try:
+            output_text = _cf.serialize(extracted, to_fmt, **_cf_serialize_options(args))
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
 def _run_cf_template(args) -> int:
     """Render a template file using config values as context.
 
@@ -2892,7 +3012,7 @@ _CF_FLAGS = (
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
 )
-_CF_FORMATS = "json jsonc yaml toml xml csv ini env hcl properties plist"
+_CF_FORMATS = "json jsonc json5 yaml toml xml csv ini env hcl properties plist"
 _SUBCOMMANDS = (
     "detect json base64 jwt hash url timestamp uuid diff "
     "cf token chunk list batch license completion"
