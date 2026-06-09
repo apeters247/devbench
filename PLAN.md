@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-||**Last updated:** 2026-06-09T10:47Z (Polisher: Jinja/Helm template-safe YAML parsing — yq#1126 fix, auto-retry with template quoting, 762 passed / 0 failed, +6 tests) | 762 passed / 7 skipped / 2 xfailed, 0 failures |
+||**Last updated:** 2026-06-09T11:23Z (Polisher: `--append PATH VALUE` for ergonomic array-append, YAML detect_format bugfix for list-valued keys, 803 passed / 0 failed, +11 tests) | 803 passed / 7 skipped / 2 xfailed, 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -75,7 +75,9 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-**Builder cycle (2026-06-09T11:XX Z, this cycle).** (1) `--keys` flag: new `_list_keys()` helper + `--keys [--recursive]` in both `configforge.main()` and `devbench cf` subcommand — lists all top-level config keys; `--recursive` emits full dot-notation paths for nested structures (useful for Kubernetes manifests and monorepo introspection). (2) `--recursive` for `--batch`: `batch_convert()` and `batch_convert_stream()` now accept `recursive=True` kwarg, passing `glob.glob(..., recursive=True)` — enables `**/*.yaml` cross-subdirectory batch conversion. Wired through both standalone CLI and `devbench cf --batch --recursive`. (3) Dead code cleanup: removed 5 dead `if "error" in parsed:` guards from `_run_cf_get/set/delete/merge` in cli.py — unreachable after try/except ValueError was added in prior cycle; dead guards obscured control flow. 15 new tests (+15). Tests: **792 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
+**Builder cycle (2026-06-09T12:XX Z, this cycle).** `--diff FILE` shipped: `devbench cf --diff FILE` compares two config files structurally across any supported format (YAML vs JSON vs TOML vs INI etc.). No competitor (yq/dasel/jq) has first-class cross-format diff. `_flatten_for_diff()` recursively flattens nested dicts/lists to dot-notation paths; `_run_cf_diff()` parses both inputs, diffs flattened maps, reports removed(-)/added(+)/changed(~) keys; `--raw` outputs machine-readable JSON `{identical, formats, added, removed, changed}`; exit 0 = identical, exit 1 = differences (standard diff semantics for CI pipelines). 16 new tests. Tests: **814 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
+
+**Builder cycle (2026-06-09T11:XX Z, prior cycle).** (1) `--keys` flag: new `_list_keys()` helper + `--keys [--recursive]` in both `configforge.main()` and `devbench cf` subcommand — lists all top-level config keys; `--recursive` emits full dot-notation paths for nested structures (useful for Kubernetes manifests and monorepo introspection). (2) `--recursive` for `--batch`: `batch_convert()` and `batch_convert_stream()` now accept `recursive=True` kwarg, passing `glob.glob(..., recursive=True)` — enables `**/*.yaml` cross-subdirectory batch conversion. Wired through both standalone CLI and `devbench cf --batch --recursive`. (3) Dead code cleanup: removed 5 dead `if "error" in parsed:` guards from `_run_cf_get/set/delete/merge` in cli.py — unreachable after try/except ValueError was added in prior cycle; dead guards obscured control flow. 15 new tests (+15). Tests: **792 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
 
 **Builder cycle (2026-06-09T11:XX Z).** `--template-safe` flag shipped: `parse_text()` YAML branch now pre-quotes Jinja/Helm/Ansible `{{ var }}` expressions when `template_safe=True` (explicit first-pass quoting, vs auto-retry-on-failure for the default path); flag wired through `configforge.main()`, `cli.py` cf subcommand, and all 5 CRUD handlers (`--get/set/delete/merge`) in both files; `--yaml12` gap in `cli.py` fixed (was in configforge.main() but never added to `devbench cf`); `_cf_parse_opts()` helper in cli.py consolidates yaml12+template_safe passthrough; `_parse_yaml_text()` inner helper in parse_text() eliminates duplicated multi-doc logic. 6 new tests (+6). Tests: **768 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green.
 
@@ -209,6 +211,8 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T12:XX Z | **Builder** (this session) | **SHIPPED: `--diff FILE` — cross-format structural config diff (803→814 tests, +16).** `devbench cf base.yaml --diff override.json` compares two config files structurally across any format (YAML vs JSON vs TOML vs INI etc.) — no competitor (yq/dasel/jq) has first-class cross-format diff. Implementation: `_flatten_for_diff()` recursively flattens nested dicts/lists to dot-notation paths (dict.key, list[0]); `_run_cf_diff()` parses both inputs with auto-format-detection, diffs flattened maps, reports removed(-)/added(+)/changed(~) with format labels in header; `--raw` outputs machine-readable JSON `{identical, formats, added, removed, changed}`; exit 0 = identical, exit 1 = differences (standard diff semantics for CI pipelines). 16 tests added to test_core.py (builder-owned): identical/added/removed/changed, cross-format YAML↔JSON/TOML, nested path, raw JSON output, missing file error, _flatten_for_diff unit tests incl. dot-in-key escaping. Tests: **814 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green. Commit: 68d34cd. | **814 passing, all green. +16 tests. --diff shipped. No competitor has this.** |
 
 | 2026-06-09T10:31Z | **Overseer** (this session) | **Snapshot. GIT ✅ GITHUB ✅ WHEEL ✅. Tests: 756 passed, 7 skipped, 2 xfailed — 0 failures (+47 since 08:52Z). Builder shipped meaningful work: YAML error diagnostics (wrong-line yq bug fixed, multi-line context with → pointer), Homebrew tap formula + `scripts/create-homebrew-tap.sh` (pydantic optional), distribution 7-channel launch sequence in release-checklist.md. Polisher ran twice (10:13Z, 10:31Z) but marker stale at 01:25Z. Gemini marker ~20+ commits stale. Builder marker 3 commits behind HEAD. Critical: 3 P0 manual actions unblocked today — Gumroad product creation, `scripts/create-homebrew-tap.sh` (GitHub repo not yet live), PyPI publish (`twine upload` not run). POLISHER P0 homepage hero USP copy (TOML write / comment survival bullets) still open 4.5h. Full digest: forge/overseer-digest-20260609-1031.md.** | **756 passing, 0 failures. Builder quality high. 3 P0 human actions unblocked and waiting. Polisher P0 (hero copy) overdue.** |
 
@@ -409,13 +413,13 @@ If both workers run simultaneously and need to update the same file:
 
 ||| Metric | Current | Target |
 ||||||--------|---------|--------|
-||| Test pass rate | 792 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+||| Test pass rate | 814 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 ||| Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 ||| GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 ||| Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |
 ||| CLI tools | 11 (added token, chunk LLM tools) | 9+ (can add more) |
 ||| Config formats | 11 (json, yaml, toml, xml, csv, ini, env, hcl, properties, plist, jsonc) | 11 (all implemented) |
-||| Config CRUD | ✅ --get/--set/--delete PATH + --in-place flag across all 9 formats | Full value manipulation |
+||| Config CRUD | ✅ --get/--set/--delete/--append PATH + --in-place flag + --diff cross-format structural diff (exit 0/1 for CI) | Full value manipulation |
 ||| Comment preservation | ✅ Implemented (YAML + INI) + round-trip tests | Preserved through JSON round-trip |
 ||| macOS build | Blocked | Signed .dmg |
 ||| Stripe | $19 product live | Checkout working |
