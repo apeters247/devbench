@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Get Config Value with Default Fallback — devbench cf --get --default | ConfigForge</title>
+  <meta name="description" content="Read a config key and return a default when the path is missing. devbench cf config.yaml --get timeout --default 30 — safer than 2>/dev/null || echo 30 in CI scripts.">
+  <meta property="og:title" content="Get Config Value with Default Fallback — devbench cf --get --default | ConfigForge">
+  <meta property="og:description" content="Return a fallback when a config key is missing. One flag replaces yq's // empty operator and shell error-suppression hacks. Works across YAML, JSON, TOML and 8 more formats.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/get-default-value-cli.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Get Config Value with Default Fallback — devbench cf --get --default">
+  <meta name="twitter:description" content="Safe config key lookup with fallback. No more 2>/dev/null || echo patterns in your CI scripts.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config reader with safe default fallback. Read keys from YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC — return a default when missing.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<main>
+
+<h1>Get a Config Value with a Default Fallback — <code>devbench cf --get --default</code></h1>
+
+<p>
+  Read a key from any config file and return a fallback value when the path doesn't exist.
+  One flag replaces fragile shell patterns and yq's <code>// empty</code> operator.
+</p>
+
+<h2>The Problem: Missing Keys Break CI Scripts</h2>
+
+<p>Getting a config value with a safe default in bash is ugly:</p>
+<pre><code># Fragile: suppresses all errors, not just missing-key errors
+TIMEOUT=$(yq '.server.timeout' config.yaml 2>/dev/null || echo 30)
+
+# Even worse with jq
+TIMEOUT=$(cat config.json | jq -r '.server.timeout // 30')
+
+# yq's // empty syntax is easy to forget
+TIMEOUT=$(yq '.server.timeout // "30"' config.yaml)</code></pre>
+
+<p>Each tool has a different syntax. All suppress errors broadly. None works across formats.</p>
+
+<h2>The Solution: <code>devbench cf --get --default</code></h2>
+
+<pre><code># Return 30 when server.timeout is missing — exit 0 always
+TIMEOUT=$(devbench cf config.yaml --get server.timeout --default 30)
+
+# Works with any format
+RETRIES=$(devbench cf config.toml --get retry.count --default 3)
+DB_HOST=$(devbench cf settings.ini --get database.host --default localhost)
+PORT=$(devbench cf .env --get APP_PORT --default 8080)</code></pre>
+
+<p>
+  When the path exists: returns the value, exits 0.<br>
+  When the path is missing: returns <code>--default VALUE</code>, exits 0.<br>
+  No error suppression needed. Safe in <code>set -e</code> scripts.
+</p>
+
+<h2>GitHub Actions: Safe Config Extraction</h2>
+
+<pre><code># .github/workflows/deploy.yaml
+- name: Read timeout config
+  run: |
+    TIMEOUT=$(devbench cf app-config.yaml --get server.timeout --default 60)
+    WORKERS=$(devbench cf app-config.yaml --get server.workers --default 4)
+    echo "TIMEOUT=$TIMEOUT" >> $GITHUB_ENV
+    echo "WORKERS=$WORKERS" >> $GITHUB_ENV</code></pre>
+
+<p>No more <code>|| true</code> workarounds. The deploy step never fails because a key was added later.</p>
+
+<h2>Kubernetes: Default Port When Not Configured</h2>
+
+<pre><code>PORT=$(devbench cf values.yaml --get service.port --default 8080)
+echo "Using port: $PORT"
+kubectl expose deployment my-app --port=$PORT</code></pre>
+
+<h2>Terraform: Default Region</h2>
+
+<pre><code>REGION=$(devbench cf terraform.tfvars --get aws_region --default us-east-1)
+terraform plan -var="aws_region=$REGION"</code></pre>
+
+<h2>Raw Output for Shell Scripting</h2>
+
+<pre><code># --raw removes JSON wrapper — bare string for direct use
+HOST=$(devbench cf config.yaml --get database.host --default localhost --raw)
+echo "Connecting to: $HOST"</code></pre>
+
+<h2>Versus yq / jq / dasel</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>yq</th>
+      <th>jq (JSON only)</th>
+      <th>devbench</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Get with string default</td>
+      <td><code>.key // "default"</code></td>
+      <td><code>.key // "default"</code></td>
+      <td><code>--get key --default default</code></td>
+    </tr>
+    <tr>
+      <td>Get with numeric default</td>
+      <td><code>.key // 30</code></td>
+      <td><code>.key // 30</code></td>
+      <td><code>--get key --default 30</code></td>
+    </tr>
+    <tr>
+      <td>Safe exit code (set -e)</td>
+      <td>Always 0</td>
+      <td>Always 0</td>
+      <td>Always 0 when --default set</td>
+    </tr>
+    <tr>
+      <td>Works on TOML</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>Works on INI / .env</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>11 formats</td>
+      <td>❌ YAML/JSON only</td>
+      <td>❌ JSON only</td>
+      <td>✅</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Combine with --select for Array Defaults</h2>
+
+<pre><code># Get a nested value with default, then filter
+devbench cf pods.yaml --get metadata.labels --default '{}' --raw</code></pre>
+
+<h2>Install</h2>
+
+<pre><code>pip install devbench</code></pre>
+
+<p>
+  Works on Python 3.10–3.13. Supports 11 config formats: YAML, JSON, TOML, JSONC, XML,
+  CSV, INI, .env, HCL, .properties, plist.
+</p>
+
+</main>
+</body>
+</html>

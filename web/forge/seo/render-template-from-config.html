@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="file">
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Render Templates from Config Files — devbench cf --template | ConfigForge</title>
+  <meta name="description" content="Use config values as template variables with one flag. devbench cf config.yaml --template deploy.tmpl — supports ${KEY} and {{ key }} syntax from YAML, JSON, TOML, and 8 more formats.">
+  <meta property="og:title" content="Render Templates from Config Files — devbench cf --template | ConfigForge">
+  <meta property="og:description" content="Render templates using config values as variables. No Ansible, no Helm, no complex toolchain. Works with Python string.Template or Jinja2 syntax across 11 config formats.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/render-template-from-config.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Render Templates from Config Files — devbench cf --template">
+  <meta name="twitter:description" content="Turn any config file into template variables. Deploy scripts, manifests, and nginx configs rendered from YAML in one command.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI template renderer. Use config values from YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC as template variables.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<main>
+
+<h1>Render Templates from Config Files — <code>devbench cf --template</code></h1>
+
+<p>
+  Use any config file as the data source for a template.
+  Supports <code>${KEY}</code> (Python string.Template) and <code>{{ key }}</code> (Jinja2).
+  Works with YAML, JSON, TOML, and 8 more formats — no Helm, no Ansible required.
+</p>
+
+<h2>The Problem: Injecting Config Values Into Scripts</h2>
+
+<p>Injecting config values into a deploy script today requires jq + envsubst + multiple steps:</p>
+<pre><code># Extract values first
+export APP_PORT=$(yq '.server.port' config.yaml)
+export APP_HOST=$(yq '.server.host' config.yaml)
+export DB_HOST=$(yq '.database.host' config.yaml)
+
+# Then substitute into template
+envsubst < deploy.sh.tmpl > deploy.sh</code></pre>
+
+<p>That's two tools, three export lines per value, and YAML-only input.</p>
+
+<h2>The Solution: <code>devbench cf --template</code></h2>
+
+<pre><code># Use YAML config to render a template
+devbench cf config.yaml --template deploy.tmpl > deploy.sh
+
+# Use TOML config to render an nginx config
+devbench cf app.toml --template nginx.conf.tmpl > /etc/nginx/sites-available/app.conf
+
+# Use JSON for a Kubernetes manifest
+devbench cf values.json --template deployment.tmpl | kubectl apply -f -</code></pre>
+
+<h2>Template Syntax: ${KEY} (Python string.Template)</h2>
+
+<p>Always available — no extra dependencies:</p>
+<pre><code># deploy.tmpl
+#!/bin/bash
+HOST=${server_host}
+PORT=${server_port}
+DB=${database_host}
+
+echo "Deploying to ${HOST}:${PORT}"
+psql -h ${DB} -U ${database_user}</code></pre>
+
+<pre><code># config.yaml
+server:
+  host: prod.example.com
+  port: 8080
+database:
+  host: db.internal
+  user: appuser</code></pre>
+
+<pre><code>devbench cf config.yaml --template deploy.tmpl</code></pre>
+
+<pre><code>#!/bin/bash
+HOST=prod.example.com
+PORT=8080
+DB=db.internal
+
+echo "Deploying to prod.example.com:8080"
+psql -h db.internal -U appuser</code></pre>
+
+<p>Dot-paths become underscores: <code>server.host</code> → <code>${server_host}</code>. Uppercase variants also work: <code>${SERVER_HOST}</code>.</p>
+
+<h2>Template Syntax: {{ key }} (Jinja2)</h2>
+
+<p>Install Jinja2 for richer templates:</p>
+<pre><code>pip install jinja2</code></pre>
+
+<pre><code># nginx.conf.tmpl
+server {
+    listen {{ server_port }};
+    server_name {{ server_host }};
+
+    location / {
+        proxy_pass http://{{ backend_host }}:{{ backend_port }};
+    }
+}</code></pre>
+
+<pre><code>devbench cf config.yaml --template nginx.conf.tmpl > /etc/nginx/sites-available/app.conf</code></pre>
+
+<h2>GitHub Actions: Dynamic Workflow Variables</h2>
+
+<pre><code># workflow-config.yaml
+deploy:
+  environment: production
+  region: us-east-1
+  replicas: 3
+  image_tag: v2.1.0</code></pre>
+
+<pre><code># deploy.tmpl
+environment: ${deploy_environment}
+region: ${deploy_region}
+spec:
+  replicas: ${deploy_replicas}
+  template:
+    spec:
+      containers:
+      - image: my-app:${deploy_image_tag}</code></pre>
+
+<pre><code>devbench cf workflow-config.yaml --template deploy.tmpl | kubectl apply -f -</code></pre>
+
+<h2>TOML Config → Shell Export Script</h2>
+
+<pre><code># pyproject.toml has your version
+devbench cf pyproject.toml --template release.sh.tmpl > release.sh</code></pre>
+
+<h2>Key Conventions</h2>
+
+<ul>
+  <li>Nested keys flatten to underscores: <code>database.host</code> → <code>${database_host}</code></li>
+  <li>Both <code>${database_host}</code> and <code>${DATABASE_HOST}</code> work</li>
+  <li>If Jinja2 is installed, <code>{{ database_host }}</code> and <code>{{ DATABASE_HOST }}</code> work too</li>
+  <li>Falls back to Python string.Template if Jinja2 is not installed</li>
+</ul>
+
+<h2>Versus envsubst / Helm / Ansible</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Config formats</th>
+      <th>Template syntax</th>
+      <th>Dependency</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>envsubst</td>
+      <td>Shell env only</td>
+      <td><code>$VAR</code></td>
+      <td>gettext</td>
+    </tr>
+    <tr>
+      <td>Helm</td>
+      <td>YAML values only</td>
+      <td><code>{{ .Values.key }}</code></td>
+      <td>Kubernetes cluster</td>
+    </tr>
+    <tr>
+      <td>Ansible</td>
+      <td>YAML only</td>
+      <td>Jinja2</td>
+      <td>Ansible (large)</td>
+    </tr>
+    <tr>
+      <td>devbench</td>
+      <td>11 formats</td>
+      <td><code>${key}</code> + Jinja2</td>
+      <td>pip install devbench</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Install</h2>
+
+<pre><code>pip install devbench
+# For Jinja2 templates:
+pip install devbench jinja2</code></pre>
+
+<p>
+  Works on Python 3.10–3.13. Supports 11 config formats: YAML, JSON, TOML, JSONC, XML,
+  CSV, INI, .env, HCL, .properties, plist.
+</p>
+
+</main>
+</body>
+</html>

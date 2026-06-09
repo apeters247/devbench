@@ -2030,6 +2030,93 @@ service1:
     assert "retries: 3" in output
 
 
+def test_json_sort_keys_reverse():
+    """--sort-keys-reverse sorts dict keys in reverse alphabetical order (yq#2390)."""
+    from core.configforge import convert
+
+    data = '{"zebra": 1, "apple": 2, "mango": 3}'
+    result = convert(data, "json", "json", sort_keys_reverse=True)
+    assert result["success"]
+    output = result["output"]
+
+    # Keys should appear in reverse order: zebra, mango, apple
+    zebra_pos = output.find('"zebra"')
+    mango_pos = output.find('"mango"')
+    apple_pos = output.find('"apple"')
+    assert zebra_pos < mango_pos < apple_pos, "Keys not in reverse order"
+
+
+def test_yaml_sort_keys_reverse():
+    """--sort-keys-reverse sorts YAML keys in reverse alphabetical order."""
+    from core.configforge import convert
+
+    yaml_input = """zebra: 1
+apple: 2
+mango: 3
+"""
+    result = convert(yaml_input, "yaml", "yaml", sort_keys_reverse=True)
+    assert result["success"]
+    output = result["output"]
+
+    # Keys should appear in reverse order: zebra, mango, apple
+    zebra_pos = output.find("zebra:")
+    mango_pos = output.find("mango:")
+    apple_pos = output.find("apple:")
+    assert zebra_pos < mango_pos < apple_pos, "Keys not in reverse order"
+
+
+def test_toml_sort_keys_reverse():
+    """--sort-keys-reverse sorts TOML keys in reverse alphabetical order."""
+    from core.configforge import convert
+
+    toml_input = """zebra = 1
+apple = 2
+mango = 3
+"""
+    result = convert(toml_input, "toml", "toml", sort_keys_reverse=True)
+    assert result["success"]
+    output = result["output"]
+
+    # Keys should appear in reverse order: zebra, mango, apple
+    zebra_pos = output.find("zebra")
+    mango_pos = output.find("mango")
+    apple_pos = output.find("apple")
+    assert zebra_pos < mango_pos < apple_pos, "Keys not in reverse order"
+
+
+def test_sort_keys_reverse_nested():
+    """--sort-keys-reverse applies recursively to nested dicts."""
+    from core.configforge import convert
+
+    data = '{"z": {"z2": 1, "a2": 2}, "a": {"z1": 1, "a1": 2}}'
+    result = convert(data, "json", "json", sort_keys_reverse=True, indent=2)
+    assert result["success"]
+    output = result["output"]
+
+    # Top level: z before a (reverse order)
+    z_pos = output.find('"z"')
+    a_pos = output.find('"a"')
+    assert z_pos < a_pos, "Top-level keys not in reverse order"
+
+
+def test_csv_sort_keys_reverse():
+    """--sort-keys-reverse sorts CSV fieldnames in reverse alphabetical order."""
+    from core.configforge import convert
+
+    data = '[{"zebra": 1, "apple": 2, "mango": 3}]'
+    result = convert(data, "csv", "json", sort_keys_reverse=True)
+    assert result["success"]
+    output = result["output"]
+
+    # Header should have columns in reverse order: zebra, mango, apple
+    lines = output.strip().split('\n')
+    header = lines[0]
+    zebra_pos = header.find("zebra")
+    mango_pos = header.find("mango")
+    apple_pos = header.find("apple")
+    assert zebra_pos < mango_pos < apple_pos, "CSV columns not in reverse order"
+
+
 # ═══════════════════════════════════════════════
 # JSON SCHEMA VALIDATION — cf --schema
 # ═══════════════════════════════════════════════
@@ -3002,3 +3089,469 @@ def test_shell_export_completion_includes_flag(capsys):
     from core.cli import main
     main(["completion", "bash"])
     assert "--shell-export" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# --compact flag tests
+# ---------------------------------------------------------------------------
+
+def test_compact_yaml_to_json_raw(tmp_path, capsys):
+    """--compact --raw produces minified JSON from YAML input."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("name: myapp\nversion: 2\n")
+    result = main(["cf", str(f), "--to", "json", "--compact", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    # Must be valid JSON and have no newlines (compact)
+    data = json.loads(out)
+    assert data["name"] == "myapp"
+    assert data["version"] == 2
+    assert "\n" not in out
+
+
+def test_compact_json_to_json_raw(tmp_path, capsys):
+    """--compact --raw on JSON input produces minified JSON."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{\n  "a": 1,\n  "b": 2\n}')
+    result = main(["cf", str(f), "--to", "json", "--compact", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == '{"a":1,"b":2}'
+
+
+def test_compact_no_spaces_in_output(tmp_path, capsys):
+    """--compact output has no space after : or ,."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"x": 1, "y": [2, 3]}')
+    result = main(["cf", str(f), "--to", "json", "--compact", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert ": " not in out
+    assert ", " not in out
+
+
+def test_compact_shortflag_c(tmp_path, capsys):
+    """-c is an alias for --compact."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("key: value\n")
+    result = main(["cf", str(f), "--to", "json", "-c", "-r"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert data["key"] == "value"
+    assert "\n" not in out
+
+
+def test_compact_without_raw_compacts_output_field(tmp_path, capsys):
+    """--compact without --raw compacts the output field in the JSON envelope."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("a: 1\nb: 2\n")
+    result = main(["cf", str(f), "--to", "json", "--compact"])
+    assert result == 0
+    envelope = json.loads(capsys.readouterr().out)
+    # Output field should be compact JSON
+    output_field = envelope.get("output", "")
+    assert "\n" not in output_field
+    assert ": " not in output_field
+    inner = json.loads(output_field)
+    assert inner["a"] == 1
+
+
+def test_compact_toml_to_json(tmp_path, capsys):
+    """--compact works when converting TOML to JSON."""
+    from core.cli import main
+    f = tmp_path / "cfg.toml"
+    f.write_text('[db]\nhost = "localhost"\nport = 5432\n')
+    result = main(["cf", str(f), "--to", "json", "--compact", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert data["db"]["host"] == "localhost"
+    assert "\n" not in out
+
+
+def test_compact_nested_config(tmp_path, capsys):
+    """--compact correctly minifies nested structures."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"server": {"host": "localhost", "port": 8080}, "debug": true}')
+    result = main(["cf", str(f), "--to", "json", "--compact", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == '{"server":{"host":"localhost","port":8080},"debug":true}'
+
+
+def test_compact_completion_includes_flag(capsys):
+    """Shell completion includes --compact flag."""
+    from core.cli import main
+    main(["completion", "bash"])
+    assert "--compact" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# --template flag tests
+# ---------------------------------------------------------------------------
+
+def test_template_basic_substitution(tmp_path, capsys):
+    """--template substitutes ${key} placeholders from config."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("host: localhost\nport: 5432\n")
+    tmpl = tmp_path / "tmpl.txt"
+    tmpl.write_text("connect to ${host}:${port}")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "connect to localhost:5432" in out
+
+
+def test_template_dotpath_becomes_underscore(tmp_path, capsys):
+    """Nested keys: database.host becomes ${database_host}."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("database:\n  host: db.example.com\n  port: 5432\n")
+    tmpl = tmp_path / "tmpl.txt"
+    tmpl.write_text("DB=${database_host}:${database_port}")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "DB=db.example.com:5432" in out
+
+
+def test_template_uppercase_variant(tmp_path, capsys):
+    """UPPERCASE key variants work: ${DATABASE_HOST}."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("database:\n  host: localhost\n")
+    tmpl = tmp_path / "tmpl.txt"
+    tmpl.write_text("export DATABASE_HOST=${DATABASE_HOST}")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export DATABASE_HOST=localhost" in out
+
+
+def test_template_boolean_as_string(tmp_path, capsys):
+    """Boolean config values render as 'true'/'false' in template."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("debug: true\nssl: false\n")
+    tmpl = tmp_path / "tmpl.txt"
+    tmpl.write_text("DEBUG=${debug} SSL=${ssl}")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "DEBUG=true" in out
+    assert "SSL=false" in out
+
+
+def test_template_numeric_value(tmp_path, capsys):
+    """Numeric config values are converted to strings in template."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("workers: 4\ntimeout: 30\n")
+    tmpl = tmp_path / "tmpl.txt"
+    tmpl.write_text("WORKERS=${workers} TIMEOUT=${timeout}")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "WORKERS=4" in out
+    assert "TIMEOUT=30" in out
+
+
+def test_template_missing_key_leaves_placeholder(tmp_path, capsys):
+    """Missing keys are left as-is (safe_substitute behavior)."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("name: myapp\n")
+    tmpl = tmp_path / "tmpl.txt"
+    tmpl.write_text("NAME=${name} VERSION=${missing_key}")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "NAME=myapp" in out
+    assert "${missing_key}" in out
+
+
+def test_template_json_input(tmp_path, capsys):
+    """--template works with JSON config input."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text('{"app": "myapp", "version": "1.2.3"}')
+    tmpl = tmp_path / "tmpl.txt"
+    tmpl.write_text("app=${app} ver=${version}")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "app=myapp" in out
+    assert "ver=1.2.3" in out
+
+
+def test_template_toml_input(tmp_path, capsys):
+    """--template works with TOML config input."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.toml"
+    cfg.write_text('[server]\nhost = "prod.example.com"\nport = 443\n')
+    tmpl = tmp_path / "tmpl.txt"
+    tmpl.write_text("server=${server_host}:${server_port}")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "server=prod.example.com:443" in out
+
+
+def test_template_file_not_found(tmp_path, capsys):
+    """--template exits 1 if template file does not exist."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("key: value\n")
+    result = main(["cf", str(cfg), "--template", str(tmp_path / "nonexistent.tmpl")])
+    assert result == 1
+    assert "not found" in capsys.readouterr().err.lower()
+
+
+def test_template_multiple_substitutions(tmp_path, capsys):
+    """--template handles multiple occurrences of the same key."""
+    from core.cli import main
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text("service: web\n")
+    tmpl = tmp_path / "tmpl.txt"
+    tmpl.write_text("service=${service}\nSERVICE=${SERVICE}\nSERVICE_LABEL=${service}")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "service=web" in out
+    assert "SERVICE=WEB" in out or "SERVICE=web" in out  # uppercase key value is str(value), not uppercased
+    assert out.count("web") >= 2  # appears multiple times
+
+
+def test_template_envfile_pattern(tmp_path, capsys):
+    """--template can generate .env files from YAML config."""
+    from core.cli import main
+    cfg = tmp_path / "app.yaml"
+    cfg.write_text("database:\n  url: postgres://localhost/mydb\napp:\n  secret: abc123\n")
+    tmpl = tmp_path / "dotenv.tmpl"
+    tmpl.write_text("DATABASE_URL=${database_url}\nAPP_SECRET=${app_secret}\n")
+    result = main(["cf", str(cfg), "--template", str(tmpl)])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "DATABASE_URL=postgres://localhost/mydb" in out
+    assert "APP_SECRET=abc123" in out
+
+
+def test_template_completion_includes_flag(capsys):
+    """Shell completion includes --template flag."""
+    from core.cli import main
+    main(["completion", "bash"])
+    assert "--template" in capsys.readouterr().out
+
+
+# ── --get --default: fallback value when key is missing ───────────────────────
+
+def test_cf_get_default_when_key_missing(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("host: localhost\n")
+    rc = main(["cf", str(f), "--get", "timeout", "--default", "30"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "30"
+
+
+def test_cf_get_default_not_used_when_key_exists(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("timeout: 60\n")
+    rc = main(["cf", str(f), "--get", "timeout", "--default", "30"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "60"
+
+
+def test_cf_get_no_default_missing_key_still_errors(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("host: localhost\n")
+    rc = main(["cf", str(f), "--get", "timeout"])
+    assert rc != 0
+
+
+def test_cf_get_default_nested_path_missing(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("server:\n  host: localhost\n")
+    rc = main(["cf", str(f), "--get", "server.port", "--default", "8080"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "8080"
+
+
+def test_cf_get_default_with_json_input(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.json"
+    f.write_text('{"host": "localhost"}')
+    rc = main(["cf", str(f), "--get", "port", "--default", "3000"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "3000"
+
+
+def test_cf_get_default_empty_string(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("host: localhost\n")
+    rc = main(["cf", str(f), "--get", "missing", "--default", ""])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == ""
+
+
+def test_cf_get_default_with_raw_flag(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("host: localhost\n")
+    rc = main(["cf", str(f), "--get", "missing", "--default", "hello world", "--raw"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "hello world"
+
+
+def test_cf_get_default_toml_input(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.toml"
+    f.write_text("[server]\nhost = \"localhost\"\n")
+    rc = main(["cf", str(f), "--get", "server.port", "--default", "5432"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "5432"
+
+
+def test_cf_get_default_completion_includes_flag(capsys):
+    from core.cli import main
+    main(["completion", "bash"])
+    assert "--default" in capsys.readouterr().out
+
+
+# ── --select: filter list items by field=value condition ──────────────────────
+
+def test_cf_select_basic_list(tmp_path, capsys):
+    import yaml
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("- name: nginx\n  port: 80\n- name: redis\n  port: 6379\n")
+    rc = main(["cf", str(f), "--select", "name=nginx"])
+    assert rc == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert isinstance(data, list)
+    assert len(data) == 1
+    assert data[0]["name"] == "nginx"
+
+
+def test_cf_select_with_get(tmp_path, capsys):
+    import yaml
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text(
+        "spec:\n  containers:\n"
+        "  - name: nginx\n    image: nginx:1.21\n"
+        "  - name: redis\n    image: redis:7\n"
+    )
+    rc = main(["cf", str(f), "--get", "spec.containers", "--select", "name=nginx"])
+    assert rc == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert len(data) == 1
+    assert data[0]["image"] == "nginx:1.21"
+
+
+def test_cf_select_no_match_exit_one(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("- name: nginx\n  port: 80\n")
+    rc = main(["cf", str(f), "--select", "name=redis"])
+    assert rc == 1
+
+
+def test_cf_select_negation(tmp_path, capsys):
+    import yaml
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("- name: nginx\n  port: 80\n- name: redis\n  port: 6379\n")
+    rc = main(["cf", str(f), "--select", "name!=nginx"])
+    assert rc == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert len(data) == 1
+    assert data[0]["name"] == "redis"
+
+
+def test_cf_select_integer_field(tmp_path, capsys):
+    import yaml
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("- name: web\n  replicas: 3\n- name: db\n  replicas: 1\n")
+    rc = main(["cf", str(f), "--select", "replicas=3"])
+    assert rc == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert len(data) == 1
+    assert data[0]["name"] == "web"
+
+
+def test_cf_select_boolean_field(tmp_path, capsys):
+    import yaml
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("- name: svc1\n  enabled: true\n- name: svc2\n  enabled: false\n")
+    rc = main(["cf", str(f), "--select", "enabled=true"])
+    assert rc == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert len(data) == 1
+    assert data[0]["name"] == "svc1"
+
+
+def test_cf_select_multiple_matches(tmp_path, capsys):
+    import yaml
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text(
+        "- name: a\n  env: prod\n"
+        "- name: b\n  env: staging\n"
+        "- name: c\n  env: prod\n"
+    )
+    rc = main(["cf", str(f), "--select", "env=prod"])
+    assert rc == 0
+    data = yaml.safe_load(capsys.readouterr().out)
+    assert len(data) == 2
+    assert {d["name"] for d in data} == {"a", "c"}
+
+
+def test_cf_select_json_input(tmp_path, capsys):
+    import json as _json
+    from core.cli import main
+    f = tmp_path / "c.json"
+    f.write_text('[{"id": 1, "role": "admin"}, {"id": 2, "role": "user"}]')
+    rc = main(["cf", str(f), "--select", "role=admin", "--to", "json"])
+    assert rc == 0
+    data = _json.loads(capsys.readouterr().out)
+    assert len(data) == 1
+    assert data[0]["id"] == 1
+
+
+def test_cf_select_not_a_list_errors(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("host: localhost\nport: 8080\n")
+    rc = main(["cf", str(f), "--select", "host=localhost"])
+    assert rc != 0
+
+
+def test_cf_select_raw_outputs_first_item(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("- name: nginx\n  port: 80\n- name: redis\n  port: 6379\n")
+    rc = main(["cf", str(f), "--select", "name=nginx", "--raw"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "nginx" in out
+
+
+def test_cf_select_completion_includes_flag(capsys):
+    from core.cli import main
+    main(["completion", "bash"])
+    assert "--select" in capsys.readouterr().out

@@ -88,6 +88,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "keys", False):
         return _run_cf_keys(args)
 
+    # cf --select  → filter list items by field condition (check before --get)
+    if args.command == "cf" and getattr(args, "select_expr", None):
+        return _run_cf_select(args)
+
     # cf CRUD / merge ops — read input themselves (file path or stdin)
     if args.command == "cf" and getattr(args, "get", None):
         return _run_cf_get(args)
@@ -133,6 +137,10 @@ def main(argv: list[str] | None = None) -> int:
     # cf --path-exists  → check whether a path exists in the config
     if args.command == "cf" and getattr(args, "path_exists", None):
         return _run_cf_path_exists(args)
+
+    # cf --template  → render a template file using config as context
+    if args.command == "cf" and getattr(args, "template_file", None):
+        return _run_cf_template(args)
 
     # cf --check-env  → show environment info (no stdin needed)
     if args.command == "cf" and getattr(args, "check_env", False):
@@ -273,6 +281,8 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--template-safe", action="store_true", dest="template_safe",
                                 help="Pre-quote Jinja/Helm/Ansible {{ var }} values in YAML before parsing")
             tool_p.add_argument("--sort-keys", action="store_true", help="Sort keys in output")
+            tool_p.add_argument("--sort-keys-reverse", action="store_true", dest="sort_keys_reverse",
+                                help="Sort keys in reverse order (yq#2390 alternative to sort_keys(.) | reverse)")
             tool_p.add_argument("--no-infer-dates", action="store_true", help="Keep ISO-8601 date strings as strings (TOML)")
             tool_p.add_argument("--null-handling", default="skip", choices=["skip", "comment", "empty", "error"],
                                 help="How to represent null/None in TOML (default: skip)")
@@ -280,6 +290,10 @@ def _build_parser() -> argparse.ArgumentParser:
                                 help="Extract a value by dot-notation path (e.g. server.port). "
                                      "Prints YAML-safe scalar or JSON for dicts/lists. "
                                      "Use top-level --raw / -r for bare string output.")
+            tool_p.add_argument("--default", metavar="VALUE", default=None, dest="get_default",
+                                help="Return VALUE when --get path does not exist instead of erroring. "
+                                     "Exit 0 when the default is used. "
+                                     "Example: devbench cf config.yaml --get timeout --default 30")
             tool_p.add_argument("--set", metavar=("PATH", "VALUE"), nargs=2, dest="set_kv",
                                 help="Set a value by dot-notation path. Value parsed as JSON (booleans, numbers, null); strings need no quoting.")
             tool_p.add_argument("--append", metavar=("PATH", "VALUE"), nargs=2, dest="append_kv",
@@ -333,6 +347,15 @@ def _build_parser() -> argparse.ArgumentParser:
                                 help="Substitute ${VAR} and $VAR references in config values with live environment variables. "
                                      "Missing vars are left unchanged. Works across all 11 formats. "
                                      "Example: APP_PORT=8080 devbench cf config.yaml --env-expand --to json")
+            tool_p.add_argument("--select", metavar="FIELD=VALUE", default=None, dest="select_expr",
+                                help="Filter list items by field condition (equality or negation). "
+                                     "FIELD=VALUE keeps items where item[FIELD] == VALUE. "
+                                     "FIELD!=VALUE keeps items where item[FIELD] != VALUE. "
+                                     "Values coerced to int/bool/null for comparison. "
+                                     "Exit 0=matches found, 1=no matches (grep semantics). "
+                                     "Combine with --get to navigate to the list first. "
+                                     "Example: devbench cf pods.yaml --select status=Running  "
+                                     "         devbench cf deploy.yaml --get spec.containers --select name=nginx")
             tool_p.add_argument("--grep", metavar="PATTERN", default=None,
                                 help="Search config keys and values matching a regex pattern (case-insensitive by default). "
                                      "Flattens the config to dot-notation paths and filters by PATTERN. "
@@ -394,6 +417,18 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Keys are uppercased and dots/dashes replaced with underscores. "
                                      "Values are shell-quoted. Combine with --flatten for nested configs. "
                                      "Example: source <(devbench cf config.yaml --flatten --shell-export)")
+            tool_p.add_argument("--compact", "-c", action="store_true", dest="compact",
+                                help="Output compact/minified JSON (no whitespace). "
+                                     "Works with --to json or when output is JSON. "
+                                     "Combine with --raw/-r to get just the compact JSON string. "
+                                     "Example: devbench cf config.yaml --to json --compact --raw | jq .")
+            tool_p.add_argument("--template", metavar="FILE", default=None, dest="template_file",
+                                help="Render a template file using config values as context. "
+                                     "Use ${KEY} syntax (Python string.Template, always available) or "
+                                     "{{ key }} syntax (Jinja2, if installed). "
+                                     "Dot-paths become underscores: database.host → ${database_host}. "
+                                     "Uppercase variants also available: ${DATABASE_HOST}. "
+                                     "Example: devbench cf app.yaml --template deploy.tmpl > deploy.sh")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -498,12 +533,32 @@ def _emit_output(result_str: str, args: argparse.Namespace) -> None:
     """Emit tool output to stdout."""
     raw = getattr(args, "raw", False)
     pretty = getattr(args, "pretty", False)
+    compact = getattr(args, "compact", False)
 
     if raw:
         # Try to extract just the output field from JSON wrapper
         try:
             parsed = json.loads(result_str)
-            print(parsed.get("output", result_str))
+            output_str = parsed.get("output", result_str)
+        except (json.JSONDecodeError, TypeError):
+            output_str = result_str
+        if compact:
+            try:
+                output_str = json.dumps(json.loads(output_str), separators=(",", ":"), ensure_ascii=False)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        print(output_str)
+        return
+
+    if compact:
+        try:
+            parsed = json.loads(result_str)
+            output_field = parsed.get("output", "")
+            try:
+                parsed["output"] = json.dumps(json.loads(output_field), separators=(",", ":"), ensure_ascii=False)
+            except (json.JSONDecodeError, TypeError):
+                pass
+            print(json.dumps(parsed, ensure_ascii=False))
         except (json.JSONDecodeError, TypeError):
             print(result_str)
         return
@@ -674,6 +729,8 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
         options["template_safe"] = True
     if hasattr(args, "sort_keys") and args.sort_keys:
         options["sort_keys"] = True
+    if hasattr(args, "sort_keys_reverse") and args.sort_keys_reverse:
+        options["sort_keys_reverse"] = True
     if hasattr(args, "no_infer_dates") and args.no_infer_dates:
         options["infer_dates"] = False
     if hasattr(args, "null_handling"):
@@ -760,6 +817,8 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
         options["preserve_comments"] = False
     if hasattr(args, "sort_keys") and args.sort_keys:
         options["sort_keys"] = True
+    if hasattr(args, "sort_keys_reverse") and args.sort_keys_reverse:
+        options["sort_keys_reverse"] = True
     if hasattr(args, "no_infer_dates") and args.no_infer_dates:
         options["infer_dates"] = False
     if hasattr(args, "null_handling"):
@@ -1282,6 +1341,8 @@ def _cf_serialize_options(args) -> dict:
         opts["indent"] = args.indent
     if getattr(args, "sort_keys", False):
         opts["sort_keys"] = True
+    if getattr(args, "sort_keys_reverse", False):
+        opts["sort_keys_reverse"] = True
     if getattr(args, "no_comments", False):
         opts["preserve_comments"] = False
     return opts
@@ -1315,6 +1376,10 @@ def _run_cf_get(args) -> int:
     try:
         val = _cf._get_by_path(data, args.get)
     except (KeyError, IndexError) as exc:
+        default = getattr(args, "get_default", None)
+        if default is not None:
+            sys.stdout.write(default + "\n")
+            return EXIT_SUCCESS
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
     sys.stdout.write(_cf._format_get_output(val, raw=getattr(args, "raw", False)) + "\n")
@@ -2618,19 +2683,212 @@ def _run_cf_shell_export(args) -> int:
     return EXIT_SUCCESS
 
 
+def _run_cf_select(args) -> int:
+    """Filter list items by a field=value or field!=value condition.
+
+    The input (or the value at --get PATH) must be a list. Each item is kept
+    if item[FIELD] matches VALUE (or does not match for !=). Value is coerced
+    to int/bool/null for comparison. Exit 0=matches, 1=no matches.
+
+    Examples:
+        devbench cf pods.yaml --select status=Running
+        devbench cf deploy.yaml --get spec.containers --select name=nginx
+        devbench cf services.yaml --select enabled!=false --to json
+    """
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    detected_fmt = parsed.get("format", "yaml")
+
+    if getattr(args, "get", None):
+        try:
+            data = _cf._get_by_path(data, args.get)
+        except (KeyError, IndexError) as exc:
+            default = getattr(args, "get_default", None)
+            if default is not None:
+                sys.stdout.write(default + "\n")
+                return EXIT_SUCCESS
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
+    if not isinstance(data, list):
+        print("error: --select requires a list; input is not a list (use --get PATH to navigate to one)",
+              file=sys.stderr)
+        return EXIT_ERROR
+
+    expr = args.select_expr
+    if "!=" in expr:
+        field, raw_val = expr.split("!=", 1)
+        negate = True
+    elif "=" in expr:
+        field, raw_val = expr.split("=", 1)
+        negate = False
+    else:
+        print(f"error: invalid --select expression {expr!r}; expected FIELD=VALUE or FIELD!=VALUE",
+              file=sys.stderr)
+        return EXIT_ERROR
+
+    coerced_val = _cf._coerce_set_value(raw_val)
+
+    def _item_matches(item):
+        if not isinstance(item, dict):
+            return False
+        try:
+            item_val = _cf._get_by_path(item, field)
+        except (KeyError, IndexError, TypeError):
+            return False
+        match = (item_val == coerced_val)
+        return (not match) if negate else match
+
+    filtered = [item for item in data if _item_matches(item)]
+
+    if not filtered:
+        return EXIT_ERROR  # exit 1 = no matches (grep semantics)
+
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    indent = getattr(args, "indent", 2)
+    compact = getattr(args, "compact", False)
+
+    # serialize() treats Python lists as multi-doc YAML streams, so handle
+    # YAML and JSON directly here to produce proper sequence output.
+    if to_fmt in ("yaml", "yml"):
+        import yaml as _yaml
+        output_text = _yaml.dump(filtered, default_flow_style=False, allow_unicode=True, indent=indent)
+    elif to_fmt in ("json", "jsonc"):
+        output_text = (json.dumps(filtered) if compact else json.dumps(filtered, indent=indent)) + "\n"
+    else:
+        try:
+            output_text = _cf.serialize(filtered, to_fmt, **_cf_serialize_options(args))
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
+def _run_cf_template(args) -> int:
+    """Render a template file using config values as context.
+
+    Template syntax:
+      ${key} or $key  — Python string.Template (built-in, always available)
+      {{ key }}       — Jinja2 (if jinja2 package is installed)
+
+    Dot-path keys are available with dots replaced by underscores:
+      database.host → ${database_host}  or  ${DATABASE_HOST}
+
+    The full nested config dict is also available as ``config`` in Jinja2:
+      {{ config.database.host }}
+
+    Examples:
+        devbench cf app.yaml --template deploy.tmpl > deploy.sh
+        devbench cf secrets.yaml --template .env.tmpl > .env
+        devbench cf config.json --from json --template nginx.conf.tmpl > nginx.conf
+    """
+    import re
+    import string as _string
+    from . import configforge as _cf
+
+    template_path = args.template_file
+
+    try:
+        template_text = Path(template_path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"error: template file not found: {template_path}", file=sys.stderr)
+        return EXIT_ERROR
+    except OSError as exc:
+        print(f"error: cannot read template file: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(
+            content,
+            fmt=None if from_fmt == "auto" else from_fmt,
+            **_cf_parse_opts(args),
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+
+    # Flatten to dot-notation for template variables
+    flat = _cf._flatten_dict(data, sep=".") if isinstance(data, dict) else {}
+
+    def _to_str(v) -> str:
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        return str(v)
+
+    # Build context: both lower and UPPER variants
+    context: dict = {}
+    for k, v in flat.items():
+        str_val = _to_str(v)
+        lower_key = re.sub(r"[^a-z0-9]", "_", k.lower())
+        upper_key = re.sub(r"[^A-Z0-9]", "_", k.upper())
+        context[lower_key] = str_val
+        context[upper_key] = str_val
+
+    # Try Jinja2 if template contains {{ or {%
+    use_jinja2 = "{{" in template_text or "{%" in template_text
+    if use_jinja2:
+        try:
+            import jinja2
+
+            env = jinja2.Environment(
+                undefined=jinja2.Undefined,
+                keep_trailing_newline=True,
+            )
+            tmpl = env.from_string(template_text)
+            result = tmpl.render(config=data, **context)
+            print(result, end="")
+            return EXIT_SUCCESS
+        except ImportError:
+            pass  # fall through to string.Template
+        except jinja2.TemplateError as exc:
+            print(f"error: Jinja2 template rendering failed: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
+    # Fall back to Python string.Template (${key} and $key syntax)
+    try:
+        tmpl = _string.Template(template_text)
+        result = tmpl.safe_substitute(context)
+    except (KeyError, ValueError) as exc:
+        print(f"error: template substitution failed: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    print(result, end="")
+    return EXIT_SUCCESS
+
+
 # ---------------------------------------------------------------------------
 # Shell completion
 # ---------------------------------------------------------------------------
 
 _CF_FLAGS = (
-    "--to --from --get --set --append --delete --rename --merge --list-merge "
+    "--to --from --get --default --set --append --delete --rename --merge --list-merge "
     "--in-place -i --backup --diff --validate --count --type --keys "
-    "--recursive -R --pick --grep --grep-case-sensitive "
+    "--recursive -R --pick --select --grep --grep-case-sensitive "
     "--flatten --unflatten --sep --env-expand "
-    "--batch --stream --output-dir --sort-keys --indent "
+    "--batch --stream --output-dir --sort-keys --sort-keys-reverse --indent "
     "--flatten-xml --no-comments --yaml12 --template-safe "
     "--null-handling --list-formats --check-env --schema --mask --mask-value --assert "
-    "--path-exists --shell-export "
+    "--path-exists --shell-export --compact -c --template "
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
 )
@@ -2774,6 +3032,8 @@ _devbench() {{
                         '--to=[Output format]:format:({_CF_FORMATS})' \\
                         '--from=[Input format (auto-detect)]:format:({_CF_FORMATS})' \\
                         '--get=[Get value at dotted path]:path:' \\
+                        '--default=[Fallback when --get path is missing]:value:' \\
+                        '--select=[Filter list by FIELD=VALUE or FIELD!=VALUE condition]:expr:' \\
                         '--set=[Set value: --set PATH VALUE]:path value:' \\
                         '--append=[Append value: --append PATH VALUE]:path value:' \\
                         '--delete=[Delete value at path]:path:' \\
@@ -2793,11 +3053,12 @@ _devbench() {{
                         '--flatten[Flatten nested keys to dotted notation]' \\
                         '--unflatten[Expand dotted keys back to nested]' \\
                         '--sep=[Key separator (default .)]:sep:' \\
-                        '--env-expand[Expand \${{VAR}} references]' \\
+                        '--env-expand[Expand ${{VAR}} references]' \\
                         '--batch[Treat input as glob pattern]' \\
                         '--stream[Streaming batch mode (memory-efficient)]' \\
                         '--output-dir=[Output directory for batch]:dir:_directories' \\
                         '--sort-keys[Sort keys alphabetically]' \\
+                        '--sort-keys-reverse[Sort keys in reverse alphabetical order]' \\
                         '--in-place[Edit file in-place]' \\
                         '-i[Edit file in-place]' \\
                         '--backup=[Backup suffix before in-place edit]:suffix:' \\
@@ -2813,6 +3074,11 @@ _devbench() {{
                         '--mask=[Regex pattern to redact matching key values]:pattern:' \\
                         '--mask-value=[Replacement text for masked values]:text:' \\
                         '--assert=[Assert PATH=VALUE (exit 0=pass, 1=fail)]:assertion:' \\
+                        '--path-exists=[Check if a path exists in the config]:path:' \\
+                        '--shell-export[Output as shell export KEY=VALUE statements]' \\
+                        '--compact[Compact/minified JSON output (no whitespace)]' \\
+                        '-c[Compact/minified JSON output (no whitespace)]' \\
+                        '--template=[Render template file using config as context]:template:_files' \\
                         '--serve[Launch the web UI]' \\
                         '--port=[Web UI port (default 8080)]:port:' \\
                         '--api[Launch JSON HTTP API]' \\
@@ -2896,7 +3162,7 @@ complete -c devbench -n __devbench_seen_cf -l grep-case-sensitive  -d 'Case-sens
 complete -c devbench -n __devbench_seen_cf -l flatten    -d 'Flatten nested keys to dotted notation'
 complete -c devbench -n __devbench_seen_cf -l unflatten  -d 'Expand dotted keys back to nested'
 complete -c devbench -n __devbench_seen_cf -l sep        -d 'Key separator' -r -f -a '. __'
-complete -c devbench -n __devbench_seen_cf -l env-expand -d 'Expand \${{VAR}} env references'
+complete -c devbench -n __devbench_seen_cf -l env-expand -d 'Expand ${{VAR}} env references'
 complete -c devbench -n __devbench_seen_cf -l sort-keys  -d 'Sort keys alphabetically'
 
 # cf: batch flags
@@ -2924,6 +3190,11 @@ complete -c devbench -n __devbench_seen_cf -l schema       -d 'JSON Schema file 
 complete -c devbench -n __devbench_seen_cf -l mask         -d 'Redact values for matching key names (regex)'  -r
 complete -c devbench -n __devbench_seen_cf -l mask-value   -d 'Replacement text for masked values'  -r
 complete -c devbench -n __devbench_seen_cf -l assert       -d 'Assert PATH=VALUE (exit 0=pass, 1=fail)'  -r
+complete -c devbench -n __devbench_seen_cf -l path-exists  -d 'Check if path exists in config (exit 0/1)'  -r
+complete -c devbench -n __devbench_seen_cf -l shell-export -d 'Output as shell export KEY=VALUE statements'
+complete -c devbench -n __devbench_seen_cf -l compact      -d 'Compact/minified JSON output (no whitespace)'
+complete -c devbench -n __devbench_seen_cf -s c            -d 'Compact/minified JSON output (no whitespace)'
+complete -c devbench -n __devbench_seen_cf -l template     -d 'Render template file using config as context'  -r -F
 complete -c devbench -n __devbench_seen_cf -l serve        -d 'Launch the web UI'
 complete -c devbench -n __devbench_seen_cf -l port         -d 'Web UI port (default 8080)'  -r
 complete -c devbench -n __devbench_seen_cf -l api          -d 'Launch JSON HTTP API'

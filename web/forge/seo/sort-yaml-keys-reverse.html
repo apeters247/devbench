@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Sort YAML / JSON Keys in Reverse Order — devbench cf --sort-keys-reverse | ConfigForge</title>
+  <meta name="description" content="Sort config keys in reverse alphabetical order with one flag. devbench cf config.yaml --sort-keys-reverse — replaces yq's sort_keys(.) | to_entries | reverse pattern across 11 formats.">
+  <meta property="og:title" content="Sort YAML / JSON Keys in Reverse Order — devbench cf --sort-keys-reverse | ConfigForge">
+  <meta property="og:description" content="Reverse-sort keys in any config format. One flag replaces complex yq/jq pipelines. Works on YAML, JSON, TOML, INI, .env, HCL and 5 more formats.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/sort-yaml-keys-reverse.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Sort YAML / JSON Keys in Reverse Order — devbench cf --sort-keys-reverse">
+  <meta name="twitter:description" content="Reverse-sort config keys in YAML, JSON, TOML and 8 more formats. No yq expressions needed.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config key sorter. Sort keys in reverse alphabetical order across YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<main>
+
+<h1>Sort YAML / JSON Keys in Reverse Order — <code>devbench cf --sort-keys-reverse</code></h1>
+
+<p>
+  Sort all keys in a config file in reverse alphabetical order with a single flag.
+  Works across 11 formats — no yq expressions, no jq pipelines.
+</p>
+
+<h2>The Problem: Reverse-Sorting Keys in yq Is Awkward</h2>
+
+<p>yq has no <code>sort_keys_reverse()</code> function (see <a href="https://github.com/mikefarah/yq/issues/2390">yq#2390</a>). The workaround involves multiple pipes:</p>
+<pre><code># yq: reverse-sort top-level keys only (misses nested keys)
+yq '. | to_entries | sort_by(.key) | reverse | from_entries' config.yaml
+
+# jq equivalent (JSON only, also misses nested)
+jq '. | to_entries | sort_by(.key) | reverse | from_entries' config.json</code></pre>
+
+<p>Neither approach recurses into nested objects. Both require remembering a multi-step pipeline.</p>
+
+<h2>The Solution: <code>devbench cf --sort-keys-reverse</code></h2>
+
+<pre><code># Reverse-sort all keys (recursively) in a YAML file
+devbench cf config.yaml --sort-keys-reverse
+
+# Same for JSON
+devbench cf config.json --sort-keys-reverse
+
+# Convert YAML → TOML with keys reverse-sorted
+devbench cf config.yaml --to toml --sort-keys-reverse
+
+# Reverse-sort and write back in-place
+devbench cf config.yaml --sort-keys-reverse --in-place</code></pre>
+
+<p><code>--sort-keys-reverse</code> sorts all keys at every nesting level, not just the top level.</p>
+
+<h2>Example: Reverse-Sorted Kubernetes Deployment</h2>
+
+<p>Input <code>deploy.yaml</code>:</p>
+<pre><code>apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app</code></pre>
+
+<pre><code>devbench cf deploy.yaml --sort-keys-reverse</code></pre>
+
+<pre><code>spec:
+  selector:
+    matchLabels:
+      app: my-app
+  replicas: 3
+metadata:
+  namespace: default
+  name: my-app
+kind: Deployment
+apiVersion: apps/v1</code></pre>
+
+<h2>Use Case: Canonical Reverse-Sorted Config for Diffing</h2>
+
+<pre><code># Sort both files the same way before diffing
+devbench cf config-v1.yaml --sort-keys-reverse > /tmp/v1-sorted.yaml
+devbench cf config-v2.yaml --sort-keys-reverse > /tmp/v2-sorted.yaml
+diff /tmp/v1-sorted.yaml /tmp/v2-sorted.yaml</code></pre>
+
+<h2>Use Case: Terraform Variables Reverse-Sorted</h2>
+
+<pre><code># Sort terraform.tfvars keys in reverse for review
+devbench cf terraform.tfvars --sort-keys-reverse</code></pre>
+
+<h2>Versus yq / jq</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>yq</th>
+      <th>jq (JSON only)</th>
+      <th>devbench</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Forward-sort keys</td>
+      <td><code>sort_keys(..)</code></td>
+      <td><code>walk(if type == "object" then to_entries | sort_by(.key) | from_entries else . end)</code></td>
+      <td><code>--sort-keys</code></td>
+    </tr>
+    <tr>
+      <td>Reverse-sort keys (recursive)</td>
+      <td>❌ Not natively supported (yq#2390)</td>
+      <td>❌ Complex multi-step expression</td>
+      <td><code>--sort-keys-reverse</code></td>
+    </tr>
+    <tr>
+      <td>Works on TOML</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>Works on INI / .env</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>Recursive (all nesting levels)</td>
+      <td>Partial</td>
+      <td>Requires walk()</td>
+      <td>✅ Always recursive</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Pair with --sort-keys for Forward Sort</h2>
+
+<pre><code># Forward sort (Z→A ... A→Z)
+devbench cf config.yaml --sort-keys
+
+# Reverse sort (Z→A)
+devbench cf config.yaml --sort-keys-reverse</code></pre>
+
+<h2>Install</h2>
+
+<pre><code>pip install devbench</code></pre>
+
+<p>
+  Works on Python 3.10–3.13. Supports 11 config formats: YAML, JSON, TOML, JSONC, XML,
+  CSV, INI, .env, HCL, .properties, plist.
+</p>
+
+</main>
+</body>
+</html>

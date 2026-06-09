@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Minify JSON from CLI — devbench cf --compact | ConfigForge</title>
+  <meta name="description" content="Compact/minify JSON, YAML, and TOML from the command line in one flag. devbench cf config.yaml --to json --compact --raw outputs single-line JSON — no jq, no Python one-liners.">
+  <meta property="og:title" content="Minify JSON from CLI — devbench cf --compact | ConfigForge">
+  <meta property="og:description" content="One flag to compact any config to minified JSON. Works across YAML, TOML, INI, XML, CSV and 7 more formats. Pipe-safe, exit codes, zero dependencies.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/minify-json-cli.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Minify JSON from CLI — devbench cf --compact">
+  <meta name="twitter:description" content="Compact YAML/JSON/TOML to single-line JSON in one command. devbench cf config.yaml --to json --compact --raw — like jq -c but for all formats.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config converter with --compact flag for minified JSON output. Convert any config format to compact single-line JSON for pipelines, API payloads, or log ingestion.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<header>
+  <h1>Minify JSON from the CLI — <code>devbench cf --compact</code></h1>
+  <p>Convert any config to compact single-line JSON in one command. Like <code>jq -c</code> but for YAML, TOML, INI, .env, XML, CSV, and 8 other formats.</p>
+</header>
+
+<main>
+
+<section>
+  <h2>Quick Start</h2>
+  <pre><code># Install
+pip install devbench
+
+# Compact YAML → single-line JSON
+devbench cf config.yaml --to json --compact --raw
+# → {"server":{"host":"localhost","port":8080},"debug":true}
+
+# TOML → compact JSON
+devbench cf pyproject.toml --to json --compact --raw
+
+# Already-JSON, just minify it
+devbench cf big.json --to json --compact --raw
+
+# Pipe into jq for further processing
+devbench cf config.yaml --to json --compact --raw | jq .server
+</code></pre>
+</section>
+
+<section>
+  <h2>The Problem: Pretty JSON in Pipelines</h2>
+  <p>Most config tools output pretty-printed JSON with indentation and newlines — fine for humans, awkward for pipelines:</p>
+  <pre><code># Problem: jq outputs pretty JSON by default
+cat config.json | jq .
+# {
+#   "server": {
+#     "host": "localhost",
+#     "port": 8080
+#   }
+# }
+
+# Problem: yq YAML→JSON also pretty-prints
+yq -o json config.yaml
+
+# You end up piping through jq -c:
+cat config.yaml | yq -o json | jq -c .
+# Multiple tools, multiple dependencies
+</code></pre>
+
+  <h3>The Solution: <code>--compact</code> flag</h3>
+  <pre><code># One tool, one flag, one format
+devbench cf config.yaml --to json --compact --raw
+# → {"server":{"host":"localhost","port":8080},"debug":true}
+
+# Works across ALL 11 formats — no jq needed
+devbench cf app.toml    --to json --compact --raw
+devbench cf vars.ini    --to json --compact --raw
+devbench cf secrets.env --to json --compact --raw
+devbench cf data.xml    --to json --compact --raw
+</code></pre>
+</section>
+
+<section>
+  <h2>Use Cases</h2>
+
+  <h3>API Payload Construction</h3>
+  <pre><code># Build a compact JSON payload from YAML config
+PAYLOAD=$(devbench cf deploy.yaml --pick spec.template.spec --to json --compact --raw)
+curl -X POST https://api.example.com/deploy \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD"
+</code></pre>
+
+  <h3>Log Ingestion</h3>
+  <pre><code># Convert config snapshot to compact JSON for structured logging
+devbench cf /etc/myapp/config.yaml --to json --compact --raw \
+  | logger -t myapp-config
+</code></pre>
+
+  <h3>CI/CD Config Size Checks</h3>
+  <pre><code># Compact JSON for size comparison
+COMPACT=$(devbench cf config.yaml --to json --compact --raw)
+BYTES=${#COMPACT}
+echo "Config payload: ${BYTES} bytes"
+[ "$BYTES" -lt 4096 ] || { echo "Config too large for env var"; exit 1; }
+</code></pre>
+
+  <h3>GitHub Actions</h3>
+  <pre><code">- name: Export config as compact JSON
+  run: |
+    echo "CONFIG=$(devbench cf config.yaml --to json --compact --raw)" >> $GITHUB_ENV
+
+- name: Use compact config
+  run: echo "Config is $CONFIG"
+</code></pre>
+
+  <h3>Combining with --pick</h3>
+  <pre><code># Extract a specific section and compact it
+devbench cf k8s-deploy.yaml --pick spec.template --to json --compact --raw
+
+# Feed to another tool
+devbench cf config.yaml --pick database --to json --compact --raw \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['host'])"
+</code></pre>
+</section>
+
+<section>
+  <h2>Flags</h2>
+  <table>
+    <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>--compact</code> / <code>-c</code></td><td>Compact/minified JSON output — no spaces after <code>:</code> or <code>,</code></td></tr>
+      <tr><td><code>--raw</code> / <code>-r</code></td><td>Output just the config content, not the JSON envelope</td></tr>
+      <tr><td><code>--to json</code></td><td>Target format (json, yaml, toml, xml, csv, ini, env, hcl, properties, plist)</td></tr>
+      <tr><td><code>--from FORMAT</code></td><td>Source format (auto-detected by default)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Flag combinations</h3>
+  <pre><code># --compact --raw: just the minified JSON string
+devbench cf config.yaml --to json --compact --raw
+# → {"key":"value"}
+
+# --compact alone: compact JSON inside the tool envelope
+devbench cf config.yaml --to json --compact
+# → {"tool_name":"cf","output":"{\"key\":\"value\"}","success":true,...}
+</code></pre>
+</section>
+
+<section>
+  <h2>Comparison: devbench vs alternatives</h2>
+  <table>
+    <thead><tr><th>Task</th><th>jq</th><th>yq</th><th>devbench</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Compact JSON from JSON</td>
+        <td><code>cat f.json | jq -c .</code></td>
+        <td>n/a (YAML tool)</td>
+        <td><code>devbench cf f.json --to json -c -r</code></td>
+      </tr>
+      <tr>
+        <td>Compact JSON from YAML</td>
+        <td><code>yq f.yaml | jq -c .</code> (2 tools)</td>
+        <td><code>yq -o json f.yaml | jq -c .</code> (2 tools)</td>
+        <td><code>devbench cf f.yaml --to json -c -r</code></td>
+      </tr>
+      <tr>
+        <td>Compact JSON from TOML</td>
+        <td>Not supported</td>
+        <td>Not supported</td>
+        <td><code>devbench cf f.toml --to json -c -r</code></td>
+      </tr>
+      <tr>
+        <td>Compact JSON from INI</td>
+        <td>Not supported</td>
+        <td>Not supported</td>
+        <td><code>devbench cf f.ini --to json -c -r</code></td>
+      </tr>
+      <tr>
+        <td>Input from stdin</td>
+        <td>✅</td>
+        <td>✅</td>
+        <td>✅ <code>cat f.yaml | devbench cf --to json -c -r</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Install</h2>
+  <pre><code>pip install devbench
+# or with all optional format support:
+pip install devbench[all]
+</code></pre>
+  <p>Works on macOS, Linux, and Windows. Python 3.10+.</p>
+</section>
+
+<section>
+  <h2>Related Commands</h2>
+  <ul>
+    <li><a href="extract-yaml-field.html"><code>--pick</code> — Extract specific fields from any config format</a></li>
+    <li><a href="grep-config-files.html"><code>--grep</code> — Search config keys/values by regex</a></li>
+    <li><a href="assert-config-value.html"><code>--assert</code> — Assert config values in CI/CD pipelines</a></li>
+    <li><a href="yaml-to-shell-export.html"><code>--shell-export</code> — Export config as shell variables</a></li>
+    <li><a href="render-config-template.html"><code>--template</code> — Render config values into a template file</a></li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <p><a href="/tools/devbench/">← Back to Devbench</a> · <a href="https://naxiai.com">NaxiAI</a></p>
+</footer>
+</body>
+</html>

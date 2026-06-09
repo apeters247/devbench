@@ -1754,6 +1754,20 @@ def _sort_keys_recursive(data):
     return data
 
 
+def _sort_keys_reverse_recursive(data):
+    """Recursively sort dict keys in reverse order.
+
+    Inverse of _sort_keys_recursive. Addresses yq#2390 request for
+    sort_keys_reverse() or reverse(sort_keys(.)). Used when
+    --sort-keys-reverse is passed to serialize().
+    """
+    if isinstance(data, dict):
+        return {k: _sort_keys_reverse_recursive(data[k]) for k in sorted(data.keys(), key=str, reverse=True)}
+    if isinstance(data, list):
+        return [_sort_keys_reverse_recursive(item) for item in data]
+    return data
+
+
 def _expand_env_vars(data):
     """Recursively substitute ${VAR} and $VAR references in all string values.
 
@@ -2158,6 +2172,9 @@ def serialize(data, fmt: str, **options) -> str:
     if fmt in ("json", "jsonc"):
         indent = options.get("indent", 2)
         sort_keys = options.get("sort_keys", False)
+        sort_keys_reverse = options.get("sort_keys_reverse", False)
+        if sort_keys_reverse:
+            data = _sort_keys_reverse_recursive(data)
 
         class _DatetimeEncoder(json.JSONEncoder):
             def default(self, obj):
@@ -2171,6 +2188,9 @@ def serialize(data, fmt: str, **options) -> str:
     elif fmt == "yaml" and HAS_YAML:
         indent = options.get("indent", 2)
         sort_keys = options.get("sort_keys", False)
+        sort_keys_reverse = options.get("sort_keys_reverse", False)
+        if sort_keys_reverse:
+            data = _sort_keys_reverse_recursive(data)
         # Handle multi-document YAML: list of dicts → --- separated docs
         if isinstance(data, list) and all(isinstance(d, dict) for d in data):
             return yaml.dump_all(data, default_flow_style=False, allow_unicode=True,
@@ -2181,6 +2201,8 @@ def serialize(data, fmt: str, **options) -> str:
     elif fmt == "toml":
         if options.get("sort_keys", False):
             data = _sort_keys_recursive(data)
+        if options.get("sort_keys_reverse", False):
+            data = _sort_keys_reverse_recursive(data)
         if options.get("infer_dates", True):
             data = _coerce_dates(data)
         null_handling = options.get("null_handling", "skip")
@@ -2197,11 +2219,15 @@ def serialize(data, fmt: str, **options) -> str:
                 f"HCL requires a dict at the top level, not {type(data).__name__}")
         if options.get("sort_keys", False):
             data = _sort_keys_recursive(data)
+        if options.get("sort_keys_reverse", False):
+            data = _sort_keys_reverse_recursive(data)
         return hcl2.dumps(_hcl_requote(data))
 
     elif fmt == "ini":
         if options.get("sort_keys", False):
             data = _sort_keys_recursive(data)
+        if options.get("sort_keys_reverse", False):
+            data = _sort_keys_reverse_recursive(data)
         if not isinstance(data, dict):
             raise ValueError("INI requires a dict of sections")
         cfg = configparser.ConfigParser(interpolation=None)
@@ -2237,6 +2263,8 @@ def serialize(data, fmt: str, **options) -> str:
     elif fmt == "env":
         if options.get("sort_keys", False):
             data = _sort_keys_recursive(data)
+        if options.get("sort_keys_reverse", False):
+            data = _sort_keys_reverse_recursive(data)
         if not isinstance(data, dict):
             raise ValueError("ENV requires a flat dict")
         lines = []
@@ -2252,6 +2280,8 @@ def serialize(data, fmt: str, **options) -> str:
     elif fmt == "properties":
         if options.get("sort_keys", False):
             data = _sort_keys_recursive(data)
+        if options.get("sort_keys_reverse", False):
+            data = _sort_keys_reverse_recursive(data)
         return _serialize_properties(
             data,
             comments=options.get("comments"),
@@ -2260,6 +2290,7 @@ def serialize(data, fmt: str, **options) -> str:
 
     elif fmt == "csv":
         sort_keys = options.get("sort_keys", False)
+        sort_keys_reverse = options.get("sort_keys_reverse", False)
         if isinstance(data, list) and data:
             # Collect ALL fieldnames across all rows for heterogeneous lists
             fieldnames = []
@@ -2274,6 +2305,8 @@ def serialize(data, fmt: str, **options) -> str:
                 raise ValueError("CSV requires at least one dict with keys")
             if sort_keys:
                 fieldnames = sorted(fieldnames)
+            if sort_keys_reverse:
+                fieldnames = sorted(fieldnames, reverse=True)
             buf = io.StringIO()
             writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore')
             writer.writeheader()
@@ -2281,7 +2314,12 @@ def serialize(data, fmt: str, **options) -> str:
             return buf.getvalue()
         elif isinstance(data, dict) and data:
             # Single flat dict → CSV with one row
-            fieldnames = sorted(data.keys()) if sort_keys else list(data.keys())
+            if sort_keys_reverse:
+                fieldnames = sorted(data.keys(), reverse=True)
+            elif sort_keys:
+                fieldnames = sorted(data.keys())
+            else:
+                fieldnames = list(data.keys())
             buf = io.StringIO()
             writer = csv.DictWriter(buf, fieldnames=fieldnames)
             writer.writeheader()
@@ -2886,7 +2924,13 @@ _telemetry_disabled = (
 )
 
 
-_Version = "1.0.0"
+try:
+    from core._version import __version__ as _Version
+except ImportError:
+    try:
+        from _version import __version__ as _Version
+    except ImportError:
+        _Version = "1.0.0"
 
 
 # ── Unified offline CLI ──

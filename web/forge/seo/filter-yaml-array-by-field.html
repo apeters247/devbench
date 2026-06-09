@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Filter YAML Array by Field Value — devbench cf --select | ConfigForge</title>
+  <meta name="description" content="Filter YAML, JSON, TOML arrays by field value with one flag. devbench cf pods.yaml --select status=Running — no yq select expressions, no jq pipelines.">
+  <meta property="og:title" content="Filter YAML Array by Field Value — devbench cf --select | ConfigForge">
+  <meta property="og:description" content="Select array items matching a condition across YAML, JSON, TOML and 8 more formats. One flag replaces complex yq select() expressions. Exit 0=match, 1=no match.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/filter-yaml-array-by-field.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Filter YAML Array by Field Value — devbench cf --select">
+  <meta name="twitter:description" content="Select Kubernetes containers, pods, services by field value. Simpler than yq select() — no expression syntax needed.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config array filter. Select list items by field condition across YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<main>
+
+<h1>Filter YAML Arrays by Field Value — <code>devbench cf --select</code></h1>
+
+<p>
+  Select array items matching a condition in any config format.
+  One flag replaces yq's <code>select()</code> expressions, jq pipelines, and grep hacks.
+</p>
+
+<h2>The Problem: yq <code>select()</code> Is Hard to Remember</h2>
+
+<p>Filtering a Kubernetes container list with yq:</p>
+<pre><code>yq '.spec.containers[] | select(.name == "nginx")' deploy.yaml</code></pre>
+
+<p>That's three things to remember: the pipe, <code>select()</code>, and yq's expression syntax. Most DevOps engineers look it up every time.</p>
+
+<h2>The Solution: <code>devbench cf --select</code></h2>
+
+<pre><code># Filter containers by name
+devbench cf deploy.yaml --get spec.containers --select name=nginx
+
+# Find running pods
+devbench cf pods.yaml --select status=Running
+
+# Exclude disabled services
+devbench cf services.yaml --select enabled!=false
+
+# Filter JSON arrays too
+devbench cf instances.json --select role=primary --to yaml</code></pre>
+
+<p>
+  <code>--select FIELD=VALUE</code> keeps list items where the field equals the value.<br>
+  <code>--select FIELD!=VALUE</code> keeps items where the field does <em>not</em> match.
+</p>
+
+<h2>Kubernetes: Filter Containers by Name</h2>
+
+<p>Given <code>deploy.yaml</code>:</p>
+<pre><code>spec:
+  containers:
+  - name: nginx
+    image: nginx:1.21
+    ports:
+    - containerPort: 80
+  - name: redis
+    image: redis:7
+    ports:
+    - containerPort: 6379</code></pre>
+
+<pre><code># Get the nginx container only
+devbench cf deploy.yaml --get spec.containers --select name=nginx</code></pre>
+
+<pre><code># Output:
+- image: nginx:1.21
+  name: nginx
+  ports:
+  - containerPort: 80</code></pre>
+
+<h2>Filter Pods by Status</h2>
+
+<pre><code>devbench cf pods.yaml --select status=Running
+devbench cf pods.yaml --select status!=Pending</code></pre>
+
+<h2>Combine with --get for Nested Arrays</h2>
+
+<pre><code># Navigate to the array first with --get, then filter with --select
+devbench cf config.yaml --get spec.services --select type=LoadBalancer
+
+# Output as JSON
+devbench cf k8s.yaml --get spec.containers --select name=api --to json</code></pre>
+
+<h2>Type-Aware Value Matching</h2>
+
+<p>Values are automatically coerced before comparison:</p>
+<ul>
+  <li><code>--select replicas=3</code> matches integer 3, not string "3"</li>
+  <li><code>--select enabled=true</code> matches boolean <code>true</code></li>
+  <li><code>--select count=null</code> matches Python <code>None</code></li>
+</ul>
+
+<pre><code># Filter services with replicas > 0 (equality on integer)
+devbench cf services.yaml --select replicas=3
+
+# Keep only enabled features
+devbench cf features.yaml --select enabled=true</code></pre>
+
+<h2>Exit Codes for Shell Scripting</h2>
+
+<pre><code>devbench cf pods.yaml --select status=Running
+# Exit 0 = matches found
+# Exit 1 = no matches (grep semantics — safe for set -e)</code></pre>
+
+<pre><code># In a shell script:
+if devbench cf pods.yaml --select status=Running > /dev/null; then
+  echo "At least one pod is running"
+else
+  echo "No running pods found"
+fi</code></pre>
+
+<h2>Versus yq / jq / dasel</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>yq</th>
+      <th>jq (JSON only)</th>
+      <th>devbench</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Filter by field</td>
+      <td><code>.[] | select(.name == "x")</code></td>
+      <td><code>.[] | select(.name == "x")</code></td>
+      <td><code>--select name=x</code></td>
+    </tr>
+    <tr>
+      <td>Negation filter</td>
+      <td><code>.[] | select(.name != "x")</code></td>
+      <td><code>.[] | select(.name != "x")</code></td>
+      <td><code>--select name!=x</code></td>
+    </tr>
+    <tr>
+      <td>Nested array path</td>
+      <td><code>.spec.containers[] | select(.name == "x")</code></td>
+      <td>Complex</td>
+      <td><code>--get spec.containers --select name=x</code></td>
+    </tr>
+    <tr>
+      <td>Works on TOML</td>
+      <td>❌</td>
+      <td>❌</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>Comment preservation</td>
+      <td>❌ (dropped)</td>
+      <td>❌ (JSON only)</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>Exit codes</td>
+      <td>Always 0</td>
+      <td>Always 0</td>
+      <td>0=match, 1=no match</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Get a Default When Key Is Missing</h2>
+
+<p>Combined with the new <code>--default</code> flag for safer shell scripts:</p>
+
+<pre><code># Return default if path doesn't exist (never errors out in set -e scripts)
+TIMEOUT=$(devbench cf config.yaml --get server.timeout --default 30)
+RETRIES=$(devbench cf config.yaml --get retry.count --default 3)
+
+# Equivalent to but simpler than:
+TIMEOUT=$(devbench cf config.yaml --get server.timeout 2>/dev/null || echo 30)</code></pre>
+
+<h2>Install</h2>
+
+<pre><code>pip install devbench</code></pre>
+
+<p>
+  Works on Python 3.10–3.13. Supports 11 config formats: YAML, JSON, TOML, JSONC, XML,
+  CSV, INI, .env, HCL, .properties, plist.
+</p>
+
+<p><a href="/tools/devbench/">← Back to Devbench</a></p>
+
+</main>
+</body>
+</html>
