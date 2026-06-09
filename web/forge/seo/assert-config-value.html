@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Assert Config Values in CI/CD — devbench cf --assert | ConfigForge</title>
+  <meta name="description" content="Assert YAML, JSON, TOML config values in CI/CD pipelines with one command. devbench cf deploy.yaml --assert spec.replicas=3 exits 0 on match, 1 on mismatch — no jq, no shell arithmetic.">
+  <meta property="og:title" content="Assert Config Values in CI/CD — devbench cf --assert | ConfigForge">
+  <meta property="og:description" content="One flag to verify config values in any pipeline. Works across YAML, JSON, TOML, INI, and 7 more formats. Exit codes, batch mode, JSON output — all from pip install devbench.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/assert-config-value.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Assert Config Values in CI/CD — devbench cf --assert">
+  <meta name="twitter:description" content="Verify YAML/JSON/TOML values in pipelines without jq. devbench cf deploy.yaml --assert spec.replicas=3 — exit 0 on pass, 1 on fail.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config validator and converter. Assert key=value constraints across YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC. CI/CD-friendly exit codes.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<nav>
+  <a href="/tools/devbench/">DevBench</a> /
+  <a href="/tools/devbench/forge/seo/validate-config-ci.html">Validate Config</a> /
+  <strong>Assert Config Values</strong>
+</nav>
+
+<main>
+
+<h1>Assert Config Values in CI/CD — <code>devbench cf --assert</code></h1>
+
+<p>
+  <strong>The problem:</strong> You want to verify a config key equals a specific value in a CI/CD pipeline —
+  that <code>spec.replicas</code> is 3, that <code>server.debug</code> is false before deploying to production,
+  that a database port hasn't drifted. In every other tool this takes a jq expression, a shell comparison, or
+  a custom script. DevBench makes it one flag.
+</p>
+
+<pre><code># Exit 0 if replicas == 3, exit 1 otherwise
+devbench cf deploy.yaml --assert spec.replicas=3
+
+# Assert multiple keys — exit 1 if any fail
+devbench cf config.yaml --assert db.host=prod-db --assert db.ssl=true
+
+# Machine-readable output for CI logs
+devbench cf app.toml --assert server.debug=false --raw</code></pre>
+
+<p>
+  Works across all 11 config formats: YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC.
+  No dependencies beyond <code>pip install devbench</code>. Runs fully offline.
+</p>
+
+<hr>
+
+<h2>Why <code>--assert</code> matters in DevOps pipelines</h2>
+
+<p>
+  Config drift is a real production risk. A Kubernetes deployment accidentally scaled to 1 replica instead of 3.
+  A debug flag left <code>true</code> in a staging config promoted to production. A database password rotated
+  in secrets manager but not in the config file. These failures are cheap to catch at deploy time — if you have
+  a way to assert the values are correct.
+</p>
+
+<p>
+  With standard tools, asserting a config value requires awkward pipelines:
+</p>
+
+<pre><code># The jq way — JSON only, verbose
+REPLICAS=$(jq '.spec.replicas' deploy.json)
+if [ "$REPLICAS" != "3" ]; then echo "FAIL"; exit 1; fi
+
+# The yq way — YAML only, version-sensitive syntax
+yq '.spec.replicas' deploy.yaml | grep -q '^3$' || exit 1
+
+# ConfigForge — any format, one command
+devbench cf deploy.yaml --assert spec.replicas=3</code></pre>
+
+<h3>Type-aware comparison</h3>
+<p>
+  ConfigForge coerces the expected value using the same JSON-aware logic as <code>--set</code>,
+  so <code>--assert replicas=3</code> compares against the integer 3, not the string "3".
+  Booleans, nulls, and floats all work:
+</p>
+
+<pre><code>devbench cf config.yaml --assert server.debug=false   # boolean false
+devbench cf config.yaml --assert server.workers=4     # integer 4
+devbench cf config.yaml --assert database.timeout=30  # integer 30
+devbench cf config.yaml --assert optional_key=null    # null/None</code></pre>
+
+<hr>
+
+<h2>Real-world use cases</h2>
+
+<h3>1. Kubernetes deployment guard</h3>
+<p>Verify minimum replicas are set before applying a manifest:</p>
+<pre><code># In .github/workflows/deploy.yml
+- name: Assert production replicas
+  run: |
+    devbench cf k8s/production/deployment.yaml --assert spec.replicas=3
+    devbench cf k8s/production/deployment.yaml --assert spec.template.spec.containers[0].resources.requests.memory=512Mi</code></pre>
+
+<h3>2. Pre-commit hook: no debug in production configs</h3>
+<pre><code>#!/bin/sh
+# .git/hooks/pre-commit
+for f in config/prod*.yaml; do
+  devbench cf "$f" --assert server.debug=false || {
+    echo "ERROR: debug=true found in $f — aborting commit"
+    exit 1
+  }
+done</code></pre>
+
+<h3>3. Docker Compose port assertion</h3>
+<pre><code>devbench cf docker-compose.yml --assert services.web.ports[0]=80:80
+devbench cf docker-compose.yml --assert services.db.ports[0]=5432:5432</code></pre>
+
+<h3>4. Multi-key CI check with JSON output</h3>
+<pre><code># In GitHub Actions, capture structured output
+RESULT=$(devbench cf config/production.yaml \
+  --assert database.host=prod-db.example.com \
+  --assert database.ssl=true \
+  --assert cache.ttl=3600 \
+  --raw)
+echo "$RESULT" | jq .
+# {"assertions": [...], "all_passed": true}</code></pre>
+
+<h3>5. Terraform variable assertion</h3>
+<pre><code># Verify instance type before apply
+devbench cf terraform.tfvars --assert instance_type=t3.medium || {
+  echo "Wrong instance type in production vars!"
+  exit 1
+}</code></pre>
+
+<h3>6. Ansible inventory check</h3>
+<pre><code># Assert environment tag is set correctly
+devbench cf inventory/production.yaml --assert all.vars.env=production
+devbench cf inventory/production.yaml --assert all.vars.region=us-east-1</code></pre>
+
+<hr>
+
+<h2>Exit codes and shell integration</h2>
+
+<p>Exit codes follow Unix assertion conventions — ideal for <code>&amp;&amp;</code> chains and CI/CD gates:</p>
+
+<table>
+  <thead>
+    <tr><th>Exit code</th><th>Meaning</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>0</code></td><td>All assertions passed</td></tr>
+    <tr><td><code>1</code></td><td>One or more assertions failed, key missing, or parse error</td></tr>
+  </tbody>
+</table>
+
+<pre><code># Short-circuit on first failure
+devbench cf config.yaml --assert version=1.0.0 \
+  &amp;&amp; devbench cf config.yaml --assert debug=false \
+  &amp;&amp; deploy.sh
+
+# Or check all at once, fail if any fail
+devbench cf config.yaml \
+  --assert version=1.0.0 \
+  --assert debug=false \
+  --assert replicas=3
+echo "Exit: $?"</code></pre>
+
+<hr>
+
+<h2>JSON output for CI logs</h2>
+
+<p>Add <code>--raw</code> (or <code>-r</code>) for machine-readable JSON — useful for structured CI logs or downstream scripting:</p>
+
+<pre><code>$ devbench cf deploy.yaml \
+    --assert spec.replicas=3 \
+    --assert spec.image=nginx:1.21 \
+    --raw
+{
+  "assertions": [
+    {
+      "path": "spec.replicas",
+      "expected": 3,
+      "actual": 3,
+      "passed": true,
+      "missing": false
+    },
+    {
+      "path": "spec.image",
+      "expected": "nginx:1.21",
+      "actual": "nginx:1.21",
+      "passed": true,
+      "missing": false
+    }
+  ],
+  "all_passed": true
+}</code></pre>
+
+<p>When an assertion fails, the JSON shows the expected vs actual values for debugging:</p>
+<pre><code>"actual": 2,
+"expected": 3,
+"passed": false</code></pre>
+
+<hr>
+
+<h2>Comparison: <code>--assert</code> vs alternatives</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>jq</th>
+      <th>yq</th>
+      <th>dasel</th>
+      <th>ConfigForge</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Assert integer value</td>
+      <td><code>[ $(jq .a x.json) == 3 ]</code></td>
+      <td><code>yq .a x.yaml | grep 3</code></td>
+      <td>No native flag</td>
+      <td><code>--assert a=3</code> ✓</td>
+    </tr>
+    <tr>
+      <td>Assert boolean false</td>
+      <td><code>[ $(jq .d x.json) == false ]</code></td>
+      <td>Shell comparison</td>
+      <td>No native flag</td>
+      <td><code>--assert d=false</code> ✓</td>
+    </tr>
+    <tr>
+      <td>Multiple assertions</td>
+      <td>Multiple commands</td>
+      <td>Multiple commands</td>
+      <td>No native flag</td>
+      <td><code>--assert a=1 --assert b=2</code> ✓</td>
+    </tr>
+    <tr>
+      <td>Works on TOML</td>
+      <td>JSON only ✗</td>
+      <td>No TOML write ✗</td>
+      <td>TOML ✓</td>
+      <td>All 11 formats ✓</td>
+    </tr>
+    <tr>
+      <td>Works on .properties</td>
+      <td>No ✗</td>
+      <td>No ✗</td>
+      <td>No ✗</td>
+      <td>Yes ✓</td>
+    </tr>
+    <tr>
+      <td>JSON output for CI</td>
+      <td>Possible (verbose)</td>
+      <td>Possible (verbose)</td>
+      <td>No</td>
+      <td><code>--raw</code> ✓</td>
+    </tr>
+    <tr>
+      <td>Type-aware comparison</td>
+      <td>Yes (JSON-native)</td>
+      <td>Partial</td>
+      <td>Partial</td>
+      <td>Full JSON coercion ✓</td>
+    </tr>
+    <tr>
+      <td>Offline / no API keys</td>
+      <td>Yes ✓</td>
+      <td>Yes ✓</td>
+      <td>Yes ✓</td>
+      <td>Yes ✓</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2>Install</h2>
+
+<pre><code>pip install devbench           # Python 3.10-3.13
+pip install devbench[all]      # All optional format deps (HCL, lxml, etc.)</code></pre>
+
+<p>Or via Homebrew tap:</p>
+<pre><code>brew tap apeters247/devbench
+brew install devbench</code></pre>
+
+<hr>
+
+<h2>Related features</h2>
+<ul>
+  <li><a href="validate-config-ci.html"><code>--validate</code></a> — verify a config is parseable (syntax check)</li>
+  <li><a href="diff-config-files.html"><code>--diff</code></a> — compare two configs structurally across any format</li>
+  <li><a href="grep-config-files.html"><code>--grep</code></a> — search config keys and values by regex</li>
+  <li><a href="extract-yaml-field.html"><code>--pick</code></a> — extract specific fields into a new config</li>
+  <li><a href="../index.html">All ConfigForge features →</a></li>
+</ul>
+
+</main>
+
+<footer>
+  <p>
+    <strong>DevBench / ConfigForge</strong> — 11-format config converter + 9 developer tools.<br>
+    $19 one-time · No subscription · Runs offline · <a href="/tools/devbench/">naxiai.com/tools/devbench/</a>
+  </p>
+</footer>
+</body>
+</html>

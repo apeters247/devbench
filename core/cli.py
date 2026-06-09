@@ -110,9 +110,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "unflatten", False):
         return _run_cf_unflatten(args)
 
+    # cf --mask  → redact sensitive values
+    if args.command == "cf" and getattr(args, "mask_pattern", None):
+        return _run_cf_mask(args)
+
     # cf --schema  → validate config against a JSON Schema file
     if args.command == "cf" and getattr(args, "schema_file", None):
         return _run_cf_schema(args)
+
+    # cf --assert  → assert config key(s) equal expected values
+    if args.command == "cf" and getattr(args, "asserts", None):
+        return _run_cf_assert(args)
 
     # cf --check-env  → show environment info (no stdin needed)
     if args.command == "cf" and getattr(args, "check_env", False):
@@ -336,6 +344,23 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Exit 0 = valid, exit 1 = invalid. "
                                      "Use --raw for JSON output {valid, errors}. "
                                      "Example: devbench cf config.yaml --schema schema.json")
+            tool_p.add_argument("--mask", metavar="PATTERN", default=None, dest="mask_pattern",
+                                help="Redact values whose key names match the regex PATTERN. "
+                                     "Case-insensitive. Matching values replaced with ***REDACTED*** "
+                                     "(override with --mask-value). "
+                                     "Combine with --to to convert format while masking. "
+                                     "Example: devbench cf prod.yaml --mask 'password|secret|token'")
+            tool_p.add_argument("--mask-value", metavar="TEXT", default="***REDACTED***", dest="mask_value",
+                                help="Replacement text for masked values (default: ***REDACTED***). "
+                                     "Example: --mask-value '[REDACTED]'")
+            tool_p.add_argument("--assert", metavar="PATH=VALUE", dest="asserts",
+                                action="append", default=None,
+                                help="Assert that a config key equals the expected value. "
+                                     "Format: PATH=VALUE using dot-notation (e.g. spec.replicas=3). "
+                                     "Exit 0 = all assertions pass, exit 1 = any assertion fails. "
+                                     "Use --raw for JSON output {assertions, all_passed}. "
+                                     "Repeat to test multiple keys: --assert a=1 --assert b=prod. "
+                                     "Example: devbench cf deploy.yaml --assert spec.replicas=3")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -1671,6 +1696,111 @@ def _run_cf_validate(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# cf --mask: redact sensitive values matching a key-name regex
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_mask(args) -> int:
+    """Redact config values whose key names match a regex pattern.
+
+    Parses the input config (any of 11 formats), walks the data tree,
+    replaces values for matching key names with the redaction string, then
+    serializes to the target format (--to, default: same as input).
+
+    Useful for:
+      - CI/CD pipeline logging without credential leaks
+      - Creating sanitized configs for documentation or bug reports
+      - Sharing configs with teammates without exposing prod secrets
+      - Audit log generation (mask before storing)
+
+    Exit 0 always (masking cannot fail if parsing succeeds).
+    """
+    from . import configforge as _cf
+
+    raw = getattr(args, "raw", False)
+    pattern = args.mask_pattern
+    replacement = getattr(args, "mask_value", "***REDACTED***")
+    to_fmt = getattr(args, "to", None)
+    from_fmt = getattr(args, "from_fmt", "auto")
+    parse_opts = _cf_parse_opts(args)
+
+    # Read input
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    label = str(file_path) if file_path else "stdin"
+
+    # Parse (auto-detects format via parse_text)
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt, **parse_opts)
+        data = parsed.get("data", parsed)
+        detected_fmt = parsed.get("format") or "yaml"
+    except Exception as exc:
+        msg = f"error: could not parse config: {exc}"
+        if raw:
+            print(json.dumps({"error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+
+    # Validate pattern is a valid regex
+    import re as _re
+    try:
+        _re.compile(pattern)
+    except _re.error as exc:
+        msg = f"error: invalid regex pattern '{pattern}': {exc}"
+        if raw:
+            print(json.dumps({"error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+
+    # Mask
+    masked = _cf.mask_sensitive(data, pattern, replacement)
+
+    # Count how many values were redacted (for --raw metadata)
+    redacted_count = [0]
+
+    def _count_redacted(original, result):
+        if isinstance(result, dict):
+            for k in result:
+                if result[k] == replacement and original.get(k) != replacement:
+                    redacted_count[0] += 1
+                else:
+                    _count_redacted(original.get(k, {}), result[k])
+        elif isinstance(result, list):
+            for o, r in zip(original if isinstance(original, list) else [], result):
+                _count_redacted(o, r)
+
+    _count_redacted(data, masked)
+
+    # Serialize output
+    out_fmt = to_fmt or detected_fmt
+    try:
+        output_text = _cf.serialize(masked, out_fmt)
+    except Exception as exc:
+        msg = f"error: could not serialize masked config as {out_fmt}: {exc}"
+        if raw:
+            print(json.dumps({"error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+
+    if raw:
+        print(json.dumps({
+            "file": label,
+            "pattern": pattern,
+            "format": out_fmt,
+            "redacted_count": redacted_count[0],
+            "output": output_text,
+        }, indent=2))
+    else:
+        print(output_text, end="" if output_text.endswith("\n") else "\n")
+
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
 # cf --schema: validate a config against a JSON Schema file
 # ---------------------------------------------------------------------------
 
@@ -1750,6 +1880,105 @@ def _run_cf_schema(args) -> int:
                 print(f"  - {err}", file=sys.stderr)
 
     return EXIT_SUCCESS if result["valid"] else EXIT_ERROR
+
+
+# ---------------------------------------------------------------------------
+# cf --assert: assert that config key(s) equal expected values
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_assert(args) -> int:
+    """Assert that one or more config keys equal expected values.
+
+    Parses the input config (any of 11 formats), resolves each PATH using
+    dot-notation, and compares the actual value against the expected VALUE.
+    The expected value is coerced using the same JSON-aware logic as --set
+    (numbers, booleans, null, strings), so ``--assert replicas=3`` matches
+    an integer 3, not the string "3".
+
+    Exit 0 = all assertions pass.
+    Exit 1 = any assertion fails or a key is missing.
+
+    Use --raw for machine-readable JSON: {assertions: [...], all_passed: bool}.
+
+    Examples:
+        devbench cf deploy.yaml --assert spec.replicas=3
+        devbench cf config.yaml --assert db.host=prod --assert db.port=5432
+        devbench cf app.toml --assert server.debug=false --raw
+    """
+    from . import configforge as _cf
+
+    raw = getattr(args, "raw", False)
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(
+            content,
+            fmt=None if from_fmt == "auto" else from_fmt,
+            **_cf_parse_opts(args),
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+    results = []
+    all_passed = True
+
+    for assertion in args.asserts:
+        if "=" not in assertion:
+            print(
+                f"error: invalid assert format '{assertion}' — expected PATH=VALUE",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+
+        path, expected_str = assertion.split("=", 1)
+        path = path.strip()
+        expected = _cf._coerce_set_value(expected_str)
+
+        missing = False
+        actual = None
+        try:
+            actual = _cf._get_by_path(data, path)
+        except (KeyError, IndexError, TypeError):
+            missing = True
+
+        passed = (not missing) and (actual == expected)
+        if not passed:
+            all_passed = False
+
+        results.append(
+            {
+                "path": path,
+                "expected": expected,
+                "actual": actual,
+                "passed": passed,
+                "missing": missing,
+            }
+        )
+
+    if raw:
+        print(json.dumps({"assertions": results, "all_passed": all_passed}, indent=2))
+    else:
+        for r in results:
+            if r["passed"]:
+                print(f"PASS  {r['path']} == {r['expected']!r}")
+            elif r["missing"]:
+                print(
+                    f"FAIL  {r['path']}: key not found (expected {r['expected']!r})",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"FAIL  {r['path']}: got {r['actual']!r}, expected {r['expected']!r}",
+                    file=sys.stderr,
+                )
+
+    return EXIT_SUCCESS if all_passed else EXIT_ERROR
 
 
 # ---------------------------------------------------------------------------
@@ -2075,7 +2304,7 @@ _CF_FLAGS = (
     "--flatten --unflatten --sep --env-expand "
     "--batch --stream --output-dir --sort-keys --indent "
     "--flatten-xml --no-comments --yaml12 --template-safe "
-    "--null-handling --list-formats --check-env --schema "
+    "--null-handling --list-formats --check-env --schema --mask --mask-value --assert "
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
 )
@@ -2253,6 +2482,9 @@ _devbench() {{
                         '--list-formats[List all supported formats]' \\
                         '--check-env[Show environment info (Python, formats, deps)]' \\
                         '--schema=[JSON Schema file for validation]:schema:_files' \\
+                        '--mask=[Regex pattern to redact matching key values]:pattern:' \\
+                        '--mask-value=[Replacement text for masked values]:text:' \\
+                        '--assert=[Assert PATH=VALUE (exit 0=pass, 1=fail)]:assertion:' \\
                         '--serve[Launch the web UI]' \\
                         '--port=[Web UI port (default 8080)]:port:' \\
                         '--api[Launch JSON HTTP API]' \\
@@ -2361,6 +2593,9 @@ complete -c devbench -n __devbench_seen_cf -l backup   -d 'Backup suffix before 
 complete -c devbench -n __devbench_seen_cf -l list-formats -d 'List all supported formats'
 complete -c devbench -n __devbench_seen_cf -l check-env    -d 'Show environment info (Python, formats, deps)'
 complete -c devbench -n __devbench_seen_cf -l schema       -d 'JSON Schema file for validation'  -r
+complete -c devbench -n __devbench_seen_cf -l mask         -d 'Redact values for matching key names (regex)'  -r
+complete -c devbench -n __devbench_seen_cf -l mask-value   -d 'Replacement text for masked values'  -r
+complete -c devbench -n __devbench_seen_cf -l assert       -d 'Assert PATH=VALUE (exit 0=pass, 1=fail)'  -r
 complete -c devbench -n __devbench_seen_cf -l serve        -d 'Launch the web UI'
 complete -c devbench -n __devbench_seen_cf -l port         -d 'Web UI port (default 8080)'  -r
 complete -c devbench -n __devbench_seen_cf -l api          -d 'Launch JSON HTTP API'

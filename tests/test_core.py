@@ -1250,6 +1250,202 @@ def test_cf_env_expand_does_not_alter_non_strings(tmp_path, capsys, monkeypatch)
 
 
 # ---------------------------------------------------------------------------
+# cf --assert: assert config key equals expected value
+# ---------------------------------------------------------------------------
+
+_ASSERT_YAML = """\
+spec:
+  replicas: 3
+  image: nginx:1.21
+  debug: false
+  timeout: 30
+database:
+  host: prod-db.example.com
+  port: 5432
+  ssl: true
+tags:
+  - web
+  - production
+"""
+
+
+def test_cf_assert_integer_passes(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f), "--assert", "spec.replicas=3"])
+    out, err = capsys.readouterr()
+    assert rc == 0
+    assert "PASS" in out
+    assert "spec.replicas" in out
+
+
+def test_cf_assert_string_passes(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f), "--assert", "spec.image=nginx:1.21"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "PASS" in out
+
+
+def test_cf_assert_boolean_false_passes(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f), "--assert", "spec.debug=false"])
+    assert rc == 0
+
+
+def test_cf_assert_boolean_true_passes(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f), "--assert", "database.ssl=true"])
+    assert rc == 0
+
+
+def test_cf_assert_integer_fails(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f), "--assert", "spec.replicas=99"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "FAIL" in err
+    assert "spec.replicas" in err
+
+
+def test_cf_assert_missing_key_fails(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f), "--assert", "nonexistent.key=value"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "FAIL" in err
+    assert "not found" in err
+
+
+def test_cf_assert_multiple_all_pass(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f),
+               "--assert", "spec.replicas=3",
+               "--assert", "database.port=5432",
+               "--assert", "database.ssl=true"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert out.count("PASS") == 3
+
+
+def test_cf_assert_multiple_one_fails(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f),
+               "--assert", "spec.replicas=3",
+               "--assert", "database.port=9999"])
+    assert rc == 1
+    out, err = capsys.readouterr()
+    assert "PASS" in out
+    assert "FAIL" in err
+
+
+def test_cf_assert_raw_output_all_pass(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f), "--assert", "spec.replicas=3", "--assert", "database.host=prod-db.example.com", "-r"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["all_passed"] is True
+    assert len(data["assertions"]) == 2
+    assert data["assertions"][0]["passed"] is True
+    assert data["assertions"][0]["path"] == "spec.replicas"
+    assert data["assertions"][0]["expected"] == 3
+
+
+def test_cf_assert_raw_output_fail(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f), "--assert", "spec.replicas=99", "-r"])
+    assert rc == 1
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["all_passed"] is False
+    assert data["assertions"][0]["passed"] is False
+    assert data["assertions"][0]["actual"] == 3
+    assert data["assertions"][0]["expected"] == 99
+
+
+def test_cf_assert_raw_output_missing_key(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text(_ASSERT_YAML)
+    rc = main(["cf", str(f), "--assert", "does.not.exist=x", "-r"])
+    assert rc == 1
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["assertions"][0]["missing"] is True
+    assert data["assertions"][0]["passed"] is False
+
+
+def test_cf_assert_json_input(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"version": "1.0.0", "debug": false, "workers": 4}')
+    rc = main(["cf", str(f), "--assert", "version=1.0.0", "--assert", "workers=4"])
+    assert rc == 0
+
+
+def test_cf_assert_toml_input(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "config.toml"
+    f.write_text('[server]\nport = 8080\ndebug = false\n')
+    rc = main(["cf", str(f), "--assert", "server.port=8080"])
+    assert rc == 0
+
+
+def test_cf_assert_null_value(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("key: null\n")
+    rc = main(["cf", str(f), "--assert", "key=null"])
+    assert rc == 0
+
+
+def test_cf_assert_invalid_format_error(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("spec:\n  replicas: 3\n")
+    rc = main(["cf", str(f), "--assert", "spec.replicas"])  # missing = separator
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "invalid assert format" in err
+
+
+def test_cf_assert_nested_integer_passes(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("spec:\n  replicas: 3\n  timeout: 30\n")
+    rc = main(["cf", str(f), "--assert", "spec.timeout=30"])
+    assert rc == 0
+
+
+def test_cf_assert_string_with_equals_in_value(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("connection: host=localhost\n")
+    rc = main(["cf", str(f), "--assert", "connection=host=localhost"])
+    assert rc == 0  # PATH=VALUE splits on first =, rest is the value
+
+
+# ---------------------------------------------------------------------------
 # cf --grep tests
 # ---------------------------------------------------------------------------
 
@@ -2008,3 +2204,203 @@ def test_schema_validate_completion_zsh_includes_flag(capsys):
     main(["completion", "zsh"])
     out = capsys.readouterr().out
     assert "--schema" in out
+
+
+# ═══════════════════════════════════════════════
+# MASKING SENSITIVE VALUES — cf --mask
+# ═══════════════════════════════════════════════
+
+def test_mask_sensitive_simple_password():
+    from core.configforge import mask_sensitive
+    data = {"password": "secret123", "username": "admin"}
+    result = mask_sensitive(data, "password")
+    assert result["password"] == "***REDACTED***"
+    assert result["username"] == "admin"
+
+
+def test_mask_sensitive_case_insensitive():
+    from core.configforge import mask_sensitive
+    data = {"Password": "secret", "PASSWORD": "secret2", "pwd": "secret3"}
+    result = mask_sensitive(data, "password")
+    assert result["Password"] == "***REDACTED***"
+    assert result["PASSWORD"] == "***REDACTED***"
+    assert result["pwd"] == "secret3"  # 'pwd' doesn't match 'password'
+
+
+def test_mask_sensitive_custom_replacement():
+    from core.configforge import mask_sensitive
+    data = {"api_key": "key123", "api_secret": "secret456"}
+    result = mask_sensitive(data, "api_key|api_secret", "[HIDDEN]")
+    assert result["api_key"] == "[HIDDEN]"
+    assert result["api_secret"] == "[HIDDEN]"
+
+
+def test_mask_sensitive_nested_dict():
+    from core.configforge import mask_sensitive
+    data = {
+        "db": {
+            "password": "dbpass123",
+            "host": "localhost",
+            "credentials": {"token": "abc123"}
+        }
+    }
+    result = mask_sensitive(data, "password|token")
+    assert result["db"]["password"] == "***REDACTED***"
+    assert result["db"]["host"] == "localhost"
+    assert result["db"]["credentials"]["token"] == "***REDACTED***"
+
+
+def test_mask_sensitive_list_of_dicts():
+    from core.configforge import mask_sensitive
+    data = {
+        "services": [
+            {"name": "api", "secret": "secret1"},
+            {"name": "web", "secret": "secret2"}
+        ]
+    }
+    result = mask_sensitive(data, "secret")
+    assert result["services"][0]["secret"] == "***REDACTED***"
+    assert result["services"][1]["secret"] == "***REDACTED***"
+    assert result["services"][0]["name"] == "api"
+
+
+def test_mask_sensitive_multiple_matches():
+    from core.configforge import mask_sensitive
+    data = {
+        "database_password": "pass1",
+        "api_password": "pass2",
+        "password": "pass3"
+    }
+    result = mask_sensitive(data, "password")
+    assert result["database_password"] == "***REDACTED***"
+    assert result["api_password"] == "***REDACTED***"
+    assert result["password"] == "***REDACTED***"
+
+
+def test_mask_sensitive_no_match():
+    from core.configforge import mask_sensitive
+    data = {"username": "admin", "host": "localhost", "port": 5432}
+    result = mask_sensitive(data, "password|token")
+    assert result == data  # Nothing should be masked
+
+
+def test_mask_sensitive_regex_pattern():
+    from core.configforge import mask_sensitive
+    data = {
+        "auth_token": "token123",
+        "refresh_token": "refresh123",
+        "secret": "notoken"
+    }
+    result = mask_sensitive(data, ".*token")
+    assert result["auth_token"] == "***REDACTED***"
+    assert result["refresh_token"] == "***REDACTED***"
+    assert result["secret"] == "notoken"
+
+
+def test_mask_sensitive_preserves_other_values():
+    from core.configforge import mask_sensitive
+    data = {
+        "name": "MyApp",
+        "version": "1.0.0",
+        "password": "secret",
+        "port": 8080
+    }
+    result = mask_sensitive(data, "password")
+    assert result["name"] == "MyApp"
+    assert result["version"] == "1.0.0"
+    assert result["port"] == 8080
+    assert result["password"] == "***REDACTED***"
+
+
+def test_mask_cli_json_input(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.json"
+    config_file.write_text('{"password": "secret123", "username": "admin"}')
+    result = main(["cf", str(config_file), "--mask", "password"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "***REDACTED***" in out
+    assert "secret123" not in out
+
+
+def test_mask_cli_yaml_input(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("database:\n  password: dbpass123\n  host: localhost\n")
+    result = main(["cf", str(config_file), "--mask", "password"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "***REDACTED***" in out
+
+
+def test_mask_cli_with_output_format(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("password: secret\nusername: admin\n")
+    result = main(["cf", str(config_file), "--mask", "password", "--to", "json"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["password"] == "***REDACTED***"
+
+
+def test_mask_cli_custom_replacement(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.json"
+    config_file.write_text('{"api_key": "key123"}')
+    result = main(["cf", str(config_file), "--mask", "api_key", "--mask-value", "[HIDDEN]"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "[HIDDEN]" in out
+    assert "key123" not in out
+
+
+def test_mask_cli_invalid_regex(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.json"
+    config_file.write_text('{"password": "secret"}')
+    result = main(["cf", str(config_file), "--mask", "[invalid(regex"])
+    assert result == 1  # Should fail due to invalid regex
+    err = capsys.readouterr().err
+    assert "invalid regex" in err or "error" in err.lower()
+
+
+def test_mask_cli_raw_output(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.json"
+    config_file.write_text('{"password": "secret", "username": "admin"}')
+    result = main(["cf", str(config_file), "--mask", "password", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert "pattern" in data
+    assert "redacted_count" in data
+    assert "output" in data
+
+
+def test_mask_cli_regex_alternation(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.json"
+    config_file.write_text('{"password": "pass1", "api_key": "key1", "token": "tok1", "name": "myapp"}')
+    result = main(["cf", str(config_file), "--mask", "password|api_key|token"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "***REDACTED***" in out
+    assert "pass1" not in out
+    assert "key1" not in out
+    assert "tok1" not in out
+    assert "myapp" in out
+
+
+def test_mask_completion_bash_includes_flag(capsys):
+    from core.cli import main
+    main(["completion", "bash"])
+    out = capsys.readouterr().out
+    assert "--mask" in out
+
+
+def test_mask_completion_zsh_includes_flag(capsys):
+    from core.cli import main
+    main(["completion", "zsh"])
+    out = capsys.readouterr().out
+    assert "--mask" in out

@@ -2799,6 +2799,38 @@ def validate_indentation(text: str, unit: int = 2) -> dict:
     return {"valid": not issues, "issues": issues}
 
 
+def mask_sensitive(data, key_pattern: str, replacement: str = "***REDACTED***"):
+    """Recursively mask config values whose key names match *key_pattern* (regex).
+
+    - Dict key matching pattern → value replaced with *replacement* (any depth).
+    - Dict key not matching → recurse into the value.
+    - Lists → recurse into each element.
+    - Scalars → returned unchanged.
+
+    ``re.IGNORECASE`` is always applied so ``--mask 'password'`` catches
+    ``Password``, ``PASSWORD``, etc.
+
+    Returns a new object; the original *data* is not modified.
+    """
+    import re as _re
+    pat = _re.compile(key_pattern, _re.IGNORECASE)
+
+    def _walk(obj):
+        if isinstance(obj, dict):
+            out = {}
+            for k, v in obj.items():
+                if pat.search(str(k)):
+                    out[k] = replacement
+                else:
+                    out[k] = _walk(v)
+            return out
+        if isinstance(obj, list):
+            return [_walk(item) for item in obj]
+        return obj
+
+    return _walk(data)
+
+
 def schema_validate(data, schema: dict) -> dict:
     """Validate *data* against a JSON Schema *schema*.
 
