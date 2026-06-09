@@ -66,6 +66,13 @@ try:
 except ImportError:
     pass
 
+HAS_JSONSCHEMA = False
+try:
+    import jsonschema as _jsonschema_mod
+    HAS_JSONSCHEMA = True
+except ImportError:
+    pass
+
 import configparser
 from collections import OrderedDict
 
@@ -2790,6 +2797,32 @@ def validate_indentation(text: str, unit: int = 2) -> dict:
             issues.append(f"line {i}: indent jumps from {prev_indent} to {indent}")
         prev_indent = indent
     return {"valid": not issues, "issues": issues}
+
+
+def schema_validate(data, schema: dict) -> dict:
+    """Validate *data* against a JSON Schema *schema*.
+
+    Returns ``{"valid": bool, "errors": list[str]}``.
+    Requires the ``jsonschema`` package (``pip install jsonschema``).
+    """
+    if not HAS_JSONSCHEMA:
+        return {
+            "valid": False,
+            "errors": ["jsonschema not installed — run: pip install jsonschema"],
+        }
+    try:
+        validator_cls = _jsonschema_mod.Draft7Validator
+        validator = validator_cls(schema)
+        errors = sorted(validator.iter_errors(data), key=lambda e: list(e.path))
+        if not errors:
+            return {"valid": True, "errors": []}
+        msgs = []
+        for err in errors:
+            path = ".".join(str(p) for p in err.absolute_path) or "(root)"
+            msgs.append(f"{path}: {err.message}")
+        return {"valid": False, "errors": msgs}
+    except Exception as exc:
+        return {"valid": False, "errors": [f"Schema error: {exc}"]}
 
 
 # ── SUPPORTED FORMATS ──

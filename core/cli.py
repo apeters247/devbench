@@ -110,6 +110,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "unflatten", False):
         return _run_cf_unflatten(args)
 
+    # cf --schema  → validate config against a JSON Schema file
+    if args.command == "cf" and getattr(args, "schema_file", None):
+        return _run_cf_schema(args)
+
     # cf --check-env  → show environment info (no stdin needed)
     if args.command == "cf" and getattr(args, "check_env", False):
         return _run_cf_check_env(args)
@@ -326,6 +330,12 @@ def _build_parser() -> argparse.ArgumentParser:
                                 help="Show environment info: Python version, platform, available formats, "
                                      "and optional dependency status. Useful for CI/CD debugging. "
                                      "Use --raw for JSON output.")
+            tool_p.add_argument("--schema", metavar="SCHEMA_FILE", default=None, dest="schema_file",
+                                help="Validate the parsed config against a JSON Schema file (.json or .yaml). "
+                                     "Requires: pip install jsonschema. "
+                                     "Exit 0 = valid, exit 1 = invalid. "
+                                     "Use --raw for JSON output {valid, errors}. "
+                                     "Example: devbench cf config.yaml --schema schema.json")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -1661,6 +1671,88 @@ def _run_cf_validate(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# cf --schema: validate a config against a JSON Schema file
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_schema(args) -> int:
+    """Validate a config file against a JSON Schema.
+
+    Parses the input config (any of 11 formats), loads the schema file
+    (JSON or YAML), and runs jsonschema.Draft7Validator.  Exit 0 = valid,
+    exit 1 = invalid — suitable for CI/CD pre-flight checks.
+    Requires: pip install jsonschema
+    """
+    from . import configforge as _cf
+
+    raw = getattr(args, "raw", False)
+    schema_path = args.schema_file
+    from_fmt = getattr(args, "from_fmt", "auto")
+    parse_opts = _cf_parse_opts(args)
+
+    # Read the config input
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    label = str(file_path) if file_path else "stdin"
+
+    # Parse the config
+    try:
+        parsed = _cf.parse_text(
+            content,
+            fmt=None if from_fmt == "auto" else from_fmt,
+            **parse_opts,
+        )
+        data = parsed.get("data", parsed)
+    except Exception as exc:
+        msg = f"error: could not parse config: {exc}"
+        if raw:
+            print(json.dumps({"valid": False, "errors": [msg]}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+
+    # Load the JSON Schema (JSON or YAML)
+    try:
+        schema_text = Path(schema_path).read_text(encoding="utf-8")
+        schema_ext = Path(schema_path).suffix.lower()
+        if schema_ext in (".yaml", ".yml"):
+            import yaml as _yaml  # noqa: PLC0415
+            schema = _yaml.safe_load(schema_text)
+        else:
+            schema = json.loads(schema_text)
+    except OSError as exc:
+        msg = f"error: could not read schema file '{schema_path}': {exc}"
+        if raw:
+            print(json.dumps({"valid": False, "errors": [msg]}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+    except Exception as exc:
+        msg = f"error: could not parse schema: {exc}"
+        if raw:
+            print(json.dumps({"valid": False, "errors": [msg]}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+
+    # Run schema validation
+    result = _cf.schema_validate(data, schema)
+
+    if raw:
+        print(json.dumps({"file": label, "schema": schema_path, **result}, indent=2))
+    else:
+        if result["valid"]:
+            print(f"{label}: valid  (matches schema: {schema_path})")
+        else:
+            print(f"{label}: INVALID  (schema: {schema_path})")
+            for err in result["errors"]:
+                print(f"  - {err}", file=sys.stderr)
+
+    return EXIT_SUCCESS if result["valid"] else EXIT_ERROR
+
+
+# ---------------------------------------------------------------------------
 # cf --pick: extract / project specific paths from a config
 # ---------------------------------------------------------------------------
 
@@ -1983,7 +2075,7 @@ _CF_FLAGS = (
     "--flatten --unflatten --sep --env-expand "
     "--batch --stream --output-dir --sort-keys --indent "
     "--flatten-xml --no-comments --yaml12 --template-safe "
-    "--null-handling --list-formats --check-env "
+    "--null-handling --list-formats --check-env --schema "
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
 )
@@ -2160,6 +2252,7 @@ _devbench() {{
                         '--null-handling=[Null handling strategy]:mode:(skip comment empty error)' \\
                         '--list-formats[List all supported formats]' \\
                         '--check-env[Show environment info (Python, formats, deps)]' \\
+                        '--schema=[JSON Schema file for validation]:schema:_files' \\
                         '--serve[Launch the web UI]' \\
                         '--port=[Web UI port (default 8080)]:port:' \\
                         '--api[Launch JSON HTTP API]' \\
@@ -2267,6 +2360,7 @@ complete -c devbench -n __devbench_seen_cf -l backup   -d 'Backup suffix before 
 # cf: server / misc
 complete -c devbench -n __devbench_seen_cf -l list-formats -d 'List all supported formats'
 complete -c devbench -n __devbench_seen_cf -l check-env    -d 'Show environment info (Python, formats, deps)'
+complete -c devbench -n __devbench_seen_cf -l schema       -d 'JSON Schema file for validation'  -r
 complete -c devbench -n __devbench_seen_cf -l serve        -d 'Launch the web UI'
 complete -c devbench -n __devbench_seen_cf -l port         -d 'Web UI port (default 8080)'  -r
 complete -c devbench -n __devbench_seen_cf -l api          -d 'Launch JSON HTTP API'

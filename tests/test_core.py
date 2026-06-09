@@ -1832,3 +1832,179 @@ service1:
     assert "service1:" in output
     assert "timeout: 30" in output  # Values are present, just not via anchor
     assert "retries: 3" in output
+
+
+# ═══════════════════════════════════════════════
+# JSON SCHEMA VALIDATION — cf --schema
+# ═══════════════════════════════════════════════
+
+def test_schema_validate_valid_data():
+    from core.configforge import schema_validate
+    schema = {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "port": {"type": "integer"}},
+        "required": ["name"],
+    }
+    result = schema_validate({"name": "app", "port": 8080}, schema)
+    assert result["valid"] is True
+    assert result["errors"] == []
+
+
+def test_schema_validate_missing_required():
+    from core.configforge import schema_validate
+    schema = {
+        "type": "object",
+        "required": ["name", "port"],
+        "properties": {
+            "name": {"type": "string"},
+            "port": {"type": "integer"},
+        },
+    }
+    result = schema_validate({"port": 80}, schema)
+    assert result["valid"] is False
+    assert any("name" in e for e in result["errors"])
+
+
+def test_schema_validate_wrong_type():
+    from core.configforge import schema_validate
+    schema = {"type": "object", "properties": {"replicas": {"type": "integer"}}}
+    result = schema_validate({"replicas": "three"}, schema)
+    assert result["valid"] is False
+    assert any("replicas" in e for e in result["errors"])
+
+
+def test_schema_validate_nested_object():
+    from core.configforge import schema_validate
+    schema = {
+        "type": "object",
+        "properties": {
+            "spec": {
+                "type": "object",
+                "properties": {"replicas": {"type": "integer"}},
+                "required": ["replicas"],
+            }
+        },
+        "required": ["spec"],
+    }
+    result = schema_validate({"spec": {"replicas": 3}}, schema)
+    assert result["valid"] is True
+
+
+def test_schema_validate_nested_error_path():
+    from core.configforge import schema_validate
+    schema = {
+        "type": "object",
+        "properties": {
+            "spec": {
+                "type": "object",
+                "properties": {"replicas": {"type": "integer"}},
+            }
+        },
+    }
+    result = schema_validate({"spec": {"replicas": "many"}}, schema)
+    assert result["valid"] is False
+    # Path should reference spec.replicas
+    assert any("replicas" in e for e in result["errors"])
+
+
+def test_schema_validate_array_items():
+    from core.configforge import schema_validate
+    schema = {
+        "type": "object",
+        "properties": {
+            "ports": {
+                "type": "array",
+                "items": {"type": "integer"},
+            }
+        },
+    }
+    result = schema_validate({"ports": [80, 443, 8080]}, schema)
+    assert result["valid"] is True
+
+    result2 = schema_validate({"ports": [80, "not-int"]}, schema)
+    assert result2["valid"] is False
+
+
+def test_schema_validate_no_jsonschema(monkeypatch):
+    import core.configforge as _cf
+    orig = _cf.HAS_JSONSCHEMA
+    monkeypatch.setattr(_cf, "HAS_JSONSCHEMA", False)
+    result = _cf.schema_validate({}, {})
+    assert result["valid"] is False
+    assert "jsonschema not installed" in result["errors"][0]
+    monkeypatch.setattr(_cf, "HAS_JSONSCHEMA", orig)
+
+
+def test_schema_validate_cli_valid(tmp_path):
+    import yaml
+    from core.cli import main
+    config_file = tmp_path / "config.yaml"
+    schema_file = tmp_path / "schema.json"
+    config_file.write_text("name: myapp\nport: 8080\n")
+    schema_file.write_text('{"type":"object","required":["name"],"properties":{"name":{"type":"string"},"port":{"type":"integer"}}}')
+    result = main(["cf", str(config_file), "--schema", str(schema_file)])
+    assert result == 0
+
+
+def test_schema_validate_cli_invalid(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.yaml"
+    schema_file = tmp_path / "schema.json"
+    config_file.write_text("port: not-an-int\n")
+    schema_file.write_text('{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}')
+    result = main(["cf", str(config_file), "--schema", str(schema_file)])
+    assert result == 1
+
+
+def test_schema_validate_cli_raw_output(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.yaml"
+    schema_file = tmp_path / "schema.json"
+    config_file.write_text("name: app\nport: 80\n")
+    schema_file.write_text('{"type":"object","properties":{"name":{"type":"string"}}}')
+    main(["cf", str(config_file), "--schema", str(schema_file), "--raw"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["valid"] is True
+    assert data["errors"] == []
+    assert "schema" in data
+
+
+def test_schema_validate_cli_raw_invalid(tmp_path, capsys):
+    from core.cli import main
+    config_file = tmp_path / "config.yaml"
+    schema_file = tmp_path / "schema.json"
+    config_file.write_text("count: hello\n")
+    schema_file.write_text('{"type":"object","required":["name"],"properties":{"name":{"type":"string"},"count":{"type":"integer"}}}')
+    main(["cf", str(config_file), "--schema", str(schema_file), "--raw"])
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["valid"] is False
+    assert len(data["errors"]) >= 1
+
+
+def test_schema_validate_yaml_schema_file(tmp_path):
+    import yaml
+    from core.cli import main
+    config_file = tmp_path / "config.json"
+    schema_file = tmp_path / "schema.yaml"
+    config_file.write_text('{"name": "myapp", "replicas": 3}')
+    schema_file.write_text(
+        "type: object\nrequired: [name]\nproperties:\n  name:\n    type: string\n  replicas:\n    type: integer\n"
+    )
+    result = main(["cf", str(config_file), "--schema", str(schema_file)])
+    assert result == 0
+
+
+def test_schema_validate_completion_includes_flag(capsys):
+    from core.cli import main
+    main(["completion", "bash"])
+    out = capsys.readouterr().out
+    assert "--schema" in out
+
+
+def test_schema_validate_completion_zsh_includes_flag(capsys):
+    from core.cli import main
+    main(["completion", "zsh"])
+    out = capsys.readouterr().out
+    assert "--schema" in out

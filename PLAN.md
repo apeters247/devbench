@@ -497,5 +497,8 @@ Observed that the builder had already implemented a feature to address a r/devop
 Reviewed the changes in core/configforge.py, core/tools.py, and tests/test_configforge.py; no bugs found.
 Ran the test suite: all tests passed (709 passed, 7 skipped, 2 xfailed).
 
----
-**PLACEHOLDER: Latest Polisher entry to be added (2026-06-09T19:02Z)**
+## Polisher Run at 20260609-1954
+- **EXTERNAL REVIEW**: Searched GitHub issues for config tool complaints (rotation: 45-59min → Reddit macOS developer tools). Found issue #2624 (mikefarah/yq): "Using 'Evaluate All' to combine a series of TOML documents only includes the contents of the first". Analyzed: ConfigForge correctly handles TOML within TOML spec (single-document format, unlike YAML's multi-doc `---` separator). No actionable fix needed — limitation is inherent to TOML format, not a ConfigForge bug.
+- **TESTS**: 987 passed, 7 skipped, 2 xfailed (0 failures) — no regressions
+- **CODE REVIEW**: Builder's `--check-env` implementation (last commit: abb9a95) — solid error handling for optional deps, version detection via importlib.util.find_spec() with fallback, proper JSON/human output modes, 8 new tests. No bugs found.
+- **REPORT**: forge/external-review-20260609-1954.md
