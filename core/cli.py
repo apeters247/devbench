@@ -91,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_cf_delete(args)
     if args.command == "cf" and getattr(args, "merge", None):
         return _run_cf_merge(args)
+    if args.command == "cf" and getattr(args, "diff", None):
+        return _run_cf_diff(args)
 
     # license commands (server starts before reading stdin)
     if args.command == "license":
@@ -245,6 +247,11 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--list-merge", metavar="MODE", dest="list_merge", default="replace",
                                 choices=["replace", "append"],
                                 help="How to merge lists when using --merge: replace (default) overwrites; append extends.")
+            tool_p.add_argument("--diff", metavar="FILE", default=None,
+                                help="Structural diff: compare the base input against FILE across any format. "
+                                     "Exit 0 = identical, exit 1 = differences. "
+                                     "Works cross-format: YAML vs JSON, TOML vs INI, etc. "
+                                     "Use --raw for machine-readable JSON output.")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -1189,6 +1196,100 @@ def _run_cf_merge(args) -> int:
     else:
         sys.stdout.write(output_text)
     return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# cf --diff: structural cross-format config comparison
+# ---------------------------------------------------------------------------
+
+
+def _flatten_for_diff(obj, prefix=""):
+    """Flatten nested dict/list to {dot.path: value} for structural diffing."""
+    result = {}
+    if isinstance(obj, dict):
+        for key, val in obj.items():
+            safe_key = str(key).replace(".", "\\.")
+            new_prefix = f"{prefix}.{safe_key}" if prefix else safe_key
+            result.update(_flatten_for_diff(val, new_prefix))
+    elif isinstance(obj, list):
+        for idx, val in enumerate(obj):
+            new_prefix = f"{prefix}[{idx}]"
+            result.update(_flatten_for_diff(val, new_prefix))
+    else:
+        result[prefix] = obj
+    return result
+
+
+def _run_cf_diff(args) -> int:
+    """Structural diff between two config files, across any supported format."""
+    from . import configforge as _cf
+    content_a, _ = _cf_read_file_or_content(args)
+    if content_a is None:
+        return EXIT_ERROR
+    diff_file = args.diff
+    try:
+        content_b = Path(diff_file).read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"error: cannot read diff file: {e}", file=sys.stderr)
+        return EXIT_ERROR
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    parse_opts = _cf_parse_opts(args)
+
+    try:
+        parsed_a = _cf.parse_text(content_a, fmt=None if from_fmt == "auto" else from_fmt, **parse_opts)
+    except ValueError as exc:
+        print(f"error parsing base input: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        parsed_b = _cf.parse_text(content_b, **parse_opts)
+    except ValueError as exc:
+        print(f"error parsing diff target: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data_a = parsed_a.get("data", parsed_a)
+    data_b = parsed_b.get("data", parsed_b)
+    fmt_a = parsed_a.get("format", "unknown")
+    fmt_b = parsed_b.get("format", "unknown")
+
+    flat_a = _flatten_for_diff(data_a)
+    flat_b = _flatten_for_diff(data_b)
+
+    keys_a = set(flat_a)
+    keys_b = set(flat_b)
+    removed = sorted(keys_a - keys_b)
+    added = sorted(keys_b - keys_a)
+    changed = sorted(
+        (k, flat_a[k], flat_b[k]) for k in keys_a & keys_b if flat_a[k] != flat_b[k]
+    )
+
+    if not removed and not added and not changed:
+        print("identical")
+        return EXIT_SUCCESS
+
+    label_a = getattr(args, "text", None) or "stdin"
+    label_b = diff_file
+
+    if getattr(args, "raw", False):
+        result = {
+            "identical": False,
+            "formats": {"a": fmt_a, "b": fmt_b},
+            "added": {k: flat_b[k] for k in added},
+            "removed": {k: flat_a[k] for k in removed},
+            "changed": [{"path": k, "from": ov, "to": nv} for k, ov, nv in changed],
+        }
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        print(f"--- {label_a}  ({fmt_a})")
+        print(f"+++ {label_b}  ({fmt_b})")
+        for k in removed:
+            print(f"- {k}: {flat_a[k]!r}")
+        for k in added:
+            print(f"+ {k}: {flat_b[k]!r}")
+        for k, ov, nv in changed:
+            print(f"~ {k}: {ov!r} → {nv!r}")
+
+    return EXIT_ERROR  # exit 1 = differences found (standard diff semantics)
 
 
 # ---------------------------------------------------------------------------

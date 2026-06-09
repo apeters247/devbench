@@ -558,3 +558,143 @@ def test_tool_result_timestamp_present():
     d = tr.to_swiftui()
     assert "timestamp" in d
     assert "T" in d["timestamp"]
+
+
+# ═══════════════════════════════════════════════
+# CF --diff: structural cross-format config diff
+# ═══════════════════════════════════════════════
+import tempfile
+import pathlib
+
+
+def _write_tmp(content, suffix=".yaml"):
+    """Write content to a temp file and return its path string."""
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, encoding="utf-8")
+    f.write(content)
+    f.flush()
+    f.close()
+    return f.name
+
+
+def test_cf_diff_identical_yaml(tmp_path):
+    a = tmp_path / "a.yaml"
+    b = tmp_path / "b.yaml"
+    a.write_text("host: localhost\nport: 5432\n")
+    b.write_text("host: localhost\nport: 5432\n")
+    from core.cli import main
+    rc = main(["cf", str(a), "--diff", str(b)])
+    assert rc == 0
+
+
+def test_cf_diff_detects_added_key(tmp_path, capsys):
+    a = tmp_path / "a.yaml"
+    b = tmp_path / "b.yaml"
+    a.write_text("host: localhost\n")
+    b.write_text("host: localhost\nport: 5432\n")
+    from core.cli import main
+    rc = main(["cf", str(a), "--diff", str(b)])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "+ port" in out
+
+
+def test_cf_diff_detects_removed_key(tmp_path, capsys):
+    a = tmp_path / "a.yaml"
+    b = tmp_path / "b.yaml"
+    a.write_text("host: localhost\nport: 5432\n")
+    b.write_text("host: localhost\n")
+    from core.cli import main
+    rc = main(["cf", str(a), "--diff", str(b)])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "- port" in out
+
+
+def test_cf_diff_detects_changed_value(tmp_path, capsys):
+    a = tmp_path / "a.yaml"
+    b = tmp_path / "b.yaml"
+    a.write_text("host: localhost\nport: 5432\n")
+    b.write_text("host: production.example.com\nport: 5432\n")
+    from core.cli import main
+    rc = main(["cf", str(a), "--diff", str(b)])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "~ host" in out
+    assert "localhost" in out
+    assert "production.example.com" in out
+
+
+def test_cf_diff_cross_format_yaml_vs_json(tmp_path, capsys):
+    a = tmp_path / "a.yaml"
+    b = tmp_path / "b.json"
+    a.write_text("host: localhost\nport: 5432\n")
+    b.write_text('{"host": "localhost", "port": 5432}')
+    from core.cli import main
+    rc = main(["cf", str(a), "--diff", str(b)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "identical" in out
+
+
+def test_cf_diff_cross_format_yaml_vs_toml(tmp_path):
+    a = tmp_path / "a.yaml"
+    b = tmp_path / "b.toml"
+    a.write_text("host: localhost\nport: 5432\n")
+    b.write_text('host = "localhost"\nport = 5432\n')
+    from core.cli import main
+    rc = main(["cf", str(a), "--diff", str(b)])
+    assert rc == 0
+
+
+def test_cf_diff_raw_json_output(tmp_path, capsys):
+    a = tmp_path / "a.yaml"
+    b = tmp_path / "b.yaml"
+    a.write_text("host: localhost\n")
+    b.write_text("host: production\n")
+    from core.cli import main
+    rc = main(["cf", str(a), "--diff", str(b), "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    data = json.loads(out)
+    assert data["identical"] is False
+    assert "host" in data["changed"][0]["path"]
+    assert data["changed"][0]["from"] == "localhost"
+    assert data["changed"][0]["to"] == "production"
+
+
+def test_cf_diff_nested_structure(tmp_path, capsys):
+    a = tmp_path / "a.yaml"
+    b = tmp_path / "b.yaml"
+    a.write_text("database:\n  host: localhost\n  port: 5432\n")
+    b.write_text("database:\n  host: localhost\n  port: 5433\n")
+    from core.cli import main
+    rc = main(["cf", str(a), "--diff", str(b)])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "database.port" in out
+    assert "5432" in out
+    assert "5433" in out
+
+
+def test_cf_diff_missing_file_returns_error(tmp_path, capsys):
+    a = tmp_path / "a.yaml"
+    a.write_text("host: localhost\n")
+    from core.cli import main
+    rc = main(["cf", str(a), "--diff", "/nonexistent/path.yaml"])
+    assert rc == 1
+
+
+def test_cf_diff_flatten_for_diff_helper():
+    from core.cli import _flatten_for_diff
+    nested = {"a": {"b": {"c": 42}}, "x": [1, 2]}
+    flat = _flatten_for_diff(nested)
+    assert flat["a.b.c"] == 42
+    assert flat["x[0]"] == 1
+    assert flat["x[1]"] == 2
+
+
+def test_cf_diff_flatten_dot_in_key():
+    from core.cli import _flatten_for_diff
+    d = {"com.apple.finder": {"Enabled": True}}
+    flat = _flatten_for_diff(d)
+    assert "com\\.apple\\.finder.Enabled" in flat
