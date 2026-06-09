@@ -5,18 +5,33 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "devbench"
 version = "0.1.0"
-description = "Developer tools library — 9 utilities, clipboard auto-detection, and a CLI."
+description = "ConfigForge: 11-format config converter with comment preservation + 9 dev tools. yq alternative with TOML write support."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{ name = "Andrew Peters", email = "apeters247@gmail.com" }]
-keywords = ["developer-tools", "cli", "json", "base64", "jwt", "configforge"]
+keywords = [
+    "yaml-to-toml", "toml-converter", "yaml-converter", "json-converter",
+    "config-file-converter", "configforge", "yq-alternative", "dasel-alternative",
+    "comment-preserving-yaml", "yaml-comments", "hcl-converter", "plist-converter",
+    "toml-write", "yaml-toml-json-xml-csv-ini-env-hcl-plist",
+    "developer-tools", "cli", "json", "base64", "jwt", "token-counter", "text-chunker",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Environment :: Console",
     "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
     "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Utilities",
+    "Topic :: Text Processing :: Markup",
+    "Topic :: System :: Systems Administration",
 ]
 dependencies = [
     "pydantic>=2.0",
@@ -39,8 +54,10 @@ all = ["devbench[hcl]", "devbench[tiktoken]", "devbench[toml]"]
 devbench = "core.cli:entry_point"
 
 [project.urls]
-Homepage = "https://github.com/apeters247/devbench"
+Homepage = "https://naxiai.com/tools/devbench/"
 Repository = "https://github.com/apeters247/devbench"
+Documentation = "https://naxiai.com/tools/devbench/"
+"Bug Tracker" = "https://github.com/apeters247/devbench/issues"
 
 # Ship only the `core` package. The repo root holds many dev/scratch dirs
 # (scripts, forge, tests, ui, web); restricting the find keeps the wheel clean.

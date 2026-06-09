@@ -1217,6 +1217,33 @@ def test_split_path_no_dots():
     assert _split_path("key") == ["key"]
 
 
+def test_split_path_double_backslash_before_dot():
+    r"""Two backslashes before a dot = literal backslash key + separator dot.
+
+    The path string a\\.b (a, backslash, backslash, dot, b in memory) should
+    yield segments ["a\", "b"]: the \\ escape resolves to one literal backslash
+    inside the key name, and the following dot is an unescaped separator.
+    """
+    from core.configforge import _split_path
+    path = "a" + "\\\\" + ".b"   # a, \, \, ., b  — two backslashes then a dot
+    result = _split_path(path)
+    assert result == ["a\\", "b"]
+    assert result[0] == "a\\"    # first segment: the literal string  a\
+
+
+def test_split_path_double_backslash_then_escaped_dot():
+    r"""Four backslashes + escaped dot = literal backslash + literal dot in one key.
+
+    The path a\\\\.b (four backslashes then dot) should yield one segment "a\."
+    because \\ → one backslash and \. → one literal dot.
+    """
+    from core.configforge import _split_path
+    path = "a" + "\\\\" + "\\."   # a, \, \, \, .  — \\ then \.
+    result = _split_path(path)
+    assert result == ["a\\."]
+    assert len(result) == 1
+
+
 def test_get_by_path_dotted_key():
     """--get with escaped dot retrieves a flat key containing a literal dot.
 

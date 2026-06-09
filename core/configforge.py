@@ -1573,19 +1573,40 @@ def _sort_keys_recursive(data):
 
 
 def _split_path(path: str) -> list:
-    """Split a dot-notation path on unescaped dots only.
+    r"""Split a dot-notation path on unescaped dots only.
 
-    Backslash-escaped dots (\\.) are treated as literal dots in the key name,
-    not as path separators.  This fixes the macOS plist complaint where bundle
-    IDs like com.apple.finder are flat keys, not nested paths — write the path
-    as com\\.apple\\.finder to retrieve the literal key.
+    Escape rules (applied left-to-right):
+      \.  → literal dot in key name (not a separator)
+      \\  → literal backslash in key name
 
-    'a.b.c'      → ['a', 'b', 'c']
-    'a\\.b.c'    → ['a.b', 'c']
-    'a\\.b\\.c'  → ['a.b.c']
+    This fixes the macOS plist complaint where bundle IDs like com.apple.finder
+    are flat keys, not nested paths — escape the dots: com\.apple\.finder.
+
+    'a.b.c'         → ['a', 'b', 'c']
+    'a\.b.c'        → ['a.b', 'c']
+    'a\.b\.c'       → ['a.b.c']
+    'a\\.b'         → ['a\', 'b']   (literal backslash key, dot is separator)
     """
-    parts = re.split(r'(?<!\\)\.', path)
-    return [p.replace('\\.', '.') for p in parts]
+    parts: list = []
+    current: list = []
+    i = 0
+    n = len(path)
+    while i < n:
+        ch = path[i]
+        if ch == '\\' and i + 1 < n:
+            nxt = path[i + 1]
+            if nxt in ('.', '\\'):
+                current.append(nxt)  # \. → dot,  \\ → backslash
+                i += 2
+                continue
+        if ch == '.':
+            parts.append(''.join(current))
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+    parts.append(''.join(current))
+    return parts
 
 
 def _get_by_path(data, path: str):
