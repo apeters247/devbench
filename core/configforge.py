@@ -1467,6 +1467,80 @@ def _get_by_path(data, path: str):
     return node
 
 
+def _set_by_path(data, path: str, value):
+    """Set a value at a dot-notation path in a nested dict/list.
+
+    Creates intermediate dicts as needed when traversing a dict node.
+    Integer path segments index into lists (must be in-range).
+    Raises KeyError when a list index is invalid or the path cannot be
+    traversed through a scalar."""
+    parts = path.split(".")
+    node = data
+    for part in parts[:-1]:
+        if isinstance(node, list):
+            try:
+                node = node[int(part)]
+            except (ValueError, IndexError) as exc:
+                raise KeyError(f"index '{part}' not valid for list") from exc
+        elif isinstance(node, dict):
+            if part not in node:
+                node[part] = {}
+            node = node[part]
+        else:
+            raise KeyError(f"cannot traverse '{part}' in {type(node).__name__}")
+    last = parts[-1]
+    if isinstance(node, list):
+        try:
+            node[int(last)] = value
+        except (ValueError, IndexError) as exc:
+            raise KeyError(f"index '{last}' not valid for list") from exc
+    elif isinstance(node, dict):
+        node[last] = value
+    else:
+        raise KeyError(f"cannot set '{last}' in {type(node).__name__}")
+
+
+def _coerce_set_value(s: str):
+    """Parse --set VALUE: JSON if valid, otherwise plain string."""
+    try:
+        return json.loads(s)
+    except (ValueError, json.JSONDecodeError):
+        return s
+
+
+def _delete_by_path(data, path: str):
+    """Delete the key/element at a dot-notation path in a nested dict/list.
+
+    Raises KeyError when any path segment is missing or when a list index is
+    invalid.  Raises IndexError when a list index is out of range."""
+    parts = path.split(".")
+    node = data
+    for part in parts[:-1]:
+        if isinstance(node, list):
+            try:
+                node = node[int(part)]
+            except (ValueError, IndexError) as exc:
+                raise KeyError(f"index '{part}' not valid for list") from exc
+        elif isinstance(node, dict):
+            if part not in node:
+                raise KeyError(f"key '{part}' not found")
+            node = node[part]
+        else:
+            raise KeyError(f"cannot traverse '{part}' in {type(node).__name__}")
+    last = parts[-1]
+    if isinstance(node, list):
+        try:
+            del node[int(last)]
+        except (ValueError, IndexError) as exc:
+            raise KeyError(f"index '{last}' not valid for list") from exc
+    elif isinstance(node, dict):
+        if last not in node:
+            raise KeyError(f"key '{last}' not found")
+        del node[last]
+    else:
+        raise KeyError(f"cannot delete '{last}' from {type(node).__name__}")
+
+
 def _flatten_dict(data, parent_key="", sep="."):
     """Collapse nested dicts into dotted keys to defeat XML-style verbosity.
 
@@ -2209,6 +2283,19 @@ Compared to yq/jq:
                         help="Extract a single value by dot-notation path "
                              "(e.g. server.port, items.0.name). "
                              "--to is not required when --get is used.")
+    parser.add_argument("--set", metavar=("PATH", "VALUE"), nargs=2,
+                        help="Set a value by dot-notation path and write the result. "
+                             "VALUE is parsed as JSON (booleans, numbers, null, "
+                             "arrays, objects); strings need no quoting. "
+                             "Output format defaults to the input format. "
+                             "Use --in-place to overwrite the source file.")
+    parser.add_argument("--in-place", "-i", action="store_true", dest="in_place",
+                        help="Write --set/--delete output back to the input file (requires "
+                             "a file argument, not stdin).")
+    parser.add_argument("--delete", metavar="PATH",
+                        help="Delete a key by dot-notation path and write the result. "
+                             "Output format defaults to the input format. "
+                             "Use --in-place to overwrite the source file.")
     args = parser.parse_args(argv)
 
     options = {
@@ -2248,6 +2335,76 @@ Compared to yq/jq:
             sys.stdout.write("null\n")
         else:
             sys.stdout.write(str(val) + "\n")
+        return 0
+
+    if args.set:
+        path, raw_value = args.set
+        value = _coerce_set_value(raw_value)
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        from_fmt_set = args.from_fmt if args.from_fmt != "auto" else None
+        parsed = parse_text(text, fmt=from_fmt_set)
+        if "error" in parsed:
+            print(f"error: {parsed['error']}", file=sys.stderr)
+            return 1
+        detected_fmt = parsed.get("format")
+        data = parsed.get("data", parsed)
+        try:
+            _set_by_path(data, path, value)
+        except KeyError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        to_fmt_set = args.to or detected_fmt
+        if not to_fmt_set:
+            print("error: cannot determine output format; use --to", file=sys.stderr)
+            return 2
+        try:
+            output_text = serialize(data, to_fmt_set, **options)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        if not output_text.endswith("\n"):
+            output_text += "\n"
+        if args.in_place:
+            if not args.input:
+                print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+                return 2
+            Path(args.input).write_text(output_text, encoding="utf-8")
+        else:
+            sys.stdout.write(output_text)
+        return 0
+
+    if args.delete:
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        from_fmt_del = args.from_fmt if args.from_fmt != "auto" else None
+        parsed = parse_text(text, fmt=from_fmt_del)
+        if "error" in parsed:
+            print(f"error: {parsed['error']}", file=sys.stderr)
+            return 1
+        detected_fmt = parsed.get("format")
+        data = parsed.get("data", parsed)
+        try:
+            _delete_by_path(data, args.delete)
+        except KeyError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        to_fmt_del = args.to or detected_fmt
+        if not to_fmt_del:
+            print("error: cannot determine output format; use --to", file=sys.stderr)
+            return 2
+        try:
+            output_text = serialize(data, to_fmt_del, **options)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        if not output_text.endswith("\n"):
+            output_text += "\n"
+        if args.in_place:
+            if not args.input:
+                print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+                return 2
+            Path(args.input).write_text(output_text, encoding="utf-8")
+        else:
+            sys.stdout.write(output_text)
         return 0
 
     to_fmt = args.to

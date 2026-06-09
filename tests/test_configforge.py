@@ -502,6 +502,154 @@ def test_get_by_path_missing_key(tmp_path, capsys):
     assert "host" in captured.err
 
 
+# -- --set tests --
+
+
+def test_set_scalar_yaml(tmp_path, capsys):
+    """--set updates a scalar and re-emits valid YAML."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("server:\n  host: localhost\n  port: 8080\n")
+    rc = main([str(f), "--set", "server.port", "9200"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["server"]["port"] == 9200
+
+
+def test_set_scalar_json(tmp_path, capsys):
+    """--set updates a scalar in JSON and outputs valid JSON."""
+    from core.configforge import main
+    f = tmp_path / "config.json"
+    f.write_text('{"database": {"host": "localhost", "port": 5432}}')
+    rc = main([str(f), "--set", "database.host", "db.prod.example.com"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["database"]["host"] == "db.prod.example.com"
+    assert result["database"]["port"] == 5432
+
+
+def test_set_boolean_coercion(tmp_path, capsys):
+    """--set parses JSON booleans and numbers, not just strings."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("debug: false\n")
+    rc = main([str(f), "--set", "debug", "true"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["debug"] is True
+
+
+def test_set_creates_intermediate_key(tmp_path, capsys):
+    """--set creates intermediate dict keys when they don't exist."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("app: {}\n")
+    rc = main([str(f), "--set", "app.server.port", "8080"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["app"]["server"]["port"] == 8080
+
+
+def test_set_list_element(tmp_path, capsys):
+    """--set can update an element inside a list by index."""
+    from core.configforge import main
+    f = tmp_path / "data.json"
+    f.write_text('{"hosts": ["alpha", "beta", "gamma"]}')
+    rc = main([str(f), "--set", "hosts.1", "bravo"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["hosts"] == ["alpha", "bravo", "gamma"]
+
+
+def test_set_in_place(tmp_path):
+    """--in-place writes the updated config back to the source file."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("version: 1\n")
+    rc = main([str(f), "--set", "version", "2", "--in-place"])
+    assert rc == 0
+    result = yaml.safe_load(f.read_text())
+    assert result["version"] == 2
+
+
+def test_set_invalid_list_index(tmp_path, capsys):
+    """--set returns exit code 1 for an out-of-range list index."""
+    from core.configforge import main
+    f = tmp_path / "data.json"
+    f.write_text('{"items": [1, 2, 3]}')
+    rc = main([str(f), "--set", "items.99", "42"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "99" in captured.err or "index" in captured.err.lower()
+
+
+def test_delete_key_yaml(tmp_path, capsys):
+    """--delete removes a key from YAML output."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 8080\ndebug: true\n")
+    rc = main([str(f), "--delete", "debug"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert "debug" not in result
+    assert result["host"] == "localhost"
+    assert result["port"] == 8080
+
+
+def test_delete_nested_key(tmp_path, capsys):
+    """--delete removes a nested key by dot-notation path."""
+    from core.configforge import main
+    f = tmp_path / "config.json"
+    f.write_text('{"server": {"host": "localhost", "port": 9200, "debug": false}}')
+    rc = main([str(f), "--delete", "server.debug"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert "debug" not in result["server"]
+    assert result["server"]["host"] == "localhost"
+
+
+def test_delete_list_element(tmp_path, capsys):
+    """--delete removes an element from a list by index."""
+    from core.configforge import main
+    f = tmp_path / "data.json"
+    f.write_text('{"hosts": ["alpha", "beta", "gamma"]}')
+    rc = main([str(f), "--delete", "hosts.1"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["hosts"] == ["alpha", "gamma"]
+
+
+def test_delete_missing_key(tmp_path, capsys):
+    """--delete returns exit code 1 for a missing key."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\n")
+    rc = main([str(f), "--delete", "nonexistent"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "nonexistent" in captured.err
+
+
+def test_delete_in_place(tmp_path):
+    """--delete with --in-place writes back to source file."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 8080\n")
+    rc = main([str(f), "--delete", "port", "--in-place"])
+    assert rc == 0
+    result = yaml.safe_load(f.read_text())
+    assert "port" not in result
+    assert result["host"] == "localhost"
+
+
 def test_ini_null_values_serialize_as_empty():
     """YAML null values must become empty strings in INI output, not 'None'."""
     yaml_in = "host: localhost\nport: null\n"

@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-Builder cycle completed (2026-06-09T05:30Z). Shipped 3 SEO pages: `vs-dasel.html` (P1 competitor comparison, dasel 5 formats vs ConfigForge 9, comment preservation, batch mode), `cloudformation-yaml-converter.html` (P2 K8s/DevOps audience, CloudFormation YAML↔JSON, batch stacks, privacy angle), `value-proposition.html` (P2 pricing page, $2.11/format ROI, vs OSS/online/SaaS cost analysis, 14-day trial CTA). Removed `_decode_units` dead inner function from `core/tools.py`. Linked all 3 new pages into `web/index.html` comparison sections. Polisher (concurrent 04:22Z): `--get PATH` dot-notation value extraction across all 9 formats; multiline double-quoted .env values (PEM-cert style); test assertion hardening. Tests: **633 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green.
+**Builder cycle (2026-06-09T06:00Z).** Shipped full CRUD on config values: `--set PATH VALUE` (coerces JSON types; creates intermediate dicts), `--delete PATH`, `--in-place` flag — works across all 9 formats. 12 new tests. Tests: **645 passed, 7 skipped, 2 xfailed — 0 failures**. All distribution gates green. Critical path to revenue: Gumroad listing ($19, manual task). macOS .app blocked on Mac Mini (~3 days). Trial license already shipped.
 
 ## 4. Work Queue (ordered)
 
@@ -167,6 +167,10 @@ Builder cycle completed (2026-06-09T05:30Z). Shipped 3 SEO pages: `vs-dasel.html
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T06:00Z | **Builder** (cron — this session) | **SHIPPED: `--set PATH VALUE`, `--delete PATH`, `--in-place` flag.** Full CRUD on config values across all 9 formats. `--set` coerces JSON types (booleans, numbers, null, arrays, objects) via `_coerce_set_value()`; creates intermediate dicts for new paths. `--delete` removes keys/list-elements by dot-notation. `--in-place`/`-i` writes result back to source file (shared by both). Implementation: `_set_by_path()`, `_delete_by_path()`, `_coerce_set_value()` in `core/configforge.py`; 12 new tests (7 for --set, 5 for --delete). Tests: **645 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green. | **645/654 passing, all green. +12 tests.** |
+
+| 2026-06-09T04:37Z | **Overseer** (cron — this session) | **Snapshot. GIT ✅ GITHUB ✅ WHEEL ✅. Tests: 633 passed, 7 skipped, 2 xfailed — 0 failures (+45 since last digest). Builder active on meaningful work: Stripe replay-attack fix, convert_file error handling, --get PATH flag, ENV multiline, 3 SEO pages. Tool is feature-complete for v0.1.0. CRITICAL PATH: Gumroad listing (manual, no code). macOS .app blocked on hardware (~3 days). Blind spots: trial license in PLAN §4 marked TODO but already shipped; builder marker lag (2 commits behind HEAD); no sitemap.xml for 20 SEO pages; SEO pages at ugly nested URL /forge/seo/. Full digest: forge/overseer-digest-20260609-0437.md.** | **633 passed, 0 failures. Feature-complete. Revenue unblock = Gumroad listing.** |
 
 | 2026-06-09T04:35Z | **Builder** (cron — this session) | **FIXED: convert_file() silent OSError swallowed — write_text now wrapped in try/except, returns error dict on non-writable path. Added 3 error-path tests (nonwritable-dir, roundtrip, format-from-extension). Tests: 627 passed, 7 skipped, 2 xfailed — 0 failures.** | **627/634 passing, all gates green.** |
 
@@ -330,12 +334,13 @@ If both workers run simultaneously and need to update the same file:
 
 || Metric | Current | Target |
 |||||--------|---------|--------|
-|| Test pass rate | 624 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+|| Test pass rate | 645 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 || Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 || GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 || Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |
 || CLI tools | 11 (added token, chunk LLM tools) | 9+ (can add more) |
 || Config formats | 9 (json, yaml, toml, xml, csv, ini, env, hcl, properties) | 9 (all implemented) |
+|| Config CRUD | ✅ --get/--set/--delete PATH + --in-place flag across all 9 formats | Full value manipulation |
 || Comment preservation | ✅ Implemented (YAML + INI) + round-trip tests | Preserved through JSON round-trip |
 || macOS build | Blocked | Signed .dmg |
 || Stripe | $19 product live | Checkout working |
