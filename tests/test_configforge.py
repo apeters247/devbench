@@ -781,6 +781,72 @@ def test_yaml_parse_error_includes_location():
     assert "line" in r["error"].lower() or ":" in r["error"]
 
 
+def test_yaml_indentation_error_multiline_context():
+    """YAML indentation error shows a multi-line context block with line numbers."""
+    # A key without ':' causes "could not find expected ':'" ScannerError
+    yaml_in = "key: val\nbad_continuation\n  sub: x\n"
+    r = convert(yaml_in, "json", from_fmt="yaml")
+    assert not r["success"]
+    err = r["error"]
+    # Error message must show numbered lines (e.g. "   2:") from _yaml_context_lines
+    import re
+    assert re.search(r"\d+:", err), f"Expected numbered context lines, got:\n{err}"
+    # Must give an actionable Fix hint
+    assert "Fix:" in err, f"Expected Fix hint in:\n{err}"
+
+
+def test_yaml_indentation_error_points_to_source():
+    """For 'could not find expected' errors, message uses context_mark (actual key), not problem_mark."""
+    # "bad_continuation" on line 2 is the problematic key; parser fails at line 3
+    yaml_in = "key: val\nbad_continuation\n  sub: x\n"
+    r = convert(yaml_in, "json", from_fmt="yaml")
+    assert not r["success"]
+    err = r["error"]
+    # Must mention indentation as the cause (uses context_mark pointing to line 2)
+    assert "indent" in err.lower(), f"Expected 'indent' in error, got:\n{err}"
+    # context_mark is line 2 — the error should mention line 2
+    assert "line 2" in err, f"Expected 'line 2' reference, got:\n{err}"
+
+
+def test_yaml_mapping_values_not_allowed_indentation():
+    """'mapping values are not allowed here' gives an indentation error, not an anchor hint."""
+    # A key indented under a scalar value
+    yaml_in = "key: value\n  bad_indent: wrong\nnext: ok\n"
+    r = convert(yaml_in, "json", from_fmt="yaml")
+    assert not r["success"]
+    err = r["error"]
+    assert "indent" in err.lower(), f"Expected indentation message, got:\n{err}"
+    assert "Fix:" in err, f"Expected Fix hint in:\n{err}"
+    # Must NOT blame * or & special characters — this is not an anchor error
+    assert "special character" not in err, f"Wrong error type, got:\n{err}"
+
+
+def test_yaml_context_lines_helper():
+    """_yaml_context_lines returns numbered lines with an arrow on the error line."""
+    from core.configforge import _yaml_context_lines
+    lines = ["alpha", "beta", "gamma", "delta", "epsilon"]
+    block = _yaml_context_lines(lines, lineno=3, col=None, radius=1)
+    assert "   2: beta" in block
+    assert "→    3: gamma" in block
+    assert "   4: delta" in block
+    # Line 1 and 5 should be outside radius=1 window
+    assert "alpha" not in block
+    assert "epsilon" not in block
+
+
+def test_yaml_find_indent_source_detects_deeper_line():
+    """_yaml_find_indent_source returns the first line more indented than the error line."""
+    from core.configforge import _yaml_find_indent_source
+    lines = [
+        "server:",           # line 1, indent 0
+        "  host: x",        # line 2, indent 2
+        "    port: 80",     # line 3, indent 4  ← too deep
+        "  timeout: 30",    # line 4, indent 2  ← parser fails here
+    ]
+    source = _yaml_find_indent_source(lines, error_lineno=4)
+    assert source == 3, f"Expected line 3 as source, got {source}"
+
+
 def test_toml_no_empty_intermediate_headers():
     """TOML output must not emit empty [section] headers for intermediate-only tables.
 

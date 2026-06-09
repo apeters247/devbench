@@ -424,76 +424,163 @@ def _reinsert_yaml_comments(yaml_text: str, comments: list) -> str:
     return "\n".join(lines)
 
 
+def _yaml_context_lines(lines: list, lineno: int, col: int = None, radius: int = 2) -> str:
+    """Return an annotated multi-line block centred on *lineno* (1-based).
+
+    Shows up to *radius* lines before and after the error line, each prefixed
+    with its line number.  The error line is marked with '→'; others with ' '.
+    An optional column pointer is appended on a separate line.
+    """
+    n = len(lines)
+    start = max(1, lineno - radius)
+    end = min(n, lineno + radius)
+    block = []
+    for i in range(start, end + 1):
+        marker = "→" if i == lineno else " "
+        block.append(f"  {marker} {i:4d}: {lines[i - 1]}")
+    if col is not None and lineno <= n:
+        # prefix width: "  →  NNN: " = 10 chars; then col spaces to reach the caret
+        block.append(" " * (col + 9) + "^")
+    return "\n".join(block)
+
+
+def _yaml_find_indent_source(lines: list, error_lineno: int) -> int:
+    """Scan backward from *error_lineno* (1-based) for the likely misindented line.
+
+    PyYAML reports where parsing *failed*, not where the block was misindented.
+    For example an array item indented too deeply will cause the parser to fail
+    at the next mapping key — which is the wrong line for the user to fix.
+
+    Walk back up to 15 non-blank lines and return the first line whose
+    indentation is deeper than the error line's indent (the probable offender).
+    Returns *error_lineno* when no better candidate is found.
+    """
+    if error_lineno <= 1 or error_lineno > len(lines):
+        return error_lineno
+    err_line = lines[error_lineno - 1]
+    err_indent = len(err_line) - len(err_line.lstrip())
+    for i in range(error_lineno - 2, max(-1, error_lineno - 16), -1):
+        line = lines[i]
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if indent > err_indent:
+            return i + 1  # 1-based
+    return error_lineno
+
+
 def _yaml_error_message(exc: "yaml.YAMLError", text: str) -> str:
     """Translate a raw yaml.YAMLError into an actionable error message.
 
     Covers the most common confusing cases:
     - Scanner/ComposerError on '*foo' or '&foo' tokens (alias/anchor misparse)
+    - "could not find expected ':'" — indentation/missing-colon key error
+    - "mapping values are not allowed" — key indented at wrong block level
     - Tab character in indentation
     - Duplicate anchor name
+
+    Multi-line numbered context is shown for all errors so users can see
+    surrounding lines rather than just the exact failure point.
     """
     raw = str(exc)
     lines = text.splitlines()
 
-    # Extract line number from the exception's mark if available
-    mark = getattr(exc, "problem_mark", None) or getattr(exc, "context_mark", None)
-    lineno = mark.line + 1 if mark else None
-    col = mark.column + 1 if mark else None
-    context = f" (line {lineno}, column {col})" if lineno else ""
-    excerpt = ""
-    if lineno and 1 <= lineno <= len(lines):
-        excerpt = f"\n  → {lines[lineno - 1]}"
-        if col:
-            excerpt += f"\n  {'─' * (col + 1)}^"
+    problem_mark = getattr(exc, "problem_mark", None)
+    context_mark = getattr(exc, "context_mark", None)
 
-    # Alias/anchor: scanner sees * or & followed by an invalid name
+    def _loc(m):
+        """Return (location_string, excerpt_block) for a mark object."""
+        if not m:
+            return "", ""
+        ln = m.line + 1
+        co = m.column + 1
+        loc = f" (line {ln}, column {co})"
+        ex = "\n" + _yaml_context_lines(lines, ln, co) if 1 <= ln <= len(lines) else ""
+        return loc, ex
+
+    p_context, p_excerpt = _loc(problem_mark or context_mark)
+
+    # For "could not find expected ':'" the context_mark holds the actual problem key;
+    # problem_mark only shows where the scanner gave up (usually a later line).
+    c_context, c_excerpt = _loc(context_mark) if context_mark else (p_context, p_excerpt)
+
+    # --- Alias/anchor ---
     if "could not find expected" in raw or "found undefined alias" in raw:
         problem = getattr(exc, "problem", "")
         if "alias" in raw.lower() or "*" in problem:
             return (
-                f"YAML alias error{context}: an unquoted value starts with '*' "
+                f"YAML alias error{p_context}: an unquoted value starts with '*' "
                 f"and was parsed as an alias reference but the anchor name is "
-                f"invalid or undefined.{excerpt}\n"
+                f"invalid or undefined.{p_excerpt}\n"
                 f"  Fix: quote the value (e.g. '*.html' → \"'*.html'\") or "
                 f"define the anchor with '&name' before referencing it with '*name'."
             )
 
+        # "could not find expected ':'" — a key is missing its colon or is wrongly indented.
+        # context_mark already points at the problematic key; no backward scan needed.
+        return (
+            f"YAML indentation error{c_context}: a key is missing its ':' separator "
+            f"— check that this line is properly indented and followed by a colon."
+            f"{c_excerpt}\n"
+            f"  Fix: add ':' after the key or align its indentation with its parent "
+            f"block. Use spaces, not tabs."
+        )
+
     if "alias" in raw.lower() and "anchor" in raw.lower():
         return (
-            f"YAML anchor/alias error{context}: an anchor name may contain only "
-            f"letters, digits, hyphens, underscores, and colons.{excerpt}\n"
+            f"YAML anchor/alias error{p_context}: an anchor name may contain only "
+            f"letters, digits, hyphens, underscores, and colons.{p_excerpt}\n"
             f"  Fix: quote any value that starts with '*' or '&', "
             f"e.g. change  key: *.html  to  key: \"*.html\"."
         )
 
-    # Scanner error on * or & in a value position
-    if ("scanner" in type(exc).__name__.lower() or "scanner" in raw.lower()):
+    # --- Scanner errors ---
+    if "scanner" in type(exc).__name__.lower() or "scanner" in raw.lower():
         problem = getattr(exc, "problem", "")
-        if "special character" in raw or "mapping values" in raw or "*" in problem or "&" in problem:
+
+        # Special character (* or &) in a value position → anchor/alias hint
+        if "*" in problem or "&" in problem or "special character" in raw:
             return (
-                f"YAML syntax error{context}: a value contains a special character "
-                f"('*' or '&') that YAML reserved for anchors and aliases.{excerpt}\n"
+                f"YAML syntax error{p_context}: a value contains a special character "
+                f"('*' or '&') that YAML reserved for anchors and aliases.{p_excerpt}\n"
                 f"  Fix: wrap the value in quotes, e.g. \"*.html\" or '*.html'."
             )
 
-    # Tab character
+        # Mapping key at the wrong indentation level
+        if "mapping values are not allowed" in raw:
+            pm_lineno = problem_mark.line + 1 if problem_mark else None
+            source_line = _yaml_find_indent_source(lines, pm_lineno) if pm_lineno else pm_lineno
+            hint = ""
+            if source_line and source_line != pm_lineno:
+                hint = (
+                    f"\n  Note: this key may have been indented under line {source_line}:\n"
+                    + _yaml_context_lines(lines, source_line, radius=1)
+                )
+            return (
+                f"YAML indentation error{p_context}: a mapping key ':' appears at "
+                f"the wrong indentation level.{p_excerpt}{hint}\n"
+                f"  Fix: align this key with its parent block. "
+                f"Use consistent spaces (not tabs)."
+            )
+
+    # --- Tab character ---
     if "found character '\\t'" in raw or "tab" in raw.lower():
         return (
-            f"YAML indentation error{context}: YAML does not allow tab characters "
-            f"for indentation — use spaces only.{excerpt}\n"
+            f"YAML indentation error{p_context}: YAML does not allow tab characters "
+            f"for indentation — use spaces only.{p_excerpt}\n"
             f"  Fix: replace tabs with spaces (e.g. expand-tabs in your editor)."
         )
 
-    # Duplicate anchor
+    # --- Duplicate anchor ---
     if "duplicate" in raw.lower() and "anchor" in raw.lower():
         return (
-            f"YAML anchor error{context}: the same anchor name is defined more "
-            f"than once. Anchor names must be unique within a document.{excerpt}\n"
+            f"YAML anchor error{p_context}: the same anchor name is defined more "
+            f"than once. Anchor names must be unique within a document.{p_excerpt}\n"
             f"  Fix: rename one of the duplicate anchors."
         )
 
-    # Generic YAML error with location hint
-    return f"YAML parse error{context}: {raw}{excerpt}"
+    # Generic YAML error with multi-line location context
+    return f"YAML parse error{p_context}: {raw}{p_excerpt}"
 
 
 def _make_yaml12_loader():
