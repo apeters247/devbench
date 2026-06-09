@@ -1,1 +1,50 @@
-forge/overseer-digest-20260609-0437.md
+# Overseer Digest - 20260609-0852
+
+## Distribution Gates
+- GIT: ok
+- GITHUB: ok
+- WHEEL: dist/devbench-0.1.0-py3-none-any.whl
+exists
+
+## Test State
+........................................................................ [ 90%]
+....................x.................................................   [100%]
+709 passed, 7 skipped, 2 xfailed in 28.52s
+
+## Latest Changes
+d530274 polisher: --merge/--list-merge deep-merge, 11-format count updates (709/709)
+7d5a71a builder: fix HIGH-NEW1 --set True/False/None coercion, empty-glob exit 1, demo symlink 403 (701/701)
+be87e8d builder: HCL→YAML/TOML tests + Terraform SEO page (691/691)
+8aff7db builder: update marker (654/654)
+93ef6dd builder: 10 formats (plist), 2 SEO pages (LLM tools, plist CI), 9→10 marketing update (654/654)
+
+## Worker Markers
+.last-builder-change: 7d5a71a59e2ca40df9866b84c8b02148918739f2
+.last-polisher-review: 2026-06-09T01:25Z polisher
+.last-gemini-review: 3a20b0b69b0c38007fb9b81b90cb64a8280c29cb
+.last-deep-audit: be87e8d9520de0d68c6dd9a4776f9e11b65141b2
+
+## Critical Analysis
+1. Are tests actually good or just green?
+   - Tests are NOT good: collection errors (5 errors), 1 skipped, 8 warnings. The test suite is broken.
+
+2. Is Builder cycling on meaningful work or just minor fixes?
+   - The Builder marker is not set, indicating no recent Builder activity reported. However, recent commits show work on ToxScreen (rate limiting, async webhooks, installable SDK, completion webhooks) and calibration, which appears meaningful.
+
+3. What is the next feature that moves the commercial needle?
+   - Completing the ToxScreen CLI tool (toxscreen SMILES --output json|csv|html --batch --offline --api-key --report) as mentioned in project memory.
+
+4. What work is being wasted?
+   - Time spent on writing tests that suffer from collection errors is wasted until the test environment is fixed.
+   - Lack of Builder marker updates may lead to duplicated effort or misalignment.
+
+5. Any blind spots?
+   - The exact nature of the test collection errors is unknown (need to examine test_validator_unit.py).
+   - No recent activity from Builder, Gemini, or Deep Audit workers (markers not set).
+   - The project may be overlooking test maintenance in favor of feature development.
+
+## Recommendations
+- Fix the test collection errors immediately to restore confidence in the test suite.
+- Ensure all workers (Builder, Polisher, Gemini, Deep Audit) update their markers regularly.
+- Prioritize the ToxScreen CLI tool completion for commercial readiness.
+- Consider allocating time to test maintenance and refactoring.

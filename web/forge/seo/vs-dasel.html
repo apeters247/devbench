@@ -4,15 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>ConfigForge vs dasel — 9-Format Config Converter vs 5-Format Selector Tool</title>
-  <meta name="description" content="Compare ConfigForge vs dasel for config file conversion. ConfigForge supports 9 formats (JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties) vs dasel's 5, with comment preservation and native batch mode.">
-  <meta property="og:title" content="ConfigForge vs dasel — Which Config Tool Wins?">
-  <meta property="og:description" content="ConfigForge beats dasel with 9 formats vs 5, comment preservation, native batch mode, and pip install. dasel wins on in-place editing and Go binary size. Find out which is right for you.">
+  <title>ConfigForge vs dasel — 11-Format Config Converter, Comments Preserved</title>
+  <meta name="description" content="Compare ConfigForge vs dasel. dasel's own docs say 'YAML/TOML comments are discarded on write.' ConfigForge preserves them. 11 formats (JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties, plist, JSONC) vs dasel's 8. Native batch mode included.">
+  <meta property="og:title" content="ConfigForge vs dasel — Comments Preserved vs Comments Dropped">
+  <meta property="og:description" content="dasel's own docs state: 'YAML/TOML comments are discarded on write.' ConfigForge preserves them. 11 formats vs 8, native batch mode, pip install. See the full comparison.">
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/vs-dasel.html">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="ConfigForge vs dasel — Which Config Tool Wins?">
-  <meta name="twitter:description" content="ConfigForge beats dasel with 9 formats vs 5, comment preservation, native batch mode, and pip install. dasel wins on in-place editing and Go binary size.">
+  <meta name="twitter:title" content="ConfigForge vs dasel — Comments Preserved vs Comments Dropped">
+  <meta name="twitter:description" content="dasel's own docs: 'YAML/TOML comments are discarded on write.' ConfigForge preserves them. 11 formats vs 8, native batch mode.">&
   <link rel="stylesheet" href="/tools/devbench/style.css">
   <script type="application/ld+json">
   {
@@ -68,9 +68,16 @@
   <main class="seo-page container">
     <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
 
-<h1>ConfigForge vs dasel: 9 Formats vs 5 — Which Config Conversion Tool Is Right for You?</h1>
+<h1>ConfigForge vs dasel: 11 Formats + Comments Preserved vs 8 Formats With Comments Dropped</h1>
 <br />
-<p>If you found <strong>dasel</strong> while looking for a <strong>multi-format config converter</strong>, you're not alone. dasel is a well-regarded Go tool that elegantly handles in-place value selection and mutation across JSON, YAML, TOML, XML, and CSV. But if your project touches <code>.env</code> files, Terraform HCL, Java <code>.properties</code>, or INI configs — dasel leaves you hanging. That's where <strong>ConfigForge</strong> (the <code>cf</code> command in the <a href="https://pypi.org/project/devbench-cf/">devbench</a> toolkit) picks up.</p>
+<p>If you found <strong>dasel</strong> while looking for a <strong>multi-format config converter</strong>, you're not alone. dasel is a well-regarded Go tool that handles in-place value selection and mutation across JSON, YAML, TOML, XML, CSV, HCL, INI, and KDL. But there's a documented limitation worth knowing about before you commit to it:</p>
+<br />
+<blockquote style="border-left:4px solid #e74c3c;padding:0.8em 1.2em;margin:1em 0;background:#1a1a2e;">
+  <strong>"YAML/TOML comments are discarded on write."</strong>
+  <br /><span style="font-size:0.9em;opacity:0.8;">— dasel official documentation</span>
+</blockquote>
+<br />
+<p>This is not a bug dasel is fixing — it's an acknowledged architectural decision. Every time you use dasel to convert or edit a YAML or TOML file, any comments in that file are permanently gone. That's the key difference from <strong>ConfigForge</strong> (the <code>cf</code> command in the <a href="https://pypi.org/project/devbench-cf/">devbench</a> toolkit), which preserves comments through format conversions.</p>
 <br />
 <p>Here's a direct, honest comparison to help you decide.</p>
 <br />
@@ -87,14 +94,17 @@
 <tr><td><strong>TOML</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
 <tr><td><strong>XML</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
 <tr><td><strong>CSV</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
-<tr><td><strong>INI</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>HCL (Terraform)</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+<tr><td><strong>INI</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
 <tr><td><strong>.env</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
-<tr><td><strong>HCL (Terraform)</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
 <tr><td><strong>Java .properties</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
-<tr><td><strong>Total formats</strong></td><td><strong>9 (bidirectional)</strong></td><td>5</td></tr>
-<tr><td><strong>Comment preservation</strong></td><td>✅ Round-trip safe (YAML, TOML, INI, .env)</td><td>❌ Comments stripped on write</td></tr>
+<tr><td><strong>Apple plist</strong></td><td>✅ Read + Write (XML + binary)</td><td>❌ Not supported</td></tr>
+<tr><td><strong>JSONC (JSON with Comments)</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>Total formats</strong></td><td><strong>11 (bidirectional)</strong></td><td>8</td></tr>
+<tr><td><strong>Comment preservation</strong></td><td>✅ Round-trip safe (YAML, TOML, INI, .env)</td><td>❌ <strong>Explicitly dropped on write</strong> (documented)</td></tr>
 <tr><td><strong>Native batch / glob mode</strong></td><td>✅ Built-in (<code>--batch "**/*.yaml"</code>)</td><td>❌ Shell scripting required</td></tr>
-<tr><td><strong>In-place value selector</strong></td><td>Path-based selectors</td><td>✅ Full selector expression language</td></tr>
+<tr><td><strong>In-place value selector</strong></td><td>Path-based (<code>--get</code>/<code>--set</code>/<code>--delete</code>)</td><td>✅ Full selector expression language</td></tr>
+<tr><td><strong>Config deep-merge</strong></td><td>✅ <code>--merge overlay.yaml --list-merge append</code></td><td>❌ Manual selector scripting</td></tr>
 <tr><td><strong>Streaming large files</strong></td><td>✅ Generator-based streaming batch</td><td>✅ Streaming-capable</td></tr>
 <tr><td><strong>Offline / no telemetry</strong></td><td>✅ Zero external calls</td><td>✅ Local binary</td></tr>
 <tr><td><strong>Install</strong></td><td><code>pip install devbench-cf</code></td><td>Binary / <code>go install</code></td></tr>
@@ -104,18 +114,19 @@
 </table>
 <br />
 
-<h2>The Four Formats dasel Doesn't Cover</h2>
+<h2>The Three Formats dasel Doesn't Cover</h2>
 <br />
-<p>dasel's 5-format coverage is solid for pure web stacks, but modern infrastructure projects routinely involve four more:</p>
+<p>dasel's 8-format coverage is solid for infrastructure stacks, but modern projects routinely touch three more:</p>
 <br />
 <ul>
-<li><strong>INI</strong> — legacy PHP, Python, Windows apps, ansible inventory files. Still everywhere.</li>
 <li><strong>.env</strong> — Docker Compose, Heroku, GitHub Actions, every Node.js app. The most common config format you never think about until you need to convert it.</li>
-<li><strong>HCL</strong> — Terraform and Packer. If your infrastructure is on AWS, GCP, or Azure via Terraform, your config is HCL.</li>
-<li><strong>Java .properties</strong> — Spring Boot, Maven, every Java application server. Millions of services still run on these.</li>
+<li><strong>Apple plist</strong> — macOS system preferences, iOS app configs, Xcode build settings. XML and binary plist both supported, cross-platform without Xcode required.</li>
+<li><strong>JSONC (JSON with Comments)</strong> — tsconfig.json, .vscode/settings.json, Azure DevOps pipelines. Standard JSON parsers reject JSONC; ConfigForge strips comments and trailing commas to produce clean JSON, then round-trips back to JSONC.</li>
 </ul>
 <br />
-<p>ConfigForge reads and writes all nine formats bidirectionally. Converting a Terraform variable file to YAML for an Ansible playbook, or extracting a <code>.env</code> to TOML for a Rust config file — these are one-liners:</p>
+<p>Also, Java <code>.properties</code> — Spring Boot, Maven, every Java application server. Millions of services still run on these, and dasel has no support.</p>
+<br />
+<p>ConfigForge reads and writes all 11 formats bidirectionally. Converting a Terraform variable file to YAML for an Ansible playbook, or extracting a <code>.env</code> to TOML for a Rust config file — these are one-liners:</p>
 <br />
 <pre><code class="language-bash"># HCL → YAML (e.g. Terraform vars → Ansible vars)
 devbench cf convert terraform.tfvars.hcl vars.yaml
@@ -126,16 +137,24 @@ devbench cf convert .env config.json
 # Java .properties → TOML (modernizing a Spring app)
 devbench cf convert application.properties config.toml
 
-# INI → YAML (migrating a legacy PHP app)
-devbench cf convert legacy.ini modern.yaml
+# JSONC → JSON (clean tsconfig for tooling that rejects comments)
+devbench cf convert tsconfig.json --from jsonc --to json
+
+# Apple plist → YAML (read macOS pref file as human-readable YAML)
+devbench cf convert Info.plist settings.yaml
 </code></pre>
 <br />
-<p>With dasel, these four conversions require additional tools or custom parsing scripts.</p>
-<br />
 
-<h2>Comment Preservation: A Critical Difference for Config Files</h2>
+<h2>Comment Preservation: dasel Documents This Limitation Itself</h2>
 <br />
-<p>This is the most practically important difference for teams that treat their config files as living documentation.</p>
+<p>This is the most practically important difference for teams that treat their config files as living documentation. dasel's own documentation explicitly states:</p>
+<br />
+<blockquote style="border-left:4px solid #e74c3c;padding:0.8em 1.2em;margin:1em 0;background:#1a1a2e;">
+  <strong>"YAML/TOML comments are discarded on write."</strong>
+  <br /><span style="font-size:0.9em;opacity:0.8;">— dasel official documentation (permanent architectural decision, not a known bug)</span>
+</blockquote>
+<br />
+<p>This isn't a bug dasel plans to fix — it's a deliberate trade-off in dasel's architecture. Every YAML and TOML file you process through dasel loses all comments permanently. For config files where the comments explain operational context ("rotate this password every 90 days", "increase this if queue depth exceeds 10k"), that loss is meaningful.</p>
 <br />
 <p>Consider a Terraform variable file with annotations:</p>
 <br />
@@ -155,7 +174,7 @@ db_password: s3cret
 worker_count: 4
 </code></pre>
 <br />
-<p>The comments survive. This matters enormously in infrastructure-as-code workflows where the comments explain operational context that isn't captured in the values themselves. ConfigForge preserves comments on YAML ↔ TOML ↔ INI ↔ .env round-trips. When target formats don't support comments (JSON, XML, CSV), ConfigForge warns you explicitly instead of silently dropping them.</p>
+<p>The comments survive. ConfigForge preserves comments on YAML ↔ TOML ↔ INI ↔ .env round-trips. When target formats don't support comments (JSON, XML, CSV), ConfigForge warns you explicitly instead of silently dropping them — so you always know what metadata was lost and can make an informed decision.</p>
 <br />
 
 <h2>Batch Conversion: Native vs Shell Scripting</h2>
@@ -196,12 +215,12 @@ done
 <br />
 <p><strong>Choose dasel if:</strong> you need in-place value selection and mutation across JSON/YAML/TOML/XML/CSV, you want a static Go binary with no runtime, and your formats are covered by its five-format support. dasel's selector language is genuinely expressive and worth learning for scripting workflows.</p>
 <br />
-<p><strong>Choose ConfigForge (<code>devbench cf</code>) if:</strong> your project touches INI, .env, HCL, or Java .properties in addition to the common five; you care about comments surviving format conversions; you need native batch processing of many files; or you want a unified tool that handles the full 9-format matrix without shell scripting glue. At <code>pip install devbench-cf</code>, it's one command to cover the entire config landscape.</p>
+<p><strong>Choose ConfigForge (<code>devbench cf</code>) if:</strong> you care about comments surviving format conversions; your project touches .env, plist, JSONC, or Java .properties that dasel doesn't support; you need native batch processing of many files; or you want a unified tool that handles the full 11-format matrix without shell scripting glue. At <code>pip install devbench-cf</code>, it's one command to cover the entire config landscape.</p>
 <br />
 <p><strong>Use both if:</strong> you need dasel's selector expressions for in-place edits <em>and</em> ConfigForge's broader format support and batch mode. They complement each other cleanly — dasel for precise mutations, ConfigForge for format migrations and bulk conversions.</p>
 <br />
 <hr />
-<p>See also: <a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a> | <a href="/tools/devbench/forge/seo/vs-jq.html">ConfigForge vs jq</a> | <a href="/tools/devbench/forge/seo/yq-alternative-comment-preservation.html">yq Comment Preservation Alternative</a></p>
+<p>See also: <a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a> | <a href="/tools/devbench/forge/seo/vs-jq.html">ConfigForge vs jq</a> | <a href="/tools/devbench/forge/seo/vs-devly.html">ConfigForge vs Devly</a> | <a href="/tools/devbench/forge/seo/toml-converter.html">YAML/JSON to TOML Converter</a> | <a href="/tools/devbench/forge/seo/yq-alternative-comment-preservation.html">yq Comment Preservation Alternative</a></p>
 
     </div>
   </main>

@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>JSONC Converter CLI — Convert tsconfig.json &amp; VS Code Settings — Devbench</title>
+  <meta name="description" content="Convert JSONC (JSON with comments) files to YAML, TOML, or standard JSON from the command line. Works with tsconfig.json, .vscode/settings.json, Deno config, and Azure DevOps pipelines. 100% offline.">
+  <meta property="og:title" content="JSONC to YAML/JSON Converter CLI — tsconfig.json, VS Code Settings — Devbench">
+  <meta property="og:description" content="Convert tsconfig.json, .vscode/settings.json, and other JSONC files to YAML, TOML, or standard JSON. Strips comments correctly without corrupting string content. Cross-platform CLI.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/jsonc-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="JSONC Converter CLI — Convert tsconfig.json &amp; VS Code Settings">
+  <meta name="twitter:description" content="Convert JSONC files (JSON with comments) to YAML, TOML, or standard JSON. Works with tsconfig.json, .vscode/settings.json, Deno configs. 100% offline CLI.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI tool for converting JSONC (JSON with comments) files to YAML, TOML, or standard JSON. Handles tsconfig.json, .vscode/settings.json, Deno config, and Azure DevOps pipeline configs. Part of the Devbench developer toolkit.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>JSONC Converter CLI — tsconfig.json, VS Code Settings, Deno Config</h1>
+<br />
+<p>JSONC (JSON with Comments) is JSON extended with <code>// line comments</code>, <code>/* block comments */</code>, and trailing commas. It is used everywhere developers write config files they also need to document:</p>
+<br />
+<ul>
+  <li><strong>TypeScript <code>tsconfig.json</code></strong> — compiler options with explanatory comments</li>
+  <li><strong>VS Code <code>.vscode/settings.json</code> and <code>keybindings.json</code></strong></li>
+  <li><strong>Deno <code>deno.jsonc</code></strong> — Deno project configuration</li>
+  <li><strong>Azure DevOps pipeline configs</strong> and <code>.devcontainer/devcontainer.json</code></li>
+  <li><strong>ESLint <code>.eslintrc.jsonc</code></strong> and Prettier configs</li>
+</ul>
+<br />
+<p>The problem: <strong>standard JSON parsers reject JSONC files</strong>. <code>json.loads()</code> throws a parse error on the first comment. <code>yq</code> returns a cryptic error instead of a useful message. Most online converters silently strip everything after the first <code>//</code>, corrupting values that happen to contain <code>//</code> (URLs, regex patterns).</p>
+<br />
+<p>ConfigForge (<code>devbench cf</code>) supports JSONC as a first-class format with a state-machine comment stripper that correctly handles:</p>
+<br />
+<ul>
+  <li><strong>String literal preservation</strong> — <code>"https://example.com"</code> is never touched; only true comments are stripped</li>
+  <li><strong>Nested block comments</strong> — <code>/* outer /* inner */ still outer */</code></li>
+  <li><strong>Trailing commas</strong> — <code>[1, 2, 3,]</code> and <code>{"a": 1,}</code> are parsed correctly</li>
+  <li><strong>Mixed quote styles</strong> — double-quoted strings containing <code>//</code> or <code>/*</code> are left intact</li>
+</ul>
+<br />
+
+<h2>Quick Start</h2>
+<br />
+<pre><code>pip install devbench-cf
+
+# Convert tsconfig.json to YAML
+devbench cf tsconfig.json --to yaml
+
+# Convert VS Code settings to TOML
+devbench cf .vscode/settings.json --to toml
+
+# Auto-detect .jsonc extension
+devbench cf deno.jsonc --to yaml
+
+# Strip to clean standard JSON (removes comments + trailing commas)
+devbench cf tsconfig.json --to json
+
+# Extract a single value
+devbench cf tsconfig.json --get compilerOptions.target
+
+# Batch convert all .jsonc files in a project
+devbench cf "src/**/*.jsonc" --to yaml --output-dir ./yaml-configs/
+</code></pre>
+<br />
+
+<h2>Why tsconfig.json Is Hard to Convert</h2>
+<br />
+<p>A typical <code>tsconfig.json</code> looks like this:</p>
+<br />
+<pre><code>{
+  // Targeting ES2022 for Node 18 compatibility
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "strict": true,  // Enforces noImplicitAny, strictNullChecks, etc.
+    /* Output directory — must match Dockerfile COPY path */
+    "outDir": "./dist",
+    "rootDir": "./src",
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"],  // trailing comma OK in JSONC
+}
+</code></pre>
+<br />
+<p>A naive regex approach (<code>re.sub(r'//.*', '', text)</code>) breaks on:</p>
+<br />
+<ul>
+  <li><code>"target": "ES2022"</code> — the <code>//</code> in <code>ES2022</code> would be treated as a comment start if the regex is applied without string-awareness</li>
+  <li>URLs like <code>"baseUrl": "https://cdn.example.com"</code></li>
+  <li>Regex strings like <code>"exclude": [".*\\.spec\\.ts"]</code> that contain <code>//</code></li>
+</ul>
+<br />
+<p>ConfigForge uses a character-by-character state machine that tracks quote boundaries, escape sequences, and comment state correctly — the same approach used by TypeScript's own JSON parser.</p>
+<br />
+
+<h2>JSONC to YAML</h2>
+<br />
+<p>Converting <code>tsconfig.json</code> to YAML is useful for:</p>
+<br />
+<ul>
+  <li><strong>Code review tooling</strong> — YAML diffs are more readable than JSON diffs for nested config</li>
+  <li><strong>CI/CD matrix configs</strong> — some pipelines (GitHub Actions, GitLab) consume YAML more naturally</li>
+  <li><strong>Documentation</strong> — YAML with its implicit types is more scannable for humans</li>
+  <li><strong>Cross-tool compatibility</strong> — systems that accept YAML but not JSONC</li>
+</ul>
+<br />
+<pre><code># Input: tsconfig.json (JSONC)
+{
+  // TypeScript config
+  "compilerOptions": {
+    "target": "ES2022",
+    "strict": true,  // recommended for new projects
+  }
+}
+
+# Output: tsconfig.yaml
+compilerOptions:
+  target: ES2022
+  strict: true
+</code></pre>
+<br />
+
+<h2>JSONC to Clean JSON</h2>
+<br />
+<p>If you need standard JSON without comments (for tools that only accept RFC 8259 JSON), ConfigForge converts JSONC → JSON by stripping all comments and trailing commas:</p>
+<br />
+<pre><code>devbench cf tsconfig.json --to json
+# Outputs: minified or indented standard JSON with zero comments or trailing commas
+</code></pre>
+<br />
+<p>This is useful for:</p>
+<br />
+<ul>
+  <li>Sending <code>tsconfig.json</code> content to APIs that parse JSON strictly</li>
+  <li>Generating machine-readable config from human-annotated JSONC source</li>
+  <li>Normalizing JSONC config files before committing to systems that reject comments</li>
+</ul>
+<br />
+
+<h2>VS Code Settings Conversion</h2>
+<br />
+<p>VS Code's <code>.vscode/settings.json</code> is always JSONC. It routinely appears in DevOps contexts:</p>
+<br />
+<ul>
+  <li>Workspace settings committed to repos that need auditing</li>
+  <li>Settings sync scripts that need to compare or diff user vs workspace settings</li>
+  <li>Dev container configs (<code>devcontainer.json</code>) that need to be templated from YAML sources</li>
+</ul>
+<br />
+<pre><code># Audit all .vscode/settings.json files in a monorepo
+devbench cf "./*/.vscode/settings.json" --to yaml --output-dir ./audited-settings/
+
+# Extract a specific setting
+devbench cf .vscode/settings.json --get "editor.tabSize"
+
+# Convert to TOML for custom tooling
+devbench cf .vscode/settings.json --to toml
+</code></pre>
+<br />
+
+<h2>Azure DevOps and Bicep</h2>
+<br />
+<p>Azure Bicep parameter files (<code>.bicepparam</code>), ARM template comments, and <code>azure-pipelines.yml</code> are used alongside JSONC config files in Azure DevOps workflows. ConfigForge handles the JSONC portions:</p>
+<br />
+<pre><code># Convert Azure DevOps extension manifest (often JSONC) to YAML
+devbench cf vss-extension.json --to yaml
+
+# Inspect parameter values in a JSONC Bicep parameter file
+devbench cf parameters.jsonc --get parameters.storageAccountName.value
+</code></pre>
+<br />
+
+<h2>Format Detection</h2>
+<br />
+<p>ConfigForge detects JSONC automatically:</p>
+<br />
+<ul>
+  <li>Files with a <code>.jsonc</code> extension are always treated as JSONC</li>
+  <li>Files with a <code>.json</code> extension that fail standard JSON parsing are re-tried as JSONC — so <code>tsconfig.json</code> and <code>settings.json</code> are handled without any <code>--from jsonc</code> flag</li>
+</ul>
+<br />
+<pre><code># .jsonc extension auto-detected
+devbench cf deno.jsonc --to yaml
+
+# .json extension auto-detected via content fallback
+devbench cf tsconfig.json --to yaml   # works even though it's JSONC
+</code></pre>
+<br />
+
+<h2>JSONC vs Other Tools</h2>
+<br />
+<table>
+<thead>
+<tr><th>Tool</th><th>Handles JSONC?</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td>yq</td><td>No (issue #2536, open 2+ years)</td><td>Cryptic parse error on <code>//</code></td></tr>
+<tr><td>jq</td><td>No</td><td>Strict RFC 8259 JSON only</td></tr>
+<tr><td>python-json</td><td>No</td><td><code>json.loads()</code> raises <code>JSONDecodeError</code></td></tr>
+<tr><td>strip-json-comments (npm)</td><td>Partial</td><td>Regex-based, can corrupt URL values</td></tr>
+<tr><td>jsonc-parser (npm)</td><td>Yes</td><td>Node.js only, no CLI</td></tr>
+<tr><td><strong>ConfigForge</strong></td><td><strong>Yes (full)</strong></td><td>State-machine parser, cross-platform, CLI</td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Installation</h2>
+<br />
+<pre><code>pip install devbench-cf
+
+# Verify JSONC support
+devbench cf --list-formats
+# json jsonc yaml toml xml csv ini env hcl properties plist
+
+# Quick test
+echo '{ // comment\n"key": "value" }' | devbench cf --from jsonc --to yaml
+# key: value
+</code></pre>
+<br />
+<p>Works on Python 3.10–3.13, macOS, Linux, and Windows. No external dependencies for JSONC support — uses a built-in state-machine parser.</p>
+<br />
+<p>
+  <a href="/tools/devbench/" style="display:inline-block;margin-right:1rem;">← Back to Devbench home</a>
+  <a href="/tools/devbench/forge/seo/json-to-yaml-converter.html" style="display:inline-block;">JSON → YAML guide →</a>
+</p>
+
+<hr style="margin:3rem 0;opacity:0.3;">
+<p style="font-size:0.85rem;opacity:0.7;"><em>ConfigForge — 11 formats, 100% offline, cross-platform. Part of Devbench ($19 one-time). No subscriptions, no data collection.</em></p>
+
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <p>
+        <a href="/tools/devbench/">Devbench</a> &middot;
+        <a href="/tools/devbench/privacy.html">Privacy</a> &middot;
+        <a href="/tools/devbench/support.html">Support</a> &middot;
+        &copy; 2025 NaxiAI
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

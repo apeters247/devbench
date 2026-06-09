@@ -1529,14 +1529,32 @@ def _xml_to_dict(element, flatten=False):
     return result
 
 
+def _split_path(path: str) -> list:
+    """Split a dot-notation path on unescaped dots only.
+
+    Backslash-escaped dots (\\.) are treated as literal dots in the key name,
+    not as path separators.  This fixes the macOS plist complaint where bundle
+    IDs like com.apple.finder are flat keys, not nested paths — write the path
+    as com\\.apple\\.finder to retrieve the literal key.
+
+    'a.b.c'      → ['a', 'b', 'c']
+    'a\\.b.c'    → ['a.b', 'c']
+    'a\\.b\\.c'  → ['a.b.c']
+    """
+    import re
+    parts = re.split(r'(?<!\\)\.', path)
+    return [p.replace('\\.', '.') for p in parts]
+
+
 def _get_by_path(data, path: str):
     """Extract a value from a nested dict/list using a dot-notation path.
 
     Addresses the HN complaint that jq/yq query syntax is too complex for
     simple value extraction — 'server.port' beats '.server | .port // empty'.
     Integer path segments are tried as list indices when the current node is
-    a list.  Raises KeyError/IndexError if the path does not exist."""
-    parts = path.split(".")
+    a list.  Raises KeyError/IndexError if the path does not exist.
+    Use backslash-escaped dots (\\.) to address keys containing literal dots."""
+    parts = _split_path(path)
     node = data
     for part in parts:
         if isinstance(node, list):
@@ -1559,8 +1577,9 @@ def _set_by_path(data, path: str, value):
     Creates intermediate dicts as needed when traversing a dict node.
     Integer path segments index into lists (must be in-range).
     Raises KeyError when a list index is invalid or the path cannot be
-    traversed through a scalar."""
-    parts = path.split(".")
+    traversed through a scalar.
+    Use backslash-escaped dots (\\.) to address keys containing literal dots."""
+    parts = _split_path(path)
     node = data
     for part in parts[:-1]:
         if isinstance(node, list):
@@ -1629,8 +1648,9 @@ def _delete_by_path(data, path: str):
     """Delete the key/element at a dot-notation path in a nested dict/list.
 
     Raises KeyError when any path segment is missing or when a list index is
-    invalid.  Raises IndexError when a list index is out of range."""
-    parts = path.split(".")
+    invalid.  Raises IndexError when a list index is out of range.
+    Use backslash-escaped dots (\\.) to address keys containing literal dots."""
+    parts = _split_path(path)
     node = data
     for part in parts[:-1]:
         if isinstance(node, list):
@@ -2580,7 +2600,11 @@ Compared to yq/jq:
         return 0
 
     if args.merge:
-        base_text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            base_text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        except OSError as e:
+            print(f"error: cannot read base file: {e}", file=sys.stderr)
+            return 1
         from_fmt_merge = args.from_fmt if args.from_fmt != "auto" else None
         base_parsed = parse_text(base_text, fmt=from_fmt_merge)
         if "error" in base_parsed:
@@ -2588,7 +2612,11 @@ Compared to yq/jq:
             return 1
         detected_fmt = base_parsed.get("format")
         base_data = base_parsed.get("data", base_parsed)
-        overlay_text = Path(args.merge).read_text(encoding="utf-8")
+        try:
+            overlay_text = Path(args.merge).read_text(encoding="utf-8")
+        except OSError as e:
+            print(f"error: cannot read overlay file: {e}", file=sys.stderr)
+            return 1
         overlay_parsed = parse_text(overlay_text)
         if "error" in overlay_parsed:
             print(f"error reading overlay: {overlay_parsed['error']}", file=sys.stderr)

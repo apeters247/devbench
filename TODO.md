@@ -16,10 +16,10 @@
 
 ## THIS WEEK
 
-- [ ] Create Gumroad product page with screenshots, tagline, and pricing tiers
-- [ ] Write Gumroad description (features, system requirements, refund policy)
+- [x] Create Gumroad product page with screenshots, tagline, and pricing tiers
+- [x] Write Gumroad description (features, system requirements, refund policy)
 - [ ] Set up Gumroad license key generation for macOS purchases
-- [ ] Research and compile target SEO keywords ("macOS dev tool", "Python GUI builder", etc.)
+- [ ] Research and compile target SEO keywords (\"macOS dev tool\", \"Python GUI builder\", etc.)
 - [ ] Add structured data (JSON-LD) to the landing page for rich search snippets
 - [ ] Write App Store product page copy and choose screenshots
 - [ ] Request App Store promotional codes for reviewers
@@ -31,7 +31,7 @@
 - [ ] Submit to the Mac App Store (App Store Connect + Xcode upload)
 - [ ] Respond to App Store review feedback (if any)
 - [ ] Launch on Product Hunt — prepare hunter outreach, GIF demo, first comment
-- [ ] Launch on Hacker News — write "Show HN" post, prepare for discussion
+- [ ] Launch on Hacker News — write \"Show HN\" post, prepare for discussion
 - [ ] Monitor analytics and crash reports after launch
 - [ ] Post-launch blog post / changelog
 

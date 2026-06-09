@@ -55,6 +55,7 @@ def _assert_graceful(r):
     which an empty dict or error-less failure would also satisfy.
     """
     assert isinstance(r, dict)
+    assert "success" in r
     assert isinstance(r["success"], bool)
     if r["success"]:
         assert isinstance(r["output"], str) and r["output"] != ""

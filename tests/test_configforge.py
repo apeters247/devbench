@@ -1162,3 +1162,77 @@ def test_passthrough_unknown_format_errors(capsys, monkeypatch):
     rc = main([])
     assert rc == 2
     assert "could not auto-detect" in capsys.readouterr().err
+
+
+# ── Backslash-escaped dot paths (macOS plist bundle ID fix) ──
+# Addresses the complaint that --get com.apple.finder splits on dots and
+# traverses incorrectly instead of addressing the flat bundle-ID key.
+
+def test_split_path_plain():
+    from core.configforge import _split_path
+    assert _split_path("a.b.c") == ["a", "b", "c"]
+
+
+def test_split_path_escaped_dot():
+    from core.configforge import _split_path
+    assert _split_path("a\\.b.c") == ["a.b", "c"]
+
+
+def test_split_path_all_escaped():
+    from core.configforge import _split_path
+    assert _split_path("com\\.apple\\.finder") == ["com.apple.finder"]
+
+
+def test_split_path_no_dots():
+    from core.configforge import _split_path
+    assert _split_path("key") == ["key"]
+
+
+def test_get_by_path_dotted_key():
+    """--get with escaped dot retrieves a flat key containing a literal dot.
+
+    Fixes the macOS plist complaint: bundle IDs like com.apple.finder are
+    flat keys, not nested paths.  Users escape dots with backslash to opt out
+    of path traversal."""
+    from core.configforge import _get_by_path
+    data = {"com.apple.finder": {"ShowPathbar": True}, "other": 1}
+    assert _get_by_path(data, "com\\.apple\\.finder") == {"ShowPathbar": True}
+
+
+def test_get_by_path_mixed_escaped_and_plain():
+    """Partial escape: one escaped dot keeps the prefix as a single segment."""
+    from core.configforge import _get_by_path
+    data = {"db.host": {"port": 5432}}
+    assert _get_by_path(data, "db\\.host.port") == 5432
+
+
+def test_set_by_path_dotted_key():
+    """--set with escaped dot updates a flat bundle-ID key."""
+    from core.configforge import _set_by_path
+    data = {"com.example.App": "old"}
+    _set_by_path(data, "com\\.example\\.App", "new")
+    assert data["com.example.App"] == "new"
+
+
+def test_delete_by_path_dotted_key():
+    """--delete with escaped dot removes a flat bundle-ID key."""
+    from core.configforge import _delete_by_path
+    data = {"com.example.App": "present", "other": 1}
+    _delete_by_path(data, "com\\.example\\.App")
+    assert "com.example.App" not in data
+    assert data["other"] == 1
+
+
+def test_get_by_path_dotted_key_cli(tmp_path, capsys):
+    """CLI --get with backslash-escaped dot works end-to-end on a JSON file.
+
+    Simulates a macOS developer querying a preferences.json file that has
+    flat bundle-ID keys instead of nested dicts."""
+    from core.configforge import main
+    f = tmp_path / "prefs.json"
+    f.write_text('{"com.apple.finder": {"ShowPathbar": true}, "other": 42}')
+    rc = main([str(f), "--get", "com\\.apple\\.finder"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["ShowPathbar"] is True

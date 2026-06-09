@@ -172,7 +172,10 @@ def test_xml_flatten_reduces_nesting():
     assert data["project.name"] == "app"
     # And it is genuinely less nested than the default.
     deep_data = json.loads(deep["output"])
-    assert isinstance(deep_data.get("project"), dict)
+    project = deep_data.get("project")
+    assert isinstance(project, dict)
+    assert project.get("name") == "app"
+    assert project.get("version") == "1.0"
 
 
 # ── PP9: Timestamp type loss (JSON -> TOML) ──

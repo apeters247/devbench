@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>YAML to TOML Converter — JSON to TOML CLI (yq Alternative with TOML Write)</title>
+  <meta name="description" content="Convert YAML, JSON, INI, or HCL to TOML from the command line. The yq alternative that actually writes TOML. pip install devbench-cf, then: cf convert config.yaml config.toml. Cross-platform, offline, comment-preserving.">
+  <meta property="og:title" content="YAML to TOML Converter CLI — yq Can't Do This, ConfigForge Can">
+  <meta property="og:description" content="yq explicitly cannot write TOML output. ConfigForge can: pip install devbench-cf → cf convert config.yaml config.toml. Supports JSON, YAML, INI, HCL, .env → TOML. Offline. Cross-platform.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/toml-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="YAML to TOML Converter — JSON to TOML CLI">
+  <meta name="twitter:description" content="The CLI that writes TOML output. yq users: yq cannot write TOML. Use ConfigForge: pip install devbench-cf → cf convert config.yaml config.toml.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "ConfigForge: 11-format config converter CLI. Supports bidirectional YAML/JSON/TOML/XML/CSV/INI/.env/HCL/.properties/plist/JSONC conversion with comment preservation, batch mode, and TOML write support.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon, Intel, or any x86-64/ARM64"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>YAML to TOML Converter — The CLI yq Users Keep Asking For</h1>
+<br />
+<p>If you've ever searched for a YAML-to-TOML converter and landed on a yq issue thread, you already know the problem. yq is a powerful YAML processor, but it <strong>cannot write TOML output</strong>. From the official yq documentation:</p>
+<br />
+<blockquote style="border-left:4px solid #e74c3c;padding:0.8em 1.2em;margin:1em 0;background:#1a1a2e;">
+  <strong>"yq does not yet support outputting in TOML format and therefore cannot roundtrip TOML."</strong>
+  <br /><span style="font-size:0.9em;opacity:0.8;">— yq (kislyuk) official documentation</span>
+</blockquote>
+<br />
+<p>This limitation has been open for years. <strong>ConfigForge</strong> fills that gap: full bidirectional TOML conversion across all 11 supported formats, from the command line, offline, cross-platform.</p>
+<br />
+
+<h2>Quick Start</h2>
+<br />
+<pre><code class="language-bash"># Install (Python 3.10–3.13, macOS/Linux/Windows)
+pip install devbench-cf
+
+# YAML → TOML
+cf convert config.yaml config.toml
+
+# JSON → TOML
+cf convert package.json config.toml
+
+# HCL → TOML (Terraform vars to Rust config)
+cf convert terraform.tfvars.hcl config.toml
+
+# INI → TOML (legacy config modernization)
+cf convert app.ini config.toml
+
+# Stdin → TOML (pipe from another tool)
+cat config.yaml | cf --from yaml --to toml
+
+# TOML → YAML (full round-trip)
+cf convert Cargo.toml cargo.yaml
+</code></pre>
+<br />
+
+<h2>Supported TOML Conversions</h2>
+<br />
+<p>ConfigForge reads <strong>any of its 11 formats and writes TOML</strong>, and reads TOML and writes to any other format. Bidirectional, bidirectional.</p>
+<br />
+<table>
+<thead>
+<tr><th>Input Format</th><th>→ TOML Output</th><th>TOML Input →</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td>YAML (.yaml, .yml)</td><td>✅</td><td>✅</td><td>Comment preservation on YAML ↔ TOML round-trip</td></tr>
+<tr><td>JSON (.json)</td><td>✅</td><td>✅</td><td>JSON null → TOML omitted (documented)</td></tr>
+<tr><td>JSONC (.jsonc, tsconfig.json)</td><td>✅</td><td>✅</td><td>Strips JSONC comments before converting</td></tr>
+<tr><td>INI (.ini, .cfg)</td><td>✅</td><td>✅</td><td>INI sections → TOML tables</td></tr>
+<tr><td>.env (dotenv)</td><td>✅</td><td>✅</td><td>All values as TOML strings unless typed</td></tr>
+<tr><td>HCL (.hcl, .tfvars)</td><td>✅</td><td>✅</td><td>Terraform variable files → TOML</td></tr>
+<tr><td>Java .properties</td><td>✅</td><td>✅</td><td>Dotted keys flattened to TOML tables</td></tr>
+<tr><td>XML (.xml)</td><td>✅</td><td>✅</td><td>Attributes as TOML keys</td></tr>
+<tr><td>CSV (.csv)</td><td>✅</td><td>✅</td><td>Array of tables (one row per TOML table)</td></tr>
+<tr><td>Apple plist (.plist)</td><td>✅</td><td>✅</td><td>XML and binary plist both read correctly</td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Common Use Cases</h2>
+<br />
+
+<h3>Rust project: migrating from YAML CI config to TOML</h3>
+<br />
+<p>Rust projects use TOML natively (Cargo.toml), but CI tools often default to YAML. ConfigForge handles the migration:</p>
+<br />
+<pre><code class="language-bash"># Convert GitHub Actions config sections to TOML for local tooling
+cf convert .github/workflows/ci.yaml ci-config.toml
+
+# Extract values from Cargo.toml into YAML for Ansible
+cf convert Cargo.toml --to yaml | grep version
+</code></pre>
+<br />
+
+<h3>pyproject.toml: migrating from setup.cfg or requirements-style configs</h3>
+<br />
+<p>Modern Python packaging uses pyproject.toml. If you have an old setup.cfg or INI-style config, convert it directly:</p>
+<br />
+<pre><code class="language-bash"># setup.cfg (INI format) → pyproject.toml fragment
+cf convert setup.cfg --to toml
+
+# application.ini → TOML for newer Python tooling
+cf convert application.ini config.toml
+</code></pre>
+<br />
+
+<h3>Hugo static site: managing config in YAML, deploying in TOML</h3>
+<br />
+<p>Hugo supports both YAML and TOML config files. Some teams prefer editing in YAML (comments!) and deploying in TOML (Hugo's default). ConfigForge preserves comments on the YAML source and writes clean TOML:</p>
+<br />
+<pre><code class="language-bash"># YAML source (editable, with comments) → TOML deploy artifact
+cf convert hugo-config.yaml hugo.toml
+
+# Round-trip check: TOML back to YAML
+cf convert hugo.toml --to yaml
+</code></pre>
+<br />
+
+<h3>Batch convert an entire repository</h3>
+<br />
+<p>Migrating a project from YAML configs to TOML across dozens of files:</p>
+<br />
+<pre><code class="language-bash"># Convert all YAML files recursively, output to ./toml-configs/
+cf convert --batch "**/*.yaml" --to toml --output-dir ./toml-configs/
+
+# Stream mode for large repositories (constant memory, generator-based)
+cf convert --batch "configs/**/*.yaml" --to toml --stream
+</code></pre>
+<br />
+
+<h2>Why Not yq?</h2>
+<br />
+<p>yq is an excellent YAML processor. But the TOML limitation is real and multi-year. From the yq GitHub issues, the <code>tomlq</code> shim only converts TOML→JSON; it cannot generate TOML output. For any workflow that requires writing TOML — not just reading it — yq is the wrong tool. ConfigForge was built to fill this gap.</p>
+<br />
+<p>A side-by-side:</p>
+<br />
+<pre><code class="language-bash"># yq: YAML → TOML (does not work)
+yq -o toml config.yaml    # ERROR: yq cannot output TOML
+
+# ConfigForge: YAML → TOML (works)
+cf convert config.yaml config.toml    # ✅ done
+</code></pre>
+<br />
+
+<h2>TOML Write: Comment Preservation Detail</h2>
+<br />
+<p>When you convert YAML to TOML, ConfigForge attempts to preserve block comments at the start of values where the TOML format supports them:</p>
+<br />
+<pre><code class="language-yaml"># config.yaml — YAML source with comments
+# Maximum concurrent workers — tuned for m5.2xlarge
+max_workers: 8
+
+# Database connection (read replica for analytics queries)
+database_url: "postgres://replica.internal:5432/analytics"
+</code></pre>
+<br />
+<pre><code class="language-toml"># config.toml — output from cf convert config.yaml config.toml
+
+# Maximum concurrent workers — tuned for m5.2xlarge
+max_workers = 8
+
+# Database connection (read replica for analytics queries)
+database_url = "postgres://replica.internal:5432/analytics"
+</code></pre>
+<br />
+<p>Your operational comments survive the round-trip. dasel, by documented design, drops them.</p>
+<br />
+
+<h2>Install and Try It Now</h2>
+<br />
+<pre><code class="language-bash"># Install via pip (Python 3.10+, macOS/Linux/Windows)
+pip install devbench-cf
+
+# Convert your first file
+cf convert config.yaml config.toml
+
+# Or pipe stdin
+echo "name: my-project\nversion: 1.0.0" | cf --from yaml --to toml
+</code></pre>
+<br />
+<p>ConfigForge is available as a pip package (<code>devbench-cf</code>) and as part of the <a href="/tools/devbench/">Devbench macOS menubar app</a>. The CLI is cross-platform and works identically on macOS, Linux, and Windows.</p>
+<br />
+<hr />
+<p>See also: <a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a> | <a href="/tools/devbench/forge/seo/vs-dasel.html">ConfigForge vs dasel</a> | <a href="/tools/devbench/forge/seo/json-to-toml-converter.html">JSON to TOML Converter</a> | <a href="/tools/devbench/forge/seo/toml-vs-yaml.html">TOML vs YAML Comparison</a></p>
+
+    </div>
+  </main>
+  <footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>Essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-dasel.html">vs dasel</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-devly.html">vs Devly</a></li>
+            <li><a href="/tools/devbench/forge/seo/toml-converter.html">TOML Converter</a></li>
+            <li><a href="/tools/devbench/forge/seo/json-to-toml-converter.html">JSON to TOML</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

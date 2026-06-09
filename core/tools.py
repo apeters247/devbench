@@ -1004,9 +1004,18 @@ def text_chunker(input_text: str, chunk_size: int = 500, chunk_overlap: int = 10
     if not paragraphs:
         paragraphs = [input_text]
 
+    # Common abbreviations that end with a period but are not sentence boundaries.
+    # Replace their dots with a placeholder before splitting, then restore.
+    _ABBREV_RE = re.compile(
+        r'\b(Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|vs|etc|approx|dept|est|ext|fig|govt|'
+        r'incl|lib|max|min|misc|pkg|ref|seq|std|temp|vol|e\.g|i\.e|U\.S|U\.K|'
+        r'U\.N|A\.I|P\.O)\.'
+    )
+
     for para in paragraphs:
-        sentences = re.split(r"(?<=[.!?])\s+", para)
-        sentences = [s.strip() for s in sentences if s.strip()]
+        safe = _ABBREV_RE.sub(lambda m: m.group().replace(".", "\x00"), para)
+        raw_sentences = re.split(r"(?<=[.!?])\s+", safe)
+        sentences = [s.replace("\x00", ".").strip() for s in raw_sentences if s.strip()]
 
         for sentence in sentences:
             sentence_item = _encode_unit(sentence + " ")
