@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>CloudFormation YAML to JSON Converter — Convert AWS Templates Without Losing Comments</title>
+  <meta name="description" content="Convert AWS CloudFormation templates between YAML and JSON with ConfigForge. Preserves structure and comments, handles Fn::Sub, !Ref, and complex nested resources. Batch convert entire stacks offline.">
+  <meta property="og:title" content="CloudFormation YAML ↔ JSON Converter — Offline, Comment-Safe, Batch-Ready">
+  <meta property="og:description" content="Convert AWS CloudFormation YAML templates to JSON (or back) without losing comments or structure. ConfigForge handles complex nested resources, intrinsic functions, and batch stack conversions.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/cloudformation-yaml-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CloudFormation YAML ↔ JSON Converter">
+  <meta name="twitter:description" content="Convert AWS CloudFormation templates between YAML and JSON. Handles Fn::Sub, !Ref, nested resources, and batch stack migrations offline.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "Convert AWS CloudFormation Templates Between YAML and JSON",
+    "description": "Step-by-step guide to converting CloudFormation templates between YAML and JSON using ConfigForge CLI.",
+    "step": [
+      {
+        "@type": "HowToStep",
+        "name": "Install ConfigForge",
+        "text": "Run: pip install devbench-cf"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Convert YAML to JSON",
+        "text": "Run: devbench cf convert template.yaml template.json"
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Batch convert an entire stack",
+        "text": "Run: devbench cf convert --batch 'stacks/**/*.yaml' --to json --output-dir ./json-stacks/"
+      }
+    ],
+    "tool": {
+      "@type": "HowToTool",
+      "name": "ConfigForge (devbench cf)"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>CloudFormation YAML to JSON Converter — Offline, Comment-Safe, Batch-Ready</h1>
+<br />
+<p>AWS CloudFormation supports both YAML and JSON template formats, and real-world infrastructure stacks often contain both — legacy JSON templates mixed with newer YAML, or tool outputs in one format that your pipeline expects in the other. Converting between them manually is tedious and error-prone. Online converters require you to paste your entire template (including secrets, resource ARNs, and account IDs) into a browser.</p>
+<br />
+<p><strong>ConfigForge</strong> (the <code>cf</code> command in <a href="https://pypi.org/project/devbench-cf/">devbench</a>) converts CloudFormation templates between YAML and JSON locally, with no data leaving your machine. It handles complex nested structures, preserves document structure, and supports batch conversion of entire stacks.</p>
+<br />
+
+<h2>Quick Start</h2>
+<br />
+<pre><code class="language-bash"># Install
+pip install devbench-cf
+
+# YAML → JSON
+devbench cf convert template.yaml template.json
+
+# JSON → YAML (YAML is more readable for complex templates)
+devbench cf convert template.json template.yaml
+
+# Auto-detect format from file extension
+devbench cf convert stack.yaml --to json
+</code></pre>
+<br />
+
+<h2>Why Convert CloudFormation Templates?</h2>
+<br />
+<p>There are several common reasons to convert between the two formats:</p>
+<br />
+<ul>
+<li><strong>Migrating legacy JSON stacks to YAML</strong> — YAML is more readable for complex templates with hundreds of resources. Inline comments, multi-line strings, and shorter syntax make YAML the preferred format for maintenance.</li>
+<li><strong>Tooling compatibility</strong> — some tools (older CDK versions, certain CI/CD integrations, deployment scripts) expect a specific format. Converting to match is faster than patching the tooling.</li>
+<li><strong>Diff readability</strong> — YAML diffs are significantly more readable than JSON diffs in pull requests, especially for deeply nested CloudFormation resource properties.</li>
+<li><strong>Template linting</strong> — some CloudFormation linters and validators work better with one format over the other.</li>
+<li><strong>Sharing and documentation</strong> — YAML is easier for humans to read and annotate with comments.</li>
+</ul>
+<br />
+
+<h2>Handling CloudFormation Intrinsic Functions</h2>
+<br />
+<p>CloudFormation's YAML syntax uses shorthand intrinsic functions (<code>!Ref</code>, <code>!Sub</code>, <code>!Join</code>, <code>!Select</code>, <code>!If</code>, etc.) that are YAML tags. These serialize correctly to their long-form JSON equivalents (<code>{"Ref": ...}</code>, <code>{"Fn::Sub": ...}</code>) and back.</p>
+<br />
+<pre><code class="language-yaml"># YAML — shorthand syntax
+Resources:
+  MyBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-data-${AWS::Region}"
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentParam
+</code></pre>
+<br />
+<p>After conversion to JSON:</p>
+<br />
+<pre><code class="language-json">{
+  "Resources": {
+    "MyBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "${AWS::StackName}-data-${AWS::Region}"
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": { "Ref": "EnvironmentParam" }
+          }
+        ]
+      }
+    }
+  }
+}
+</code></pre>
+<br />
+<p>The conversion preserves the full structure and all intrinsic function semantics. CloudFormation's validator accepts both representations interchangeably.</p>
+<br />
+
+<h2>Converting Comments — The Privacy Argument</h2>
+<br />
+<p>CloudFormation templates for production infrastructure often contain sensitive annotations: account IDs, ARNs, operational runbooks, security group rationale, and cost center codes. Pasting these into a browser-based converter is a security risk. Even "free" online tools may log, cache, or train on your input.</p>
+<br />
+<p>ConfigForge runs entirely locally. <strong>Nothing leaves your machine.</strong> No API calls, no telemetry, no logging. It's the right tool when your templates contain anything you wouldn't want in a stranger's access log.</p>
+<br />
+<p>When converting YAML → JSON, ConfigForge warns you that JSON doesn't support comments (it can't), so you know your inline annotations are being preserved in the YAML source and are not present in the JSON output. When converting back JSON → YAML, the structure is clean and ready for you to annotate.</p>
+<br />
+
+<h2>Batch Converting an Entire Stack</h2>
+<br />
+<p>Large projects have many templates — nested stacks, per-service templates, shared infrastructure stacks. ConfigForge's batch mode converts a whole tree at once:</p>
+<br />
+<pre><code class="language-bash"># Convert all YAML templates in a stacks/ directory to JSON
+devbench cf convert --batch "stacks/**/*.yaml" --to json --output-dir ./json-stacks/
+
+# Convert all JSON templates to YAML (for a readability migration)
+devbench cf convert --batch "templates/**/*.json" --to yaml --output-dir ./yaml-templates/
+
+# Preview what would be converted (dry-run via glob expansion)
+devbench cf convert --batch "**/*.yaml" --to json --dry-run
+</code></pre>
+<br />
+<p>The output directory mirrors the source directory structure, so <code>stacks/vpc/main.yaml</code> becomes <code>json-stacks/vpc/main.json</code>. Per-file errors are reported individually — a malformed template doesn't abort the entire batch.</p>
+<br />
+
+<h2>Combining With cfn-lint</h2>
+<br />
+<p>A common pipeline pattern is to convert to YAML for human review, then convert back to JSON for deployment (if your pipeline requires JSON). With ConfigForge, this is a two-step round-trip that preserves all data:</p>
+<br />
+<pre><code class="language-bash"># Standard workflow: edit in YAML, deploy in JSON
+# 1. Convert to YAML for review and editing
+devbench cf convert template.json template.yaml
+
+# 2. Edit template.yaml, add comments, review in PR
+
+# 3. Lint the YAML (cfn-lint supports YAML natively)
+cfn-lint template.yaml
+
+# 4. Convert back to JSON for deployment
+devbench cf convert template.yaml template-deploy.json
+
+# 5. Deploy
+aws cloudformation deploy --template-file template-deploy.json ...
+</code></pre>
+<br />
+
+<h2>CloudFormation Template Size and Performance</h2>
+<br />
+<p>CloudFormation templates can be large — 500+ resource templates are not unusual in mature infrastructure projects. ConfigForge handles these efficiently:</p>
+<br />
+<ul>
+<li><strong>Single large files</strong>: ConfigForge reads the entire file into memory for format conversion, which is fast for files up to several MB. Python's YAML and JSON parsers are well-optimized for the sizes CloudFormation produces.</li>
+<li><strong>Batch / streaming</strong>: For repositories with hundreds of templates, use <code>--batch --stream</code> to convert with constant memory usage regardless of the total file count.</li>
+<li><strong>No size limit</strong>: ConfigForge has no artificial size cap. CloudFormation's own 51,200-byte template size limit means you'll rarely hit performance issues.</li>
+</ul>
+<br />
+
+<h2>Install and Try It Now</h2>
+<br />
+<pre><code class="language-bash">pip install devbench-cf
+
+# Check your template
+devbench cf detect template.yaml
+
+# Convert
+devbench cf convert template.yaml template.json
+
+# List all supported formats
+devbench cf --list-formats
+</code></pre>
+<br />
+<p>ConfigForge supports all 9 config formats used in modern infrastructure stacks: JSON, YAML, TOML, XML, CSV, INI, .env, HCL (Terraform), and Java .properties. One tool for the entire config landscape.</p>
+<br />
+<hr />
+<p>See also: <a href="/tools/devbench/forge/seo/kubernetes-config-converter.html">Kubernetes Config Converter</a> | <a href="/tools/devbench/forge/seo/docker-compose-converter.html">Docker Compose Converter</a> | <a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a></p>
+
+    </div>
+  </main>
+  <footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/cloudformation-yaml-converter.html">CloudFormation Converter</a></li>
+            <li><a href="/tools/devbench/forge/seo/kubernetes-config-converter.html">Kubernetes Config</a></li>
+            <li><a href="/tools/devbench/forge/seo/docker-compose-converter.html">Docker Compose</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-dasel.html">vs dasel</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

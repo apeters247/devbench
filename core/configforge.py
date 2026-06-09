@@ -1292,58 +1292,72 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
         return {"data": result, "format": "ini"}
 
     elif fmt == "env":
-        def _unescape_double_quoted(s: str) -> str:
-            # Process backslash escape sequences inside double-quoted values
-            out = []
-            i = 0
-            while i < len(s):
-                if s[i] == "\\" and i + 1 < len(s):
-                    c = s[i + 1]
-                    if c == "n":
-                        out.append("\n")
-                    elif c == "r":
-                        out.append("\r")
-                    elif c == "t":
-                        out.append("\t")
-                    elif c == '"':
-                        out.append('"')
-                    elif c == "\\":
-                        out.append("\\")
-                    else:
-                        out.append("\\")
-                        out.append(c)
-                    i += 2
-                else:
-                    out.append(s[i])
-                    i += 1
-            return "".join(out)
-
         result = {}
-        for line in text.strip().split("\n"):
-            line = line.strip()
-            # Skip comments and blank lines
+        input_lines = text.split("\n")
+        line_idx = 0
+        while line_idx < len(input_lines):
+            line = input_lines[line_idx].strip()
+            line_idx += 1
             if not line or line.startswith("#"):
                 continue
-            # Strip optional 'export' prefix
             rest = line
             if rest.startswith("export "):
                 rest = rest[7:].strip()
-            if "=" in rest:
-                k, v = rest.split("=", 1)
-                k = k.strip()
-                v = v.strip()
-                if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
-                    # Double-quoted: process escape sequences, allow inline content
-                    v = _unescape_double_quoted(v[1:-1])
-                elif len(v) >= 2 and v[0] == "'" and v[-1] == "'":
-                    # Single-quoted: literal value, no escape processing
-                    v = v[1:-1]
-                else:
-                    # Unquoted: strip inline comments (# preceded by whitespace)
-                    m = re.search(r"\s+#", v)
-                    if m:
-                        v = v[: m.start()]
-                result[k] = v
+            if "=" not in rest:
+                continue
+            k, v = rest.split("=", 1)
+            k = k.strip()
+            v = v.strip()
+            if v.startswith('"'):
+                # Double-quoted: scan character-by-character for closing unescaped
+                # quote, crossing newlines for multiline values (e.g. PEM certs).
+                segment = v[1:]  # drop opening quote
+                out = []
+                found_close = False
+                while not found_close:
+                    ci = 0
+                    while ci < len(segment):
+                        ch = segment[ci]
+                        if ch == "\\" and ci + 1 < len(segment):
+                            nc = segment[ci + 1]
+                            if nc == "n":
+                                out.append("\n")
+                            elif nc == "r":
+                                out.append("\r")
+                            elif nc == "t":
+                                out.append("\t")
+                            elif nc == '"':
+                                out.append('"')
+                            elif nc == "\\":
+                                out.append("\\")
+                            else:
+                                out.append("\\")
+                                out.append(nc)
+                            ci += 2
+                        elif ch == '"':
+                            found_close = True
+                            break
+                        else:
+                            out.append(ch)
+                            ci += 1
+                    if not found_close:
+                        # No closing quote on this segment — consume next line
+                        if line_idx < len(input_lines):
+                            out.append("\n")
+                            segment = input_lines[line_idx]
+                            line_idx += 1
+                        else:
+                            break
+                v = "".join(out)
+            elif len(v) >= 2 and v[0] == "'" and v[-1] == "'":
+                # Single-quoted: literal, no escape processing
+                v = v[1:-1]
+            else:
+                # Unquoted: strip inline comment (whitespace + #)
+                m = re.search(r"\s+#", v)
+                if m:
+                    v = v[: m.start()]
+            result[k] = v
         return {"data": result, "format": "env"}
 
     elif fmt == "properties":
@@ -1427,6 +1441,30 @@ def _xml_to_dict(element, flatten=False):
         else:
             result[tag] = val
     return result
+
+
+def _get_by_path(data, path: str):
+    """Extract a value from a nested dict/list using a dot-notation path.
+
+    Addresses the HN complaint that jq/yq query syntax is too complex for
+    simple value extraction — 'server.port' beats '.server | .port // empty'.
+    Integer path segments are tried as list indices when the current node is
+    a list.  Raises KeyError/IndexError if the path does not exist."""
+    parts = path.split(".")
+    node = data
+    for part in parts:
+        if isinstance(node, list):
+            try:
+                node = node[int(part)]
+            except (ValueError, IndexError):
+                raise KeyError(f"index '{part}' not valid for list")
+        elif isinstance(node, dict):
+            if part not in node:
+                raise KeyError(f"key '{part}' not found")
+            node = node[part]
+        else:
+            raise KeyError(f"cannot traverse '{part}' in {type(node).__name__}")
+    return node
 
 
 def _flatten_dict(data, parent_key="", sep="."):
@@ -2167,6 +2205,10 @@ Compared to yq/jq:
     parser.add_argument("--null", dest="null_handling", default="skip",
                         choices=["skip", "comment", "empty", "error"],
                         help="How to represent null values in TOML.")
+    parser.add_argument("--get", metavar="PATH",
+                        help="Extract a single value by dot-notation path "
+                             "(e.g. server.port, items.0.name). "
+                             "--to is not required when --get is used.")
     args = parser.parse_args(argv)
 
     options = {
@@ -2187,6 +2229,26 @@ Compared to yq/jq:
             return 2
         results = batch_convert(args.input, args.to, args.output_dir, **options)
         return 0 if results and all(r.get("success") for r in results) else 1
+
+    if args.get:
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None)
+        if "error" in parsed:
+            print(f"error: {parsed['error']}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        try:
+            val = _get_by_path(data, args.get)
+        except (KeyError, IndexError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        if isinstance(val, (dict, list)):
+            sys.stdout.write(json.dumps(val, indent=2) + "\n")
+        elif val is None:
+            sys.stdout.write("null\n")
+        else:
+            sys.stdout.write(str(val) + "\n")
+        return 0
 
     to_fmt = args.to
     if not to_fmt and args.output:

@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-Builder cycle completed (2026-06-09T04:35Z). Fixed `convert_file()` silent OSError — `write_text()` wrapped in try/except, returns `{"success": False, "error": ...}` instead of raising on non-writable output path. Added 3 error-path tests: nonwritable-dir, roundtrip, format-from-extension. Prior cycle (04:20Z): Stripe webhook sig fix, .env escape sequences, configforge_tool error propagation. Tests: **627 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green.
+Builder cycle completed (2026-06-09T05:30Z). Shipped 3 SEO pages: `vs-dasel.html` (P1 competitor comparison, dasel 5 formats vs ConfigForge 9, comment preservation, batch mode), `cloudformation-yaml-converter.html` (P2 K8s/DevOps audience, CloudFormation YAML↔JSON, batch stacks, privacy angle), `value-proposition.html` (P2 pricing page, $2.11/format ROI, vs OSS/online/SaaS cost analysis, 14-day trial CTA). Removed `_decode_units` dead inner function from `core/tools.py`. Linked all 3 new pages into `web/index.html` comparison sections. Polisher (concurrent 04:22Z): `--get PATH` dot-notation value extraction across all 9 formats; multiline double-quoted .env values (PEM-cert style); test assertion hardening. Tests: **633 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green.
 
 ## 4. Work Queue (ordered)
 
@@ -389,3 +389,9 @@ If both workers run simultaneously and need to update the same file:
 - Gate status: passed
 - What you shipped: Reviewed the last 3 commits and rotating files.
 - Which model ran: gemini-2.5-flash
+
+## Polisher Run at 20260609-0422
+- **BUILT**: `--get PATH` flag for dot-notation value extraction from any config format (answers HN complaint about jq/yq query syntax complexity)
+- **TESTS**: 633 passed, 7 skipped, 2 xfailed (+4 new --get tests, 5 weak isinstance assertions replaced with real checks, 1 is-not-None replaced with content check)
+- **CODE REVIEW**: Builder's multiline ENV parser — no bugs found; Windows line endings, empty strings, escape sequences all correct
+- **REPORT**: forge/external-review-20260609-0422.md

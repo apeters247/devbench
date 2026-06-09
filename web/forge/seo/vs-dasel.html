@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>ConfigForge vs dasel — 9-Format Config Converter vs 5-Format Selector Tool</title>
+  <meta name="description" content="Compare ConfigForge vs dasel for config file conversion. ConfigForge supports 9 formats (JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties) vs dasel's 5, with comment preservation and native batch mode.">
+  <meta property="og:title" content="ConfigForge vs dasel — Which Config Tool Wins?">
+  <meta property="og:description" content="ConfigForge beats dasel with 9 formats vs 5, comment preservation, native batch mode, and pip install. dasel wins on in-place editing and Go binary size. Find out which is right for you.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/vs-dasel.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ConfigForge vs dasel — Which Config Tool Wins?">
+  <meta name="twitter:description" content="ConfigForge beats dasel with 9 formats vs 5, comment preservation, native batch mode, and pip install. dasel wins on in-place editing and Go binary size.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>ConfigForge vs dasel: 9 Formats vs 5 — Which Config Conversion Tool Is Right for You?</h1>
+<br />
+<p>If you found <strong>dasel</strong> while looking for a <strong>multi-format config converter</strong>, you're not alone. dasel is a well-regarded Go tool that elegantly handles in-place value selection and mutation across JSON, YAML, TOML, XML, and CSV. But if your project touches <code>.env</code> files, Terraform HCL, Java <code>.properties</code>, or INI configs — dasel leaves you hanging. That's where <strong>ConfigForge</strong> (the <code>cf</code> command in the <a href="https://pypi.org/project/devbench-cf/">devbench</a> toolkit) picks up.</p>
+<br />
+<p>Here's a direct, honest comparison to help you decide.</p>
+<br />
+
+<h2>Feature Comparison</h2>
+<br />
+<table>
+<thead>
+<tr><th>Feature</th><th>ConfigForge (<code>devbench cf</code>)</th><th>dasel</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>JSON</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+<tr><td><strong>YAML</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+<tr><td><strong>TOML</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+<tr><td><strong>XML</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+<tr><td><strong>CSV</strong></td><td>✅ Read + Write</td><td>✅ Read + Write</td></tr>
+<tr><td><strong>INI</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>.env</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>HCL (Terraform)</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>Java .properties</strong></td><td>✅ Read + Write</td><td>❌ Not supported</td></tr>
+<tr><td><strong>Total formats</strong></td><td><strong>9 (bidirectional)</strong></td><td>5</td></tr>
+<tr><td><strong>Comment preservation</strong></td><td>✅ Round-trip safe (YAML, TOML, INI, .env)</td><td>❌ Comments stripped on write</td></tr>
+<tr><td><strong>Native batch / glob mode</strong></td><td>✅ Built-in (<code>--batch "**/*.yaml"</code>)</td><td>❌ Shell scripting required</td></tr>
+<tr><td><strong>In-place value selector</strong></td><td>Path-based selectors</td><td>✅ Full selector expression language</td></tr>
+<tr><td><strong>Streaming large files</strong></td><td>✅ Generator-based streaming batch</td><td>✅ Streaming-capable</td></tr>
+<tr><td><strong>Offline / no telemetry</strong></td><td>✅ Zero external calls</td><td>✅ Local binary</td></tr>
+<tr><td><strong>Install</strong></td><td><code>pip install devbench-cf</code></td><td>Binary / <code>go install</code></td></tr>
+<tr><td><strong>Language / runtime</strong></td><td>Python 3.10–3.13</td><td>Go (static binary)</td></tr>
+<tr><td><strong>License</strong></td><td>Open source</td><td>Open source (MIT)</td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>The Four Formats dasel Doesn't Cover</h2>
+<br />
+<p>dasel's 5-format coverage is solid for pure web stacks, but modern infrastructure projects routinely involve four more:</p>
+<br />
+<ul>
+<li><strong>INI</strong> — legacy PHP, Python, Windows apps, ansible inventory files. Still everywhere.</li>
+<li><strong>.env</strong> — Docker Compose, Heroku, GitHub Actions, every Node.js app. The most common config format you never think about until you need to convert it.</li>
+<li><strong>HCL</strong> — Terraform and Packer. If your infrastructure is on AWS, GCP, or Azure via Terraform, your config is HCL.</li>
+<li><strong>Java .properties</strong> — Spring Boot, Maven, every Java application server. Millions of services still run on these.</li>
+</ul>
+<br />
+<p>ConfigForge reads and writes all nine formats bidirectionally. Converting a Terraform variable file to YAML for an Ansible playbook, or extracting a <code>.env</code> to TOML for a Rust config file — these are one-liners:</p>
+<br />
+<pre><code class="language-bash"># HCL → YAML (e.g. Terraform vars → Ansible vars)
+devbench cf convert terraform.tfvars.hcl vars.yaml
+
+# .env → JSON (inject into a JSON-based config system)
+devbench cf convert .env config.json
+
+# Java .properties → TOML (modernizing a Spring app)
+devbench cf convert application.properties config.toml
+
+# INI → YAML (migrating a legacy PHP app)
+devbench cf convert legacy.ini modern.yaml
+</code></pre>
+<br />
+<p>With dasel, these four conversions require additional tools or custom parsing scripts.</p>
+<br />
+
+<h2>Comment Preservation: A Critical Difference for Config Files</h2>
+<br />
+<p>This is the most practically important difference for teams that treat their config files as living documentation.</p>
+<br />
+<p>Consider a Terraform variable file with annotations:</p>
+<br />
+<pre><code class="language-hcl"># Production DB — rotate every 90 days
+db_password = "s3cret"
+
+# Increase this if the queue depth exceeds 10k sustained
+worker_count = 4
+</code></pre>
+<br />
+<p>When you use dasel to convert this to YAML, the comments disappear. When you use ConfigForge:</p>
+<br />
+<pre><code class="language-yaml"># Production DB — rotate every 90 days
+db_password: s3cret
+
+# Increase this if the queue depth exceeds 10k sustained
+worker_count: 4
+</code></pre>
+<br />
+<p>The comments survive. This matters enormously in infrastructure-as-code workflows where the comments explain operational context that isn't captured in the values themselves. ConfigForge preserves comments on YAML ↔ TOML ↔ INI ↔ .env round-trips. When target formats don't support comments (JSON, XML, CSV), ConfigForge warns you explicitly instead of silently dropping them.</p>
+<br />
+
+<h2>Batch Conversion: Native vs Shell Scripting</h2>
+<br />
+<p>Migrating a repository's configuration files from one format to another is a common DevOps task. ConfigForge ships native batch support with glob patterns, recursive directory traversal, and per-file error reporting:</p>
+<br />
+<pre><code class="language-bash"># Convert all YAML files in a tree to JSON
+devbench cf convert --batch "**/*.yaml" --to json
+
+# Convert with an output directory (preserves directory structure)
+devbench cf convert --batch "configs/**/*.toml" --to yaml --output-dir ./converted/
+
+# Stream mode for 10,000+ files — generator-based, constant memory
+devbench cf convert --batch "**/*.json" --to yaml --stream
+</code></pre>
+<br />
+<p>With dasel, batch work means writing a shell loop:</p>
+<br />
+<pre><code class="language-bash"># dasel approach — manual loop, no error aggregation
+find . -name "*.yaml" | while read f; do
+  dasel -f "$f" -o json > "${f%.yaml}.json"
+done
+</code></pre>
+<br />
+<p>ConfigForge's batch engine handles glob expansion, output-dir creation, per-file success/failure tracking, and progress reporting. It also provides a streaming mode (<code>--stream</code>) for memory-efficient processing of tens of thousands of files using a constant-memory generator pipeline.</p>
+<br />
+
+<h2>Where dasel Wins: In-Place Editing and Go Binary</h2>
+<br />
+<p>dasel has two clear advantages:</p>
+<br />
+<p><strong>In-place selector expressions.</strong> dasel has a powerful expression language for reading or mutating specific values within a file without a full format round-trip. For example, <code>dasel put -t string -f config.yaml ".database.host" "localhost"</code> modifies a single key in place. ConfigForge is a full-document converter, not a value editor — it reads the entire document and writes a new one. If you need surgical in-place mutations, dasel is the better tool.</p>
+<br />
+<p><strong>Static Go binary.</strong> dasel ships as a single compiled binary with no runtime dependency. If you're deploying to minimal Docker containers or environments without Python, a Go binary is simpler to distribute than a Python package. ConfigForge requires Python 3.10+ and a <code>pip install</code>, which is standard in developer environments but adds friction in stripped-down containers.</p>
+<br />
+
+<h2>Which Tool Should You Use?</h2>
+<br />
+<p><strong>Choose dasel if:</strong> you need in-place value selection and mutation across JSON/YAML/TOML/XML/CSV, you want a static Go binary with no runtime, and your formats are covered by its five-format support. dasel's selector language is genuinely expressive and worth learning for scripting workflows.</p>
+<br />
+<p><strong>Choose ConfigForge (<code>devbench cf</code>) if:</strong> your project touches INI, .env, HCL, or Java .properties in addition to the common five; you care about comments surviving format conversions; you need native batch processing of many files; or you want a unified tool that handles the full 9-format matrix without shell scripting glue. At <code>pip install devbench-cf</code>, it's one command to cover the entire config landscape.</p>
+<br />
+<p><strong>Use both if:</strong> you need dasel's selector expressions for in-place edits <em>and</em> ConfigForge's broader format support and batch mode. They complement each other cleanly — dasel for precise mutations, ConfigForge for format migrations and bulk conversions.</p>
+<br />
+<hr />
+<p>See also: <a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a> | <a href="/tools/devbench/forge/seo/vs-jq.html">ConfigForge vs jq</a> | <a href="/tools/devbench/forge/seo/yq-alternative-comment-preservation.html">yq Comment Preservation Alternative</a></p>
+
+    </div>
+  </main>
+  <footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-dasel.html">vs dasel</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/yq-alternative-comment-preservation.html">yq Comment Preservation</a></li>
+            <li><a href="/tools/devbench/forge/seo/jq-alternative-csv-to-json.html">jq CSV → JSON</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

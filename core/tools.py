@@ -982,13 +982,6 @@ def text_chunker(input_text: str, chunk_size: int = 500, chunk_overlap: int = 10
             return len(encoding.encode(text))
         return max(1, len(text) // _TOKEN_ESTIMATE_RATIO)
 
-    def _decode_units(token_src) -> str:
-        if use_tiktoken:
-            if isinstance(token_src, list) and all(isinstance(t, int) for t in token_src):
-                return encoding.decode(token_src)
-            return str(token_src)
-        return str(token_src)
-
     def _encode_unit(text: str):
         if use_tiktoken:
             return encoding.encode(text)
