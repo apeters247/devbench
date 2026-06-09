@@ -1363,6 +1363,7 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
         return {"data": result, "format": "ini"}
 
     elif fmt == "env":
+        infer_types = options.get("infer_types", True)
         result = {}
         input_lines = text.split("\n")
         line_idx = 0
@@ -1424,10 +1425,13 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
                 # Single-quoted: literal, no escape processing
                 v = v[1:-1]
             else:
-                # Unquoted: strip inline comment (whitespace + #)
+                # Unquoted: strip inline comment (whitespace + #), then infer type
                 m = re.search(r"\s+#", v)
                 if m:
                     v = v[: m.start()]
+                if infer_types:
+                    result[k] = _infer_type(v)
+                    continue
             result[k] = v
         return {"data": result, "format": "env"}
 
@@ -1529,6 +1533,20 @@ def _xml_to_dict(element, flatten=False):
     return result
 
 
+def _sort_keys_recursive(data):
+    """Recursively sort dict keys for consistent, deterministic output.
+
+    Addresses the HN yq-alternatives complaint that key ordering is
+    non-deterministic and "a non-starter" for API cleanup workflows where
+    diffs must be readable.  Used when --sort-keys is passed to serialize().
+    """
+    if isinstance(data, dict):
+        return {k: _sort_keys_recursive(data[k]) for k in sorted(data.keys(), key=str)}
+    if isinstance(data, list):
+        return [_sort_keys_recursive(item) for item in data]
+    return data
+
+
 def _split_path(path: str) -> list:
     """Split a dot-notation path on unescaped dots only.
 
@@ -1541,7 +1559,6 @@ def _split_path(path: str) -> list:
     'a\\.b.c'    → ['a.b', 'c']
     'a\\.b\\.c'  → ['a.b.c']
     """
-    import re
     parts = re.split(r'(?<!\\)\.', path)
     return [p.replace('\\.', '.') for p in parts]
 
@@ -1786,6 +1803,8 @@ def serialize(data, fmt: str, **options) -> str:
                          sort_keys=sort_keys, indent=indent)
 
     elif fmt == "toml":
+        if options.get("sort_keys", False):
+            data = _sort_keys_recursive(data)
         if options.get("infer_dates", True):
             data = _coerce_dates(data)
         null_handling = options.get("null_handling", "skip")
@@ -1800,9 +1819,13 @@ def serialize(data, fmt: str, **options) -> str:
             # hcl2.dumps only accepts a dict body at the top level.
             raise ValueError(
                 f"HCL requires a dict at the top level, not {type(data).__name__}")
+        if options.get("sort_keys", False):
+            data = _sort_keys_recursive(data)
         return hcl2.dumps(_hcl_requote(data))
 
     elif fmt == "ini":
+        if options.get("sort_keys", False):
+            data = _sort_keys_recursive(data)
         if not isinstance(data, dict):
             raise ValueError("INI requires a dict of sections")
         cfg = configparser.ConfigParser(interpolation=None)
@@ -1836,6 +1859,8 @@ def serialize(data, fmt: str, **options) -> str:
         return buf.getvalue()
 
     elif fmt == "env":
+        if options.get("sort_keys", False):
+            data = _sort_keys_recursive(data)
         if not isinstance(data, dict):
             raise ValueError("ENV requires a flat dict")
         lines = []
@@ -1849,6 +1874,8 @@ def serialize(data, fmt: str, **options) -> str:
         return "\n".join(lines)
 
     elif fmt == "properties":
+        if options.get("sort_keys", False):
+            data = _sort_keys_recursive(data)
         return _serialize_properties(
             data,
             comments=options.get("comments"),
@@ -1856,6 +1883,7 @@ def serialize(data, fmt: str, **options) -> str:
         )
 
     elif fmt == "csv":
+        sort_keys = options.get("sort_keys", False)
         if isinstance(data, list) and data:
             # Collect ALL fieldnames across all rows for heterogeneous lists
             fieldnames = []
@@ -1868,6 +1896,8 @@ def serialize(data, fmt: str, **options) -> str:
                             seen.add(k)
             if not fieldnames:
                 raise ValueError("CSV requires at least one dict with keys")
+            if sort_keys:
+                fieldnames = sorted(fieldnames)
             buf = io.StringIO()
             writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore')
             writer.writeheader()
@@ -1875,7 +1905,7 @@ def serialize(data, fmt: str, **options) -> str:
             return buf.getvalue()
         elif isinstance(data, dict) and data:
             # Single flat dict → CSV with one row
-            fieldnames = list(data.keys())
+            fieldnames = sorted(data.keys()) if sort_keys else list(data.keys())
             buf = io.StringIO()
             writer = csv.DictWriter(buf, fieldnames=fieldnames)
             writer.writeheader()
@@ -1884,12 +1914,16 @@ def serialize(data, fmt: str, **options) -> str:
         raise ValueError("CSV requires a list of dicts or a flat dict")
 
     elif fmt == "xml":
+        if options.get("sort_keys", False):
+            data = _sort_keys_recursive(data)
         root_name = options.get("root_name", "root")
         item_name = options.get("item_name", "item")
         return _from_dict_to_xml(data, root_name, item_name)
 
     elif fmt == "plist":
         import plistlib
+        if options.get("sort_keys", False):
+            data = _sort_keys_recursive(data)
         prepared = _plist_prepare(data)
         return plistlib.dumps(prepared, fmt=plistlib.FMT_XML).decode("utf-8")
 
@@ -2407,7 +2441,8 @@ def main(argv=None) -> int:
 
     ext_map = {".json": "json", ".jsonc": "jsonc", ".yaml": "yaml", ".yml": "yaml",
                ".toml": "toml", ".xml": "xml", ".csv": "csv", ".ini": "ini",
-               ".env": "env", ".hcl": "hcl", ".properties": "properties"}
+               ".env": "env", ".hcl": "hcl", ".properties": "properties",
+               ".plist": "plist"}
 
     parser = argparse.ArgumentParser(
         prog="configforge",
@@ -2511,9 +2546,10 @@ Compared to yq/jq:
 
     if args.get:
         text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None)
-        if "error" in parsed:
-            print(f"error: {parsed['error']}", file=sys.stderr)
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
             return 1
         data = parsed.get("data", parsed)
         try:
@@ -2522,7 +2558,7 @@ Compared to yq/jq:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         if isinstance(val, (dict, list)):
-            sys.stdout.write(json.dumps(val, indent=2) + "\n")
+            sys.stdout.write(json.dumps(val, indent=2, ensure_ascii=False) + "\n")
         elif val is None:
             sys.stdout.write("null\n")
         else:
@@ -2534,9 +2570,10 @@ Compared to yq/jq:
         value = _coerce_set_value(raw_value)
         text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
         from_fmt_set = args.from_fmt if args.from_fmt != "auto" else None
-        parsed = parse_text(text, fmt=from_fmt_set)
-        if "error" in parsed:
-            print(f"error: {parsed['error']}", file=sys.stderr)
+        try:
+            parsed = parse_text(text, fmt=from_fmt_set)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
             return 1
         detected_fmt = parsed.get("format")
         data = parsed.get("data", parsed)
@@ -2568,9 +2605,10 @@ Compared to yq/jq:
     if args.delete:
         text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
         from_fmt_del = args.from_fmt if args.from_fmt != "auto" else None
-        parsed = parse_text(text, fmt=from_fmt_del)
-        if "error" in parsed:
-            print(f"error: {parsed['error']}", file=sys.stderr)
+        try:
+            parsed = parse_text(text, fmt=from_fmt_del)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
             return 1
         detected_fmt = parsed.get("format")
         data = parsed.get("data", parsed)
@@ -2606,9 +2644,10 @@ Compared to yq/jq:
             print(f"error: cannot read base file: {e}", file=sys.stderr)
             return 1
         from_fmt_merge = args.from_fmt if args.from_fmt != "auto" else None
-        base_parsed = parse_text(base_text, fmt=from_fmt_merge)
-        if "error" in base_parsed:
-            print(f"error: {base_parsed['error']}", file=sys.stderr)
+        try:
+            base_parsed = parse_text(base_text, fmt=from_fmt_merge)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
             return 1
         detected_fmt = base_parsed.get("format")
         base_data = base_parsed.get("data", base_parsed)
@@ -2617,9 +2656,10 @@ Compared to yq/jq:
         except OSError as e:
             print(f"error: cannot read overlay file: {e}", file=sys.stderr)
             return 1
-        overlay_parsed = parse_text(overlay_text)
-        if "error" in overlay_parsed:
-            print(f"error reading overlay: {overlay_parsed['error']}", file=sys.stderr)
+        try:
+            overlay_parsed = parse_text(overlay_text)
+        except ValueError as exc:
+            print(f"error reading overlay: {exc}", file=sys.stderr)
             return 1
         overlay_data = overlay_parsed.get("data", overlay_parsed)
         merged = _deep_merge(base_data, overlay_data, list_mode=args.list_merge)

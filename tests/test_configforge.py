@@ -140,6 +140,35 @@ def test_detect_unknown():
 def test_unicode():
     r = convert('{"caf\u00e9": "\u2615", "\u65e5\u672c\u8a9e": "\u30c6\u30b9\u30c8"}', "yaml")
     assert r["success"]
+    assert "caf\u00e9" in r["output"]
+    assert "\u2615" in r["output"]
+    assert "\u65e5\u672c\u8a9e" in r["output"]
+
+
+def test_unicode_json_output_no_escape():
+    """JSON output must preserve Unicode characters, not emit \\uXXXX escape sequences.
+
+    Addresses yq GitHub issue: users converting YAML with CJK/Arabic/accented
+    characters to JSON got unreadable \\uXXXX sequences instead of real chars.
+    """
+    r = convert('name: \u7530\u4e2d\u592a\u90ce\ncity: \u6771\u4eac', "json")
+    assert r["success"]
+    assert "\u7530\u4e2d\u592a\u90ce" in r["output"], "CJK characters must not be \\uXXXX-escaped in JSON output"
+    assert "\u6771\u4eac" in r["output"]
+    assert "\\u" not in r["output"]
+
+
+def test_get_unicode_dict_no_escape(tmp_path, capsys):
+    """--get on a dict/list value with Unicode must output real chars, not escape sequences."""
+    import io
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("team:\n  lead: \u7530\u4e2d\u592a\u90ce\n  city: \u6771\u4eac\n", encoding="utf-8")
+    rc = main([str(f), "--get", "team"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "\u7530\u4e2d\u592a\u90ce" in captured.out, "Unicode must be preserved in --get JSON output"
+    assert "\\u" not in captured.out
 
 def test_deeply_nested():
     d = {"a": {"b": {"c": {"d": {"e": [1, 2, 3]}}}}}
@@ -1236,3 +1265,251 @@ def test_get_by_path_dotted_key_cli(tmp_path, capsys):
     assert rc == 0
     result = json.loads(captured.out)
     assert result["ShowPathbar"] is True
+
+
+# ── --sort-keys across all formats (HN yq-alternatives complaint) ──
+# Users noted that gojq doesn't preserve or sort key order — "a non-starter"
+# for API cleanup workflows where diffs need to be deterministic.
+
+def test_sort_keys_toml():
+    from core.configforge import serialize
+    result = serialize({"zebra": 1, "apple": 2, "mango": 3}, "toml", sort_keys=True)
+    lines = [l for l in result.splitlines() if "=" in l]
+    keys = [l.split("=")[0].strip() for l in lines]
+    assert keys == ["apple", "mango", "zebra"]
+
+
+def test_sort_keys_env():
+    from core.configforge import serialize
+    result = serialize({"zebra": 1, "apple": 2, "mango": 3}, "env", sort_keys=True)
+    lines = [l for l in result.splitlines() if "=" in l]
+    keys = [l.split("=")[0] for l in lines]
+    assert keys == ["apple", "mango", "zebra"]
+
+
+def test_sort_keys_properties():
+    from core.configforge import serialize
+    result = serialize({"zebra": 1, "apple": 2, "mango": 3}, "properties", sort_keys=True)
+    lines = [l for l in result.splitlines() if "=" in l]
+    keys = [l.split("=")[0] for l in lines]
+    assert keys == ["apple", "mango", "zebra"]
+
+
+def test_sort_keys_csv_list():
+    from core.configforge import serialize
+    result = serialize([{"zebra": 1, "apple": 2, "mango": 3}], "csv", sort_keys=True)
+    header = result.splitlines()[0]
+    assert header == "apple,mango,zebra"
+
+
+def test_sort_keys_csv_dict():
+    from core.configforge import serialize
+    result = serialize({"zebra": 1, "apple": 2, "mango": 3}, "csv", sort_keys=True)
+    header = result.splitlines()[0]
+    assert header == "apple,mango,zebra"
+
+
+def test_sort_keys_plist():
+    from core.configforge import serialize
+    result = serialize({"zebra": 1, "apple": 2, "mango": 3}, "plist", sort_keys=True)
+    keys = [l.strip().replace("<key>", "").replace("</key>", "")
+            for l in result.splitlines() if "<key>" in l]
+    assert keys == ["apple", "mango", "zebra"]
+
+
+def test_sort_keys_xml():
+    from core.configforge import serialize
+    result = serialize({"zebra": "<z>", "apple": "<a>", "mango": "<m>"}, "xml", sort_keys=True)
+    tags = [w.strip("<>").split(">")[0] for w in result.split("<") if w and w[0].isalpha()
+            and "root" not in w]
+    # First child element should be 'apple'
+    assert tags[0] == "apple"
+
+
+def test_sort_keys_ini():
+    from core.configforge import serialize
+    data = {"section": {"zebra": "z", "apple": "a", "mango": "m"}}
+    result = serialize(data, "ini", sort_keys=True)
+    lines = [l for l in result.splitlines() if "=" in l and not l.startswith("[")]
+    keys = [l.split("=")[0].strip() for l in lines]
+    assert keys == ["apple", "mango", "zebra"]
+
+
+def test_sort_keys_nested_toml():
+    from core.configforge import serialize
+    data = {"z_section": {"z_key": 1, "a_key": 2}, "a_section": {"b": 3}}
+    result = serialize(data, "toml", sort_keys=True)
+    # a_section header should appear before z_section header
+    assert result.index("[a_section]") < result.index("[z_section]")
+
+
+def test_sort_keys_unsorted_preserves_insertion_order():
+    """Without sort_keys, insertion order is preserved (default behavior)."""
+    from core.configforge import serialize
+    result = serialize({"zebra": 1, "apple": 2, "mango": 3}, "toml", sort_keys=False)
+    lines = [l for l in result.splitlines() if "=" in l]
+    keys = [l.split("=")[0].strip() for l in lines]
+    assert keys == ["zebra", "apple", "mango"]
+
+
+# ── .env type inference (yq issue #643 complaint) ──
+# yq v4 broke environment variable type handling — quoted vars forced to string,
+# losing int/float/bool types. ConfigForge infers types for unquoted .env values.
+
+def test_env_infer_int():
+    from core.configforge import parse_text
+    r = parse_text("PORT=8080\nCOUNT=0", fmt="env")
+    assert r["data"]["PORT"] == 8080
+    assert isinstance(r["data"]["PORT"], int)
+    assert r["data"]["COUNT"] == 0
+    assert isinstance(r["data"]["COUNT"], int)
+
+
+def test_env_infer_bool():
+    from core.configforge import parse_text
+    r = parse_text("DEBUG=true\nVERBOSE=false\nENABLED=yes\nDISABLED=no", fmt="env")
+    assert r["data"]["DEBUG"] is True
+    assert r["data"]["VERBOSE"] is False
+    assert r["data"]["ENABLED"] is True
+    assert r["data"]["DISABLED"] is False
+
+
+def test_env_infer_float():
+    from core.configforge import parse_text
+    r = parse_text("TIMEOUT=30.5\nRATIO=0.75", fmt="env")
+    assert r["data"]["TIMEOUT"] == 30.5
+    assert isinstance(r["data"]["TIMEOUT"], float)
+    assert r["data"]["RATIO"] == 0.75
+
+
+def test_env_quoted_stays_string():
+    """Double-quoted and single-quoted values must remain strings regardless of content."""
+    from core.configforge import parse_text
+    r = parse_text('PORT="8080"\nDEBUG=\'true\'\nNUM=\'42\'', fmt="env")
+    assert r["data"]["PORT"] == "8080"
+    assert isinstance(r["data"]["PORT"], str)
+    assert r["data"]["DEBUG"] == "true"
+    assert isinstance(r["data"]["DEBUG"], str)
+    assert r["data"]["NUM"] == "42"
+    assert isinstance(r["data"]["NUM"], str)
+
+
+def test_env_infer_types_false_keeps_strings():
+    from core.configforge import parse_text
+    r = parse_text("PORT=8080\nDEBUG=true\nTIMEOUT=30.5", fmt="env", infer_types=False)
+    assert r["data"]["PORT"] == "8080"
+    assert r["data"]["DEBUG"] == "true"
+    assert r["data"]["TIMEOUT"] == "30.5"
+
+
+def test_env_to_yaml_preserves_types():
+    """Round-trip: .env -> YAML should produce typed YAML output."""
+    from core.configforge import parse_text, serialize
+    r = parse_text("PORT=8080\nDEBUG=true\nTIMEOUT=30.5\nNAME=myapp", fmt="env")
+    yaml_out = serialize(r["data"], "yaml")
+    assert "PORT: 8080" in yaml_out
+    assert "DEBUG: true" in yaml_out
+    assert "TIMEOUT: 30.5" in yaml_out
+    assert "NAME: myapp" in yaml_out
+
+
+def test_env_to_json_preserves_types():
+    """Round-trip: .env -> JSON should produce typed JSON output."""
+    import json as _json
+    from core.configforge import parse_text, serialize
+    r = parse_text("PORT=8080\nDEBUG=true\nTIMEOUT=30.5", fmt="env")
+    obj = _json.loads(serialize(r["data"], "json"))
+    assert obj["PORT"] == 8080
+    assert obj["DEBUG"] is True
+    assert obj["TIMEOUT"] == 30.5
+
+
+def test_env_plain_string_unchanged():
+    """Plain strings that look like nothing special stay as strings."""
+    from core.configforge import parse_text
+    r = parse_text("NAME=myapp\nURL=http://example.com\nEMPTY=", fmt="env")
+    assert r["data"]["NAME"] == "myapp"
+    assert isinstance(r["data"]["NAME"], str)
+    assert r["data"]["EMPTY"] == ""
+
+
+# ── MEDIUM-NEW4: parse_text() ValueError → clean error message, not traceback ──
+
+def test_get_malformed_input_clean_error(tmp_path, capsys):
+    """--get on malformed YAML prints a clean error, not a raw traceback."""
+    from core.configforge import main
+    f = tmp_path / "bad.yaml"
+    f.write_text("key: : invalid: :\n")
+    rc = main([str(f), "--get", "key", "-f", "yaml"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert captured.err.startswith("error:")
+    assert "Traceback" not in captured.err
+
+
+def test_set_malformed_input_returns_1(tmp_path, capsys):
+    """--set on malformed YAML input returns exit code 1 with a clean message."""
+    from core.configforge import main
+    f = tmp_path / "bad.yaml"
+    f.write_text("key: : invalid: :\n")
+    rc = main([str(f), "--set", "key", "val", "-f", "yaml"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert captured.err.startswith("error:")
+    assert "Traceback" not in captured.err
+
+
+def test_delete_malformed_input_returns_1(tmp_path, capsys):
+    """--delete on malformed YAML input returns exit code 1 with a clean message."""
+    from core.configforge import main
+    f = tmp_path / "bad.yaml"
+    f.write_text("key: : invalid: :\n")
+    rc = main([str(f), "--delete", "key", "-f", "yaml"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert captured.err.startswith("error:")
+    assert "Traceback" not in captured.err
+
+
+def test_merge_malformed_base_returns_1(tmp_path, capsys):
+    """--merge on malformed base YAML returns exit code 1 with a clean message."""
+    from core.configforge import main
+    base = tmp_path / "bad.yaml"
+    base.write_text("key: : invalid: :\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("key: value\n")
+    rc = main([str(base), "--merge", str(overlay), "-f", "yaml"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert captured.err.startswith("error:")
+    assert "Traceback" not in captured.err
+
+
+def test_merge_malformed_overlay_returns_1(tmp_path, capsys):
+    """--merge with malformed overlay YAML returns exit code 1 with a clean message."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("host: localhost\n")
+    overlay = tmp_path / "bad_overlay.yaml"
+    overlay.write_text("key: : invalid: :\n")
+    rc = main([str(base), "--merge", str(overlay), "-f", "yaml"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "error" in captured.err
+    assert "Traceback" not in captured.err
+
+
+# ── LOW-NEW3: .plist in ext_map lets configforge auto-detect output format ──
+
+def test_plist_ext_map_auto_output(tmp_path, capsys):
+    """configforge input.yaml -o output.plist auto-detects plist as target format."""
+    from core.configforge import main
+    src = tmp_path / "config.yaml"
+    src.write_text("version: 1\napp: myapp\n")
+    out = tmp_path / "config.plist"
+    rc = main([str(src), "-o", str(out)])
+    assert rc == 0
+    assert out.exists()
+    content = out.read_text()
+    assert "<plist" in content
+    assert "myapp" in content
