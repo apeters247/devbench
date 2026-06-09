@@ -473,3 +473,88 @@ def test_imports():
     assert hasattr(cli, "main")
     assert hasattr(models, "ToolResult")
     assert hasattr(detector, "detect")
+
+
+# ═══════════════════════════════════════════════
+# CONFIGFORGE TOOL — direct function tests
+# ═══════════════════════════════════════════════
+from core.tools import configforge_tool
+
+def test_cf_tool_empty_input():
+    r = parse(configforge_tool(""))
+    assert r["error"] is not None
+    assert "empty" in r["error"].lower()
+
+def test_cf_tool_yaml_pretty_print():
+    # No --to directive: auto-detects YAML and pretty-prints it
+    r = parse(configforge_tool("key: value\ncount: 42"))
+    assert r["error"] is None, f"Unexpected error: {r['error']}"
+    assert "key" in r["output"] and "value" in r["output"]
+    assert r["metadata"]["output_format"] == "yaml"
+
+def test_cf_tool_yaml_to_json_via_directive():
+    r = parse(configforge_tool('#devbench:to=json\nkey: value\ncount: 42'))
+    assert r["error"] is None, f"Unexpected error: {r['error']}"
+    out = json.loads(r["output"])
+    assert out["key"] == "value"
+    assert out["count"] == 42
+
+def test_cf_tool_directive_to_yaml():
+    r = parse(configforge_tool('#devbench:to=yaml\n{"name": "alice", "score": 10}'))
+    assert r["error"] is None, f"Unexpected error: {r['error']}"
+    assert "name: alice" in r["output"]
+
+def test_cf_tool_directive_from_json():
+    r = parse(configforge_tool('#devbench:from=json\n#devbench:to=toml\n{"key": "hello"}'))
+    assert r["error"] is None, f"Unexpected error: {r['error']}"
+    assert "hello" in r["output"]
+
+def test_cf_tool_invalid_input_returns_error():
+    r = parse(configforge_tool("not valid config !!!@@@###"))
+    assert r["error"] is not None, "Expected error for unrecognizable input"
+    assert r["output"] == ""
+
+def test_cf_tool_json_pretty_print():
+    r = parse(configforge_tool('{"z": 1, "a": 2}'))
+    assert r["error"] is None
+    assert "z" in r["output"] and "a" in r["output"]
+
+def test_cf_tool_in_run_tool():
+    assert get_tool("cf") is not None
+    r = parse(run_tool("cf", "key: value"))
+    assert r["tool_name"] == "cf"
+    assert r["error"] is None
+
+
+# ═══════════════════════════════════════════════
+# TOOL RESULT MODEL
+# ═══════════════════════════════════════════════
+def test_tool_result_success_factory():
+    from core.models import ToolResult
+    tr = ToolResult.success_result("cf", "input", "output text", detection_type="yaml")
+    d = tr.to_swiftui()
+    assert d["tool_name"] == "cf"
+    assert d["output"] == "output text"
+    assert d.get("error") is None
+    assert d["detection_type"] == "yaml"
+
+def test_tool_result_error_factory():
+    from core.models import ToolResult
+    tr = ToolResult.error_result("hash", "bad input", "Invalid hex")
+    d = tr.to_swiftui()
+    assert d["error"] == "Invalid hex"
+    assert d["output"] == ""
+    assert d["tool_name"] == "hash"
+
+def test_tool_result_metadata():
+    from core.models import ToolResult
+    tr = ToolResult.success_result("cf", "x", "y", metadata={"input_format": "yaml"})
+    d = tr.to_swiftui()
+    assert d["metadata"]["input_format"] == "yaml"
+
+def test_tool_result_timestamp_present():
+    from core.models import ToolResult
+    tr = ToolResult.success_result("json", "x", "y")
+    d = tr.to_swiftui()
+    assert "timestamp" in d
+    assert "T" in d["timestamp"]

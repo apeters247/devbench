@@ -541,27 +541,42 @@ class LicenseHandler(BaseHTTPRequestHandler):
 import hmac
 import hashlib
 
+# Reject Stripe webhooks with timestamps older than this (replay protection).
+_STRIPE_TIMESTAMP_TOLERANCE = 300  # 5 minutes
+
 
 def _verify_stripe_sig(body: str, sig_header: str) -> bool:
-    """Verify Stripe webhook signature (simplified — production should use
-    ``stripe.Webhook.construct_event()`` with the ``stripe`` pip package)."""
+    """Verify Stripe webhook signature per Stripe's v1 scheme.
+
+    Stripe signed payload: ``{t}.{body}`` where ``t`` is the timestamp from
+    the ``Stripe-Signature`` header.  Events older than
+    ``_STRIPE_TIMESTAMP_TOLERANCE`` seconds are rejected to prevent replays.
+    """
     if not sig_header:
         return False
-    # Stripe sends: t=<timestamp>,v1=<signature>,v0=<signature>...
-    # We check v1 only (the current version)
+    # Stripe sends: t=<timestamp>,v1=<signature>[,v0=<legacy-signature>]
     try:
-        pairs = {}
+        pairs: dict[str, str] = {}
         for part in sig_header.split(","):
             kv = part.split("=", 1)
             if len(kv) == 2:
                 pairs[kv[0]] = kv[1]
+        timestamp = pairs.get("t", "")
         expected_sig = pairs.get("v1", "")
-        if not expected_sig:
+        if not timestamp or not expected_sig:
             return False
-        # Compute HMAC
+        # Replay protection: reject stale events
+        try:
+            ts_int = int(timestamp)
+        except ValueError:
+            return False
+        if abs(time.time() - ts_int) > _STRIPE_TIMESTAMP_TOLERANCE:
+            return False
+        # Stripe signed payload is "{timestamp}.{body}" — NOT just the body
+        signed_payload = f"{timestamp}.{body}"
         computed = hmac.new(
             STRIPE_WEBHOOK_SECRET.encode("utf-8"),
-            body.encode("utf-8"),
+            signed_payload.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
         return hmac.compare_digest(computed, expected_sig)

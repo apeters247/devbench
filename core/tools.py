@@ -781,6 +781,8 @@ def configforge_tool(input_text: str) -> str:
             to_fmt = "json"
 
     raw = _configforge.convert(cleaned, to_fmt, from_fmt)
+    if not raw.get("success", False):
+        return _err("cf", raw.get("error", "Conversion failed."))
     return _ok(
         "cf",
         raw.get("output", ""),
@@ -788,7 +790,6 @@ def configforge_tool(input_text: str) -> str:
         output_format=raw.get("output_format"),
         input_size=raw.get("input_size"),
         output_size=raw.get("output_size"),
-        success=raw.get("success", False),
     )
 
 

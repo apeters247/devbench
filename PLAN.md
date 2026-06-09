@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|**Last updated:** 2026-06-09T01:25Z (Polisher: added actionable YAML alias/anchor error diagnostics — `*.html` unquoted now gives Fix: hint with line/col; added 3 tests; reviewed builder INI/ENV null+bool fix — clean; 599 passed / 7 skipped / 2 xfailed) |
+|**Last updated:** 2026-06-09T04:20Z (Builder: fixed Stripe webhook signature verification — signed payload now uses `{t}.{body}` per Stripe's v1 scheme (was signing body-only, making all real Stripe webhooks fail); added 5-minute replay protection; added 9 new tests for TestStripeSignatureVerification; absorbed polisher's .env escape fix and configforge_tool error propagation; 624 passed / 7 skipped / 2 xfailed, 0 failures) |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -75,7 +75,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 3. Current State
 
-Builder cycle completed (2026-06-09T02:10Z). Fixed comment loss warning (wrong JSON-as-intermediate advice replaced with actionable format suggestions: yaml/toml/ini alternatives). Fixed TOCTOU port race in both _start_server methods (ThreadingHTTPServer port=0 pattern eliminates close-then-rebind race). Fixed trial license nanosecond collision (time.time_ns() instead of int(time.time())). Added YAML/INI config samples to Swift bridge DETECT_SAMPLES. Added test_cf_converts_yaml_to_json (verifies real config conversion). Added 3 comment_loss_warning tests for format suggestion behavior. Tests: 596 passed, 7 skipped, 2 xfailed. All gates green.
+Builder cycle completed (2026-06-09T04:20Z). Fixed Stripe webhook signature verification — `_verify_stripe_sig` now signs `{timestamp}.{body}` per Stripe's v1 spec (was signing body-only, so all real Stripe webhooks rejected with bad sig); added 5-minute replay protection via timestamp tolerance check. Absorbed polisher's changes: .env parser now expands `\n \r \t \" \\` inside double-quoted values (dotenv-compatible) and strips inline comments in unquoted values; `configforge_tool` now returns error early on conversion failure instead of wrapping the error dict. Added 9 tests in `TestStripeSignatureVerification`. Tests: **624 passed, 7 skipped, 2 xfailed — 0 failures**. All gates green.
 
 ## 4. Work Queue (ordered)
 
@@ -167,6 +167,8 @@ Builder cycle completed (2026-06-09T02:10Z). Fixed comment loss warning (wrong J
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-09T04:20Z | **Builder** (cron — this session) | **SHIPPED: Stripe webhook sig fix (replay-attack vulnerability), .env double-quoted escape sequences, configforge_tool error propagation, 9 new Stripe sig tests.** (1) `_verify_stripe_sig` — signed payload now `{t}.{body}` per Stripe v1 (was body-only, rejected all real Stripe webhooks); added 5-min timestamp tolerance for replay protection. (2) `_unescape_double_quoted()` in ENV parser — `\n \r \t \" \\` sequences expanded in double-quoted values (dotenv-compatible). (3) Inline comment stripping for unquoted ENV values. (4) `configforge_tool` — early `_err()` return on `not raw["success"]` instead of wrapping error dict in `_ok()`. (5) `TestStripeSignatureVerification` — 9 tests covering valid/invalid/tampered/expired/future scenarios. Tests: **624 passed, 7 skipped, 2 xfailed — 0 failures**. +25 tests this cycle. | **624 passed, 7 skipped, 2 xfailed — 0 failures. All gates green.** |
 
 | 2026-06-09T02:10Z | **Builder** (cron — this session) | **SHIPPED: comment loss warning improvement, TOCTOU fix, trial license nanosecond fix, Swift bridge cf test, 3 comment warning regression tests.** (1) `comment_loss_warning` — removed incorrect "use JSON as intermediate" advice; now suggests yaml/toml/ini by name as comment-supporting alternatives. (2) TOCTOU fix — both `TestServerEndpoints._start_server` and `TestGumroadWebhook._start_server` now use `ThreadingHTTPServer(("127.0.0.1", 0), handler)` + read `server.server_address[1]` instead of close-and-rebind; eliminates port-steal race in CI. (3) Trial license collision fix — `time.time_ns()` instead of `int(time.time())` in customer_id. (4) Swift bridge DETECT_SAMPLES now includes YAML and INI config samples. (5) `test_cf_converts_yaml_to_json` — new Swift bridge test exercising the cf success path with real YAML→JSON conversion and content assertion. (6) 3 new comment_loss_warning tests: `test_comment_loss_warning_suggests_alternative_formats`, `test_comment_loss_warning_does_not_mention_json`. Tests: **596 passed, 7 skipped, 2 xfailed — 0 failures**. | **596/603 passing, 7 skipped, 2 xfailed — 0 failures. +3 tests. All gates green.** |
 
@@ -326,7 +328,7 @@ If both workers run simultaneously and need to update the same file:
 
 || Metric | Current | Target |
 |||||--------|---------|--------|
-|| Test pass rate | 589 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+|| Test pass rate | 624 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 || Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 || GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 || Clean wheel install | ✅ builds + installs in fresh venv, `devbench cf --help` works | Stranger can `pip install devbench` |

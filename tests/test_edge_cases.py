@@ -954,11 +954,13 @@ def test_env_values_with_equals_in_value():
     assert "sslmode" in _j(r["output"]).get("CONN_STR", "")
 
 
-def test_env_literal_backslash_n():
-    """An escaped \\n sequence inside a quoted ENV value is kept literally."""
+def test_env_double_quoted_escape_sequences_expanded():
+    """Double-quoted .env values must expand \\n to real newline (matches dotenv, python-dotenv)."""
     r = convert('CERT="line1\\nline2\\nline3"\n', "json", "env")
     assert r["success"]
-    assert "\\n" in _j(r["output"])["CERT"]
+    val = _j(r["output"])["CERT"]
+    assert "\n" in val, f"expected real newline in value, got {val!r}"
+    assert val == "line1\nline2\nline3"
 
 
 def test_env_real_newline_does_not_swallow_keys():

@@ -604,3 +604,79 @@ class TestGumroadWebhook:
         verify_resp = json.loads(urllib.request.urlopen(verify_url).read())
         assert verify_resp["valid"] is True
         assert verify_resp["email"] == "verify@gumroad.com"
+
+
+class TestStripeSignatureVerification:
+    """Unit tests for _verify_stripe_sig — Stripe webhook signature validation."""
+
+    _SECRET = "whsec_test_stripe_secret_key_32b"
+
+    def _make_sig_header(self, body: str, secret: str, timestamp: int | None = None) -> str:
+        import hmac as _hmac
+        import hashlib as _hashlib
+        ts = timestamp if timestamp is not None else int(time.time())
+        signed_payload = f"{ts}.{body}"
+        sig = _hmac.new(
+            secret.encode("utf-8"),
+            signed_payload.encode("utf-8"),
+            _hashlib.sha256,
+        ).hexdigest()
+        return f"t={ts},v1={sig}"
+
+    def _load_module(self, stripe_secret: str = ""):
+        import importlib
+        os.environ["DEVBENCH_LICENSE_SECRET"] = self._SECRET
+        if stripe_secret:
+            os.environ["STRIPE_WEBHOOK_SECRET"] = stripe_secret
+        import web.license_server
+        importlib.reload(web.license_server)
+        return web.license_server
+
+    def test_valid_signature_accepted(self):
+        mod = self._load_module(self._SECRET)
+        body = '{"type":"checkout.session.completed"}'
+        header = self._make_sig_header(body, self._SECRET)
+        assert mod._verify_stripe_sig(body, header) is True
+
+    def test_wrong_secret_rejected(self):
+        mod = self._load_module(self._SECRET)
+        body = '{"type":"checkout.session.completed"}'
+        header = self._make_sig_header(body, "wrong_secret_totally_different")
+        assert mod._verify_stripe_sig(body, header) is False
+
+    def test_tampered_body_rejected(self):
+        mod = self._load_module(self._SECRET)
+        body = '{"type":"checkout.session.completed"}'
+        header = self._make_sig_header(body, self._SECRET)
+        tampered = '{"type":"invoice.paid","amount":99999}'
+        assert mod._verify_stripe_sig(tampered, header) is False
+
+    def test_empty_header_rejected(self):
+        mod = self._load_module()
+        assert mod._verify_stripe_sig("body", "") is False
+
+    def test_missing_timestamp_field_rejected(self):
+        mod = self._load_module(self._SECRET)
+        assert mod._verify_stripe_sig("test", "v1=abc123deadbeef") is False
+
+    def test_missing_v1_field_rejected(self):
+        mod = self._load_module()
+        assert mod._verify_stripe_sig("body", f"t={int(time.time())}") is False
+
+    def test_expired_timestamp_rejected(self):
+        mod = self._load_module(self._SECRET)
+        body = '{"type":"checkout.session.completed"}'
+        old_ts = int(time.time()) - 600  # 10 minutes ago
+        header = self._make_sig_header(body, self._SECRET, timestamp=old_ts)
+        assert mod._verify_stripe_sig(body, header) is False
+
+    def test_future_timestamp_within_tolerance_accepted(self):
+        mod = self._load_module(self._SECRET)
+        body = '{"type":"checkout.session.completed"}'
+        future_ts = int(time.time()) + 60  # 1 minute ahead (clock skew)
+        header = self._make_sig_header(body, self._SECRET, timestamp=future_ts)
+        assert mod._verify_stripe_sig(body, header) is True
+
+    def test_non_integer_timestamp_rejected(self):
+        mod = self._load_module(self._SECRET)
+        assert mod._verify_stripe_sig("body", "t=notanumber,v1=abc123") is False

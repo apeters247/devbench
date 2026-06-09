@@ -387,6 +387,52 @@ def test_env_bool_values_serialize_lowercase():
     assert lines["VERBOSE"] == "false"
 
 
+def test_env_inline_comment_stripped():
+    """Unquoted .env values must have inline comments stripped (# preceded by whitespace)."""
+    env_in = "FOO=bar # this is a comment\nBAZ=qux#not_a_comment\n"
+    r = convert(env_in, "json")
+    assert r["success"]
+    import json as _json
+    data = _json.loads(r["output"])
+    assert data["FOO"] == "bar", f"expected 'bar', got {data['FOO']!r}"
+    assert data["BAZ"] == "qux#not_a_comment", f"expected 'qux#not_a_comment', got {data['BAZ']!r}"
+
+
+def test_env_double_quoted_escape_sequences():
+    """Double-quoted .env values must process \\n, \\t, \\\\ escape sequences."""
+    env_in = 'MSG="hello\\nworld"\tTAB="a\\tb"\tESC="back\\\\slash"\n'
+    # use newline separated
+    env_in = 'MSG="hello\\nworld"\nTAB="a\\tb"\nESC="back\\\\slash"\n'
+    r = convert(env_in, "json")
+    assert r["success"]
+    import json as _json
+    data = _json.loads(r["output"])
+    assert data["MSG"] == "hello\nworld", f"expected 'hello\\nworld', got {data['MSG']!r}"
+    assert data["TAB"] == "a\tb", f"expected 'a\\tb', got {data['TAB']!r}"
+    assert data["ESC"] == "back\\slash", f"expected 'back\\\\slash', got {data['ESC']!r}"
+
+
+def test_env_single_quoted_literal():
+    """Single-quoted .env values must be treated literally (no escape processing)."""
+    env_in = "LITERAL='hello\\nworld'\n"
+    r = convert(env_in, "json")
+    assert r["success"]
+    import json as _json
+    data = _json.loads(r["output"])
+    assert data["LITERAL"] == "hello\\nworld", f"expected literal backslash-n, got {data['LITERAL']!r}"
+
+
+def test_env_newline_roundtrip():
+    """Values with real newlines must survive an env->env roundtrip via escape sequences."""
+    import json as _json
+    original = {"KEY": "line1\nline2"}
+    env_text = convert(_json.dumps(original), "env")["output"]
+    assert "\\n" in env_text, "serializer must escape newlines in .env output"
+    back = convert(env_text, "json")
+    assert back["success"]
+    assert _json.loads(back["output"])["KEY"] == "line1\nline2"
+
+
 def test_ini_null_values_serialize_as_empty():
     """YAML null values must become empty strings in INI output, not 'None'."""
     yaml_in = "host: localhost\nport: null\n"

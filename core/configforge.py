@@ -1292,6 +1292,32 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
         return {"data": result, "format": "ini"}
 
     elif fmt == "env":
+        def _unescape_double_quoted(s: str) -> str:
+            # Process backslash escape sequences inside double-quoted values
+            out = []
+            i = 0
+            while i < len(s):
+                if s[i] == "\\" and i + 1 < len(s):
+                    c = s[i + 1]
+                    if c == "n":
+                        out.append("\n")
+                    elif c == "r":
+                        out.append("\r")
+                    elif c == "t":
+                        out.append("\t")
+                    elif c == '"':
+                        out.append('"')
+                    elif c == "\\":
+                        out.append("\\")
+                    else:
+                        out.append("\\")
+                        out.append(c)
+                    i += 2
+                else:
+                    out.append(s[i])
+                    i += 1
+            return "".join(out)
+
         result = {}
         for line in text.strip().split("\n"):
             line = line.strip()
@@ -1306,11 +1332,17 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
                 k, v = rest.split("=", 1)
                 k = k.strip()
                 v = v.strip()
-                # Strip surrounding quotes (single or double)
-                if len(v) >= 2:
-                    if (v.startswith('"') and v.endswith('"')) or \
-                       (v.startswith("'") and v.endswith("'")):
-                        v = v[1:-1]
+                if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+                    # Double-quoted: process escape sequences, allow inline content
+                    v = _unescape_double_quoted(v[1:-1])
+                elif len(v) >= 2 and v[0] == "'" and v[-1] == "'":
+                    # Single-quoted: literal value, no escape processing
+                    v = v[1:-1]
+                else:
+                    # Unquoted: strip inline comments (# preceded by whitespace)
+                    m = re.search(r"\s+#", v)
+                    if m:
+                        v = v[: m.start()]
                 result[k] = v
         return {"data": result, "format": "env"}
 
