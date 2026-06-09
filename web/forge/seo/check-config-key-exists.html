@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Check If Config Key Exists — devbench --path-exists | ConfigForge</title>
+  <meta name="description" content="Check whether a YAML, TOML, or JSON config key exists with one command. devbench cf config.yaml --path-exists database.host exits 0 if present, 1 if missing — shell-script friendly.">
+  <meta property="og:title" content="Check Config Key Exists — devbench cf --path-exists | ConfigForge">
+  <meta property="og:description" content="Shell-conditional config key existence checks. if devbench cf config.yaml --path-exists tls.cert; then echo 'TLS configured'; fi — works across YAML, TOML, JSON, INI, and 7 more formats.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/check-config-key-exists.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Check If Config Key Exists — devbench cf --path-exists">
+  <meta name="twitter:description" content="if devbench cf config.yaml --path-exists tls.cert; then ... fi — one flag to gate on config key presence. Works on YAML/TOML/JSON/INI. No jq required.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "description": "CLI tool to check if a config key exists in YAML, TOML, JSON, INI, and 8 other formats. Shell-conditional compatible with exit code semantics. No jq or yq required.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "offers": {
+      "@type": "Offer",
+      "price": "19",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<header>
+  <a href="/tools/devbench/">ConfigForge / Devbench</a> — 11-format config converter
+</header>
+
+<main>
+  <h1>Check If a Config Key Exists</h1>
+  <p class="subtitle">
+    <code>devbench cf config.yaml --path-exists database.password</code><br>
+    Exit 0 = key present · Exit 1 = key missing · Works across all 11 config formats
+  </p>
+
+  <section>
+    <h2>The Problem: Gating on Config Key Presence</h2>
+    <p>Shell scripts often need to check whether optional config keys are set before taking action — TLS configuration, optional database credentials, feature flags. Without a dedicated tool, this requires per-format parsing:</p>
+    <pre><code># ❌ Old way — format-specific, fragile grep
+if grep -q 'tls:' config.yaml; then echo "TLS configured"; fi
+# Breaks on nested keys, TOML input, keys with similar prefixes
+
+# With jq — JSON only
+if jq -e '.tls.cert' config.json &gt;/dev/null 2&gt;&1; then echo "TLS"; fi
+# With yq — YAML only, no TOML
+if yq '.tls.cert' config.yaml | grep -qv null; then echo "TLS"; fi</code></pre>
+
+    <p>ConfigForge handles any format with one consistent flag:</p>
+    <pre><code># ✅ New way — works on YAML, TOML, JSON, INI, and 8 more formats
+if devbench cf config.yaml --path-exists tls.cert; then
+    echo "TLS configured — starting secure server"
+else
+    echo "No TLS cert — starting HTTP server"
+fi</code></pre>
+  </section>
+
+  <section>
+    <h2>Quick Start</h2>
+    <pre><code>pip install devbench
+
+# Check if a key exists (exit 0 = present)
+devbench cf config.yaml --path-exists database.host
+# EXISTS  database.host
+# exit code: 0
+
+# Check for a missing key (exit 1)
+devbench cf config.yaml --path-exists database.ssl_cert
+# MISSING database.ssl_cert  (on stderr)
+# exit code: 1
+
+# JSON output for scripting
+devbench cf config.yaml --path-exists tls.cert --raw
+# {"path": "tls.cert", "exists": true}</code></pre>
+  </section>
+
+  <section>
+    <h2>Real-World Use Cases</h2>
+
+    <h3>1. Guard optional TLS configuration</h3>
+    <pre><code>if devbench cf server.yaml --path-exists tls.cert; then
+    devbench cf server.yaml --get tls.cert   # get cert path
+    openssl verify "$TLS_CERT"
+fi</code></pre>
+
+    <h3>2. Pre-deploy validation in CI/CD</h3>
+    <pre><code># .github/workflows/deploy.yml
+- name: Validate required config keys
+  run: |
+    devbench cf config/prod.yaml --path-exists database.host
+    devbench cf config/prod.yaml --path-exists database.password
+    devbench cf config/prod.yaml --path-exists app.secret_key
+    echo "All required keys present"</code></pre>
+
+    <h3>3. Feature flag gating</h3>
+    <pre><code># Check if a feature flag key exists before reading its value
+if devbench cf feature-flags.yaml --path-exists flags.new_dashboard; then
+    FLAG=$(devbench cf feature-flags.yaml --get flags.new_dashboard)
+    [ "$FLAG" = "true" ] && enable_new_dashboard
+fi</code></pre>
+
+    <h3>4. TOML config (yq can't do this at all)</h3>
+    <pre><code># pyproject.toml / Cargo.toml style
+if devbench cf pyproject.toml --path-exists tool.myapp.cache_dir; then
+    CACHE=$(devbench cf pyproject.toml --get tool.myapp.cache_dir)
+    mkdir -p "$CACHE"
+fi</code></pre>
+
+    <h3>5. Kubernetes manifest — check optional fields</h3>
+    <pre><code># Check if resource limits are configured
+if devbench cf deployment.yaml --path-exists spec.template.spec.containers[0].resources.limits; then
+    echo "Resource limits configured — OK for production"
+else
+    echo "WARNING: No resource limits set" >&2
+    exit 1
+fi</code></pre>
+
+    <h3>6. Structured JSON output for automation</h3>
+    <pre><code>STATUS=$(devbench cf config.yaml --path-exists database.replica --raw)
+# {"path": "database.replica", "exists": false}
+
+REPLICA_EXISTS=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin)['exists'])")
+# False</code></pre>
+  </section>
+
+  <section>
+    <h2>Comparison: ConfigForge vs Other Tools</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>devbench --path-exists</th>
+          <th>yq</th>
+          <th>jq</th>
+          <th>grep</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>YAML support</td><td>✅</td><td>✅</td><td>❌</td><td>⚠️ fragile</td>
+        </tr>
+        <tr>
+          <td>TOML support</td><td>✅</td><td>❌</td><td>❌</td><td>⚠️ fragile</td>
+        </tr>
+        <tr>
+          <td>JSON support</td><td>✅</td><td>✅</td><td>✅</td><td>⚠️ fragile</td>
+        </tr>
+        <tr>
+          <td>INI / .env support</td><td>✅</td><td>❌</td><td>❌</td><td>⚠️ fragile</td>
+        </tr>
+        <tr>
+          <td>Nested dot-notation</td><td>✅</td><td>✅</td><td>✅ (different syntax)</td><td>❌</td>
+        </tr>
+        <tr>
+          <td>Clean exit codes (0/1)</td><td>✅</td><td>⚠️ null output</td><td>⚠️ requires -e flag</td><td>✅ but content-match</td>
+        </tr>
+        <tr>
+          <td>JSON output for scripts</td><td>✅ --raw</td><td>⚠️ always full value</td><td>⚠️ always full value</td><td>❌</td>
+        </tr>
+        <tr>
+          <td>Comment preservation</td><td>✅</td><td>⚠️ issues #465 #2054</td><td>❌ JSON only</td><td>❌</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Exit Codes</h2>
+    <table>
+      <thead>
+        <tr><th>Exit Code</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>0</code></td><td>Path exists in the config</td></tr>
+        <tr><td><code>1</code></td><td>Path not found, or parse error</td></tr>
+      </tbody>
+    </table>
+    <p>Designed for use in <code>if</code> conditionals, <code>&amp;&amp;</code> chains, and CI/CD gatekeeping steps.</p>
+  </section>
+
+  <section>
+    <h2>Also Check Out</h2>
+    <p>
+      <a href="assert-config-value.html">--assert: Assert config key equals expected value</a> ·
+      <a href="yaml-to-shell-export.html">--shell-export: Export config as shell variables</a> ·
+      <a href="grep-config-files.html">--grep: Search config by key/value pattern</a>
+    </p>
+  </section>
+
+  <section>
+    <h2>Install</h2>
+    <pre><code>pip install devbench
+devbench cf config.yaml --path-exists your.key</code></pre>
+    <p><a href="https://naxiai.com/tools/devbench/">← Back to ConfigForge / Devbench</a></p>
+  </section>
+</main>
+</body>
+</html>

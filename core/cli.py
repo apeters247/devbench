@@ -109,6 +109,10 @@ def main(argv: list[str] | None = None) -> int:
         return _run_cf_type(args)
     if args.command == "cf" and getattr(args, "pick", None):
         return _run_cf_pick(args)
+    # cf --shell-export  → emit shell-safe export statements (must precede --flatten)
+    if args.command == "cf" and getattr(args, "shell_export", False):
+        return _run_cf_shell_export(args)
+
     if args.command == "cf" and getattr(args, "flatten", False):
         return _run_cf_flatten(args)
     if args.command == "cf" and getattr(args, "unflatten", False):
@@ -125,6 +129,10 @@ def main(argv: list[str] | None = None) -> int:
     # cf --assert  → assert config key(s) equal expected values
     if args.command == "cf" and getattr(args, "asserts", None):
         return _run_cf_assert(args)
+
+    # cf --path-exists  → check whether a path exists in the config
+    if args.command == "cf" and getattr(args, "path_exists", None):
+        return _run_cf_path_exists(args)
 
     # cf --check-env  → show environment info (no stdin needed)
     if args.command == "cf" and getattr(args, "check_env", False):
@@ -375,6 +383,17 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Use --raw for JSON output {assertions, all_passed}. "
                                      "Repeat to test multiple keys: --assert a=1 --assert b=prod. "
                                      "Example: devbench cf deploy.yaml --assert spec.replicas=3")
+            tool_p.add_argument("--path-exists", metavar="PATH", default=None, dest="path_exists",
+                                help="Check whether PATH exists in the config (dot-notation). "
+                                     "Exit 0 = path exists, exit 1 = path missing. "
+                                     "Use --raw for JSON output {path, exists}. "
+                                     "Useful in shell conditionals: "
+                                     "if devbench cf config.yaml --path-exists database.password; then echo ok; fi")
+            tool_p.add_argument("--shell-export", action="store_true", dest="shell_export",
+                                help="Output shell-safe 'export KEY=\"value\"' statements. "
+                                     "Keys are uppercased and dots/dashes replaced with underscores. "
+                                     "Values are shell-quoted. Combine with --flatten for nested configs. "
+                                     "Example: source <(devbench cf config.yaml --flatten --shell-export)")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -1438,6 +1457,7 @@ def _run_cf_rename(args) -> int:
     Combine with --in-place to edit the file in-place with optional --backup.
     --raw outputs JSON: {success, renamed_from, renamed_to}.
     Exit 0 = success, exit 1 = key not found or path error.
+    Preserves comments by updating comment metadata paths during rename.
     """
     from . import configforge as _cf
     raw = getattr(args, "raw", False)
@@ -1457,6 +1477,12 @@ def _run_cf_rename(args) -> int:
         return EXIT_ERROR
     detected_fmt = parsed.get("format")
     data = parsed.get("data", parsed)
+
+    comments, blanks = [], []
+    if detected_fmt == "yaml" and _cf.HAS_YAML:
+        comments = _cf._extract_yaml_comments(content)
+        blanks = _cf._extract_yaml_blank_lines(content)
+
     old_path, new_path = args.rename_paths
     try:
         _cf._rename_by_path(data, old_path, new_path)
@@ -1467,6 +1493,16 @@ def _run_cf_rename(args) -> int:
         else:
             print(msg, file=sys.stderr)
         return EXIT_ERROR
+
+    for comment in comments:
+        if "key" in comment:
+            key = comment["key"]
+            if key == old_path:
+                comment["key"] = new_path
+            elif key.startswith(old_path + "."):
+                suffix = key[len(old_path):]
+                comment["key"] = new_path + suffix
+
     to_fmt = getattr(args, "to", None) or detected_fmt
     if not to_fmt:
         print("error: cannot determine output format; use --to", file=sys.stderr)
@@ -1480,8 +1516,20 @@ def _run_cf_rename(args) -> int:
         else:
             print(msg, file=sys.stderr)
         return EXIT_ERROR
+
     if not output_text.endswith("\n"):
         output_text += "\n"
+
+    if to_fmt == "yaml":
+        if blanks:
+            output_text = _cf._reinsert_yaml_blank_lines(output_text, blanks)
+        if comments:
+            output_text = _cf._reinsert_yaml_comments(output_text, comments)
+    elif comments and to_fmt == "ini":
+        output_text = _cf._reinsert_ini_comments(output_text, comments)
+    elif comments and to_fmt == "toml":
+        output_text = _cf._reinsert_toml_comments(output_text, comments)
+
     if raw:
         print(json.dumps({"success": True, "renamed_from": old_path, "renamed_to": new_path}))
         return EXIT_SUCCESS
@@ -2443,6 +2491,134 @@ def _run_cf_unflatten(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# cf --path-exists: check whether a path exists in the config
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_path_exists(args) -> int:
+    """Check whether a dot-notation PATH exists in the config.
+
+    Exit 0 = path exists, exit 1 = path not found (or on parse error).
+    Use --raw for JSON output {path, exists}.
+
+    Examples:
+        devbench cf deploy.yaml --path-exists spec.replicas
+        devbench cf config.toml --path-exists database.host --raw
+        if devbench cf config.yaml --path-exists tls.cert; then echo "TLS configured"; fi
+    """
+    from . import configforge as _cf
+
+    raw = getattr(args, "raw", False)
+    path = args.path_exists
+
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(
+            content,
+            fmt=None if from_fmt == "auto" else from_fmt,
+            **_cf_parse_opts(args),
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+    exists = True
+    try:
+        _cf._get_by_path(data, path)
+    except (KeyError, IndexError, TypeError):
+        exists = False
+
+    if raw:
+        print(json.dumps({"path": path, "exists": exists}))
+    else:
+        if exists:
+            print(f"EXISTS  {path}")
+        else:
+            print(f"MISSING {path}", file=sys.stderr)
+
+    return EXIT_SUCCESS if exists else EXIT_ERROR
+
+
+# ---------------------------------------------------------------------------
+# cf --shell-export: emit shell-safe export statements
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_shell_export(args) -> int:
+    """Convert a config to shell-safe ``export KEY="value"`` statements.
+
+    Keys are uppercased and non-alphanumeric characters (dots, dashes,
+    spaces) are replaced with underscores.  Values are shell-quoted via
+    shlex.quote so they survive special characters, spaces, and newlines.
+
+    Combine with --flatten to export nested configs:
+        source <(devbench cf config.yaml --flatten --shell-export)
+
+    Use --raw for JSON output {exports: [{key, value}]}.
+
+    Examples:
+        devbench cf .env --shell-export
+        devbench cf config.yaml --flatten --shell-export
+        devbench cf app.toml --from toml --flatten --shell-export --raw
+        source <(devbench cf secrets.yaml --flatten --shell-export)
+    """
+    import re
+    import shlex
+    from . import configforge as _cf
+
+    raw = getattr(args, "raw", False)
+
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(
+            content,
+            fmt=None if from_fmt == "auto" else from_fmt,
+            **_cf_parse_opts(args),
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+
+    # Flatten nested dicts to dot-notation before exporting
+    sep = getattr(args, "sep", ".")
+    if isinstance(data, dict):
+        flat = _cf._flatten_dict(data, sep=sep)
+    else:
+        print("error: --shell-export requires a mapping (dict) config, not a list or scalar", file=sys.stderr)
+        return EXIT_ERROR
+
+    def _to_env_key(k: str) -> str:
+        """Uppercase and replace non-alphanumeric chars with underscores."""
+        return re.sub(r"[^A-Z0-9_]", "_", k.upper())
+
+    exports = []
+    for k, v in flat.items():
+        env_key = _to_env_key(k)
+        # Convert value to string; shlex.quote handles all special chars
+        str_val = str(v) if not isinstance(v, bool) else ("true" if v else "false")
+        exports.append({"key": env_key, "value": str_val})
+
+    if raw:
+        print(json.dumps({"exports": exports}, indent=2))
+    else:
+        for entry in exports:
+            print(f"export {entry['key']}={shlex.quote(entry['value'])}")
+
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
 # Shell completion
 # ---------------------------------------------------------------------------
 
@@ -2454,6 +2630,7 @@ _CF_FLAGS = (
     "--batch --stream --output-dir --sort-keys --indent "
     "--flatten-xml --no-comments --yaml12 --template-safe "
     "--null-handling --list-formats --check-env --schema --mask --mask-value --assert "
+    "--path-exists --shell-export "
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
 )

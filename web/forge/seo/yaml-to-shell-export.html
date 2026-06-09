@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Convert YAML/TOML Config to Shell Variables — devbench --shell-export | ConfigForge</title>
+  <meta name="description" content="Source YAML, TOML, or JSON config files directly in bash. devbench cf config.yaml --shell-export emits export KEY=&quot;value&quot; — uppercase, shell-quoted, no jq, no awk.">
+  <meta property="og:title" content="YAML to Shell Variables CLI — devbench cf --shell-export | ConfigForge">
+  <meta property="og:description" content="Turn any config file into shell-safe export statements in one command. source &lt;(devbench cf config.yaml --shell-export) — works across YAML, TOML, JSON, .env, and 7 more formats.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/yaml-to-shell-export.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Convert YAML/TOML to Shell Export Variables — devbench cf --shell-export">
+  <meta name="twitter:description" content="source &lt;(devbench cf config.yaml --shell-export) — one command to turn any config into bash exports. Uppercase keys, shell-quoted values, works on YAML/TOML/JSON/INI.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI tool to convert YAML, TOML, JSON, INI config files to shell export variables. Uppercase key names, shell-safe quoting, works with source command in bash/zsh scripts.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<header>
+  <a href="/tools/devbench/">ConfigForge / Devbench</a> — 11-format config converter
+</header>
+
+<main>
+  <h1>Convert YAML / TOML / JSON Config to Shell Variables</h1>
+  <p class="subtitle">
+    <code>source &lt;(devbench cf config.yaml --shell-export)</code><br>
+    One command. Uppercase keys. Shell-quoted values. No <code>jq</code>, no <code>awk</code>, no manual escaping.
+  </p>
+
+  <section>
+    <h2>The Problem: Sourcing Config in Shell Scripts</h2>
+    <p>DevOps pipelines often need config values in shell variables. The typical workflow is painful:</p>
+    <pre><code># ❌ Old way — fragile, format-specific, breaks on spaces
+DB_HOST=$(grep 'host:' config.yaml | awk '{print $2}')
+DB_PORT=$(grep 'port:' config.yaml | awk '{print $2}')
+# Breaks on nested keys, multi-word values, TOML/JSON input</code></pre>
+
+    <p>ConfigForge's <code>--shell-export</code> flag makes this trivial:</p>
+    <pre><code># ✅ New way — works on any format, handles quoting automatically
+source &lt;(devbench cf config.yaml --shell-export)
+echo "$DB_HOST"   # localhost
+echo "$DB_PORT"   # 5432</code></pre>
+  </section>
+
+  <section>
+    <h2>Quick Start</h2>
+    <pre><code>pip install devbench
+
+# YAML config
+cat config.yaml
+# database:
+#   host: localhost
+#   port: 5432
+#   name: mydb
+
+devbench cf config.yaml --shell-export
+# export DATABASE_HOST=localhost
+# export DATABASE_PORT=5432
+# export DATABASE_NAME=mydb
+
+# Load into current shell
+source &lt;(devbench cf config.yaml --shell-export)
+echo "$DATABASE_HOST"  # localhost</code></pre>
+  </section>
+
+  <section>
+    <h2>Key Transformations</h2>
+    <table>
+      <thead>
+        <tr><th>Input Key</th><th>Output Variable</th><th>Rule</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>database.host</code></td><td><code>DATABASE_HOST</code></td><td>dot → underscore, uppercase</td></tr>
+        <tr><td><code>app-name</code></td><td><code>APP_NAME</code></td><td>dash → underscore, uppercase</td></tr>
+        <tr><td><code>max_retries</code></td><td><code>MAX_RETRIES</code></td><td>already snake_case, uppercase</td></tr>
+        <tr><td><code>server.tls.cert</code></td><td><code>SERVER_TLS_CERT</code></td><td>deep nesting, multiple dots</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Value quoting</h3>
+    <table>
+      <thead>
+        <tr><th>Input Value</th><th>Output</th><th>Rule</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>localhost</code></td><td><code>export HOST=localhost</code></td><td>plain word — no quotes needed</td></tr>
+        <tr><td><code>hello world</code></td><td><code>export MSG='hello world'</code></td><td>space → single-quoted</td></tr>
+        <tr><td><code>/etc/ssl/cert.pem</code></td><td><code>export CERT=/etc/ssl/cert.pem</code></td><td>safe path — no quotes</td></tr>
+        <tr><td><code>it's alive</code></td><td><code>export MSG='it'"'"'s alive'</code></td><td>apostrophe → safely escaped</td></tr>
+        <tr><td><code>true</code> (boolean)</td><td><code>export DEBUG=true</code></td><td>boolean → string true/false</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Real-World Use Cases</h2>
+
+    <h3>1. Docker Compose / entrypoint scripts</h3>
+    <pre><code># docker-entrypoint.sh
+set -euo pipefail
+source &lt;(devbench cf /etc/app/config.yaml --shell-export)
+
+exec app --host "$DATABASE_HOST" --port "$DATABASE_PORT"</code></pre>
+
+    <h3>2. GitHub Actions — load config as environment variables</h3>
+    <pre><code>- name: Load config
+  run: devbench cf config/prod.yaml --shell-export >> $GITHUB_ENV</code></pre>
+
+    <h3>3. CI/CD pipeline environment injection</h3>
+    <pre><code># .gitlab-ci.yml
+before_script:
+  - pip install devbench
+  - source &lt;(devbench cf config/staging.yaml --shell-export)
+  - echo "Deploying to $DATABASE_HOST"</code></pre>
+
+    <h3>4. Local dev environment setup from config</h3>
+    <pre><code># In your .bashrc or project .envrc (direnv)
+source &lt;(devbench cf .devconfig.toml --shell-export)
+# Now $APP_PORT, $DB_HOST, $REDIS_URL are all set</code></pre>
+
+    <h3>5. TOML config to shell (yq can't write TOML, and can't do this at all)</h3>
+    <pre><code># pyproject.toml style
+cat settings.toml
+# [database]
+# host = "prod.db.internal"
+# port = 5432
+# [cache]
+# ttl = 300
+
+devbench cf settings.toml --shell-export
+# export DATABASE_HOST='prod.db.internal'
+# export DATABASE_PORT=5432
+# export CACHE_TTL=300</code></pre>
+
+    <h3>6. Kubernetes ConfigMap to shell variables</h3>
+    <pre><code># Extract env-relevant keys from a k8s ConfigMap
+devbench cf configmap.yaml --grep 'app\.' --shell-export</code></pre>
+  </section>
+
+  <section>
+    <h2>Flags and Options</h2>
+    <pre><code># Machine-readable JSON (for scripting)
+devbench cf config.yaml --shell-export --raw
+# {
+#   "exports": [
+#     {"key": "DATABASE_HOST", "value": "localhost"},
+#     {"key": "DATABASE_PORT", "value": "5432"}
+#   ]
+# }
+
+# Only export keys matching a pattern
+devbench cf config.yaml --grep 'database' --shell-export
+
+# TOML / JSON / INI — format is auto-detected
+devbench cf config.toml --shell-export
+devbench cf config.json --shell-export
+devbench cf config.ini  --shell-export
+
+# Pipe from another command
+cat secrets.yaml | devbench cf --shell-export</code></pre>
+  </section>
+
+  <section>
+    <h2>Comparison: ConfigForge vs Manual Shell Approaches</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Task</th>
+          <th>Old (grep/awk/sed)</th>
+          <th>ConfigForge</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Export flat YAML keys</td>
+          <td><code>grep -v '^#' | awk -F': ' '{print "export "$1"="$2}'</code></td>
+          <td><code>devbench cf cfg.yaml --shell-export</code></td>
+        </tr>
+        <tr>
+          <td>Export nested YAML keys</td>
+          <td>❌ Requires Python/jq + post-processing</td>
+          <td><code>devbench cf cfg.yaml --shell-export</code></td>
+        </tr>
+        <tr>
+          <td>Export TOML keys</td>
+          <td>❌ No standard tool for TOML→shell export</td>
+          <td><code>devbench cf cfg.toml --shell-export</code></td>
+        </tr>
+        <tr>
+          <td>Handle values with spaces</td>
+          <td>❌ Usually breaks quoting</td>
+          <td>✅ <code>shlex.quote</code> handles all edge cases</td>
+        </tr>
+        <tr>
+          <td>Uppercase key conversion</td>
+          <td><code>tr '[:lower:]' '[:upper:]'</code> + dot handling</td>
+          <td>✅ Automatic (dots, dashes → underscores)</td>
+        </tr>
+        <tr>
+          <td>Boolean values</td>
+          <td>❌ Exported as YAML <code>true</code> or Python <code>True</code></td>
+          <td>✅ Always exported as <code>true</code> / <code>false</code></td>
+        </tr>
+        <tr>
+          <td>JSON output for automation</td>
+          <td>❌ Not available</td>
+          <td>✅ <code>--raw</code> emits <code>{exports: [{key, value}]}</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Also Check Out</h2>
+    <p>
+      <a href="assert-config-value.html">--assert: Verify config values in CI/CD pipelines</a> ·
+      <a href="flatten-yaml-to-env.html">--flatten: Flatten nested YAML to env-var format</a> ·
+      <a href="grep-config-files.html">--grep: Search config keys by regex</a>
+    </p>
+  </section>
+
+  <section>
+    <h2>Install</h2>
+    <pre><code>pip install devbench
+# or
+pip install devbench[all]  # includes optional format deps (HCL, lxml)
+
+devbench cf config.yaml --shell-export</code></pre>
+    <p><a href="https://naxiai.com/tools/devbench/">← Back to ConfigForge / Devbench</a></p>
+  </section>
+</main>
+</body>
+</html>

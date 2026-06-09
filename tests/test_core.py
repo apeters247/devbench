@@ -2793,3 +2793,212 @@ def test_type_completion_zsh_includes_flag(capsys):
     main(["completion", "zsh"])
     out = capsys.readouterr().out
     assert "--type" in out
+
+
+# ---------------------------------------------------------------------------
+# --path-exists: check whether a dot-notation path exists
+# ---------------------------------------------------------------------------
+
+
+def test_path_exists_simple_exists(tmp_path, capsys):
+    """--path-exists returns exit 0 and prints EXISTS for a present key."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("server:\n  host: localhost\n  port: 8080\n")
+    result = main(["cf", str(f), "--path-exists", "server.host"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "EXISTS" in out
+    assert "server.host" in out
+
+
+def test_path_exists_missing_returns_exit1(tmp_path, capsys):
+    """--path-exists returns exit 1 for a missing key."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("server:\n  host: localhost\n")
+    result = main(["cf", str(f), "--path-exists", "server.password"])
+    assert result == 1
+    err = capsys.readouterr().err
+    assert "MISSING" in err
+
+
+def test_path_exists_nested_deep(tmp_path, capsys):
+    """--path-exists works on deeply nested dot-notation paths."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("a:\n  b:\n    c:\n      d: 42\n")
+    result = main(["cf", str(f), "--path-exists", "a.b.c.d"])
+    assert result == 0
+
+
+def test_path_exists_raw_exists(tmp_path, capsys):
+    """--path-exists --raw outputs JSON {path, exists: true}."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"database": {"host": "prod.db"}}')
+    result = main(["cf", str(f), "--path-exists", "database.host", "--raw"])
+    assert result == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["path"] == "database.host"
+    assert data["exists"] is True
+
+
+def test_path_exists_raw_missing(tmp_path, capsys):
+    """--path-exists --raw outputs JSON {path, exists: false} on missing key."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"key": "val"}')
+    result = main(["cf", str(f), "--path-exists", "nonexistent.path", "--raw"])
+    assert result == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["exists"] is False
+    assert data["path"] == "nonexistent.path"
+
+
+def test_path_exists_toml_input(tmp_path, capsys):
+    """--path-exists works on TOML input."""
+    from core.cli import main
+    f = tmp_path / "cfg.toml"
+    f.write_text('[server]\nport = 9000\n')
+    result = main(["cf", str(f), "--path-exists", "server.port"])
+    assert result == 0
+
+
+def test_path_exists_json_input(tmp_path, capsys):
+    """--path-exists works on JSON input."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"tls": {"cert": "/etc/ssl/cert.pem"}}')
+    result = main(["cf", str(f), "--path-exists", "tls.cert"])
+    assert result == 0
+    result2 = main(["cf", str(f), "--path-exists", "tls.key"])
+    assert result2 == 1
+
+
+def test_path_exists_top_level_key(tmp_path, capsys):
+    """--path-exists works on top-level (non-nested) keys."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("enabled: true\nname: myapp\n")
+    assert main(["cf", str(f), "--path-exists", "enabled"]) == 0
+    assert main(["cf", str(f), "--path-exists", "missing"]) == 1
+
+
+def test_path_exists_completion_includes_flag(capsys):
+    """Shell completion includes --path-exists flag."""
+    from core.cli import main
+    main(["completion", "bash"])
+    assert "--path-exists" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# --shell-export: emit shell-safe export KEY="value" statements
+# ---------------------------------------------------------------------------
+
+
+def test_shell_export_basic(tmp_path, capsys):
+    """--shell-export emits export KEY=value lines with uppercase keys."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("host: localhost\nport: 5432\n")
+    result = main(["cf", str(f), "--shell-export"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export HOST=localhost" in out
+    assert "export PORT=5432" in out
+
+
+def test_shell_export_nested_flattened(tmp_path, capsys):
+    """--shell-export with nested config flattens dots to underscores."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("database:\n  host: localhost\n  port: 5432\n")
+    result = main(["cf", str(f), "--shell-export"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export DATABASE_HOST=localhost" in out
+    assert "export DATABASE_PORT=5432" in out
+
+
+def test_shell_export_quotes_special_chars(tmp_path, capsys):
+    """--shell-export shell-quotes values with spaces and special characters."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("message: hello world\npath: /usr/local/bin\n")
+    result = main(["cf", str(f), "--shell-export"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export MESSAGE=" in out
+    assert "'hello world'" in out or '"hello world"' in out
+
+
+def test_shell_export_boolean_values(tmp_path, capsys):
+    """--shell-export converts booleans to true/false strings."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("debug: true\nverbose: false\n")
+    result = main(["cf", str(f), "--shell-export"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export DEBUG=" in out
+    assert "true" in out
+    assert "export VERBOSE=" in out
+    assert "false" in out
+
+
+def test_shell_export_json_input(tmp_path, capsys):
+    """--shell-export works on JSON input."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"app_name": "myapp", "app_version": "1.0"}')
+    result = main(["cf", str(f), "--shell-export"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export APP_NAME=myapp" in out
+    assert "export APP_VERSION=1.0" in out
+
+
+def test_shell_export_toml_input(tmp_path, capsys):
+    """--shell-export works on TOML input."""
+    from core.cli import main
+    f = tmp_path / "cfg.toml"
+    f.write_text('[server]\nhost = "prod.example.com"\nport = 443\n')
+    result = main(["cf", str(f), "--shell-export"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export SERVER_HOST=" in out
+    assert "export SERVER_PORT=443" in out
+
+
+def test_shell_export_raw_output(tmp_path, capsys):
+    """--shell-export --raw emits JSON {exports: [{key, value}]}."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("name: myapp\nversion: 2\n")
+    result = main(["cf", str(f), "--shell-export", "--raw"])
+    assert result == 0
+    data = json.loads(capsys.readouterr().out)
+    assert "exports" in data
+    keys = [e["key"] for e in data["exports"]]
+    assert "NAME" in keys
+    assert "VERSION" in keys
+
+
+def test_shell_export_dash_in_key(tmp_path, capsys):
+    """--shell-export converts dashes in keys to underscores."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("app-name: myapp\nmax-retries: 3\n")
+    result = main(["cf", str(f), "--shell-export"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export APP_NAME=myapp" in out
+    assert "export MAX_RETRIES=3" in out
+
+
+def test_shell_export_completion_includes_flag(capsys):
+    """Shell completion includes --shell-export flag."""
+    from core.cli import main
+    main(["completion", "bash"])
+    assert "--shell-export" in capsys.readouterr().out
