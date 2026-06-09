@@ -1486,7 +1486,7 @@ def _parse_text_impl(text: str, fmt: str = None, **options) -> dict:
     elif fmt == "yaml" and HAS_YAML:
         # Handle multi-document YAML (--- separator)
         multi_doc = options.get("multi_doc", True)
-        yaml12 = options.get("yaml12", False)
+        yaml12 = options.get("yaml12", True)
         template_safe = options.get("template_safe", False)
         loader_cls = _make_yaml12_loader() if yaml12 else yaml.SafeLoader
 
@@ -3009,6 +3009,10 @@ Compared to yq/jq:
                              "YAML with unquoted {{ ... }} expressions. Auto-retry is the "
                              "default; this flag forces quoting on the first pass.")
     parser.add_argument("--sort-keys", action="store_true", help="Sort keys in output.")
+    parser.add_argument("--sort-keys-reverse", action="store_true", dest="sort_keys_reverse",
+                        help="Sort keys in reverse alphabetical order.")
+    parser.add_argument("--compact", "-c", action="store_true",
+                        help="Output compact/minified JSON (no whitespace). Only affects JSON output.")
     parser.add_argument("--no-infer-dates", action="store_true",
                         help="Keep ISO-8601 date strings as strings (TOML).")
     parser.add_argument("--null", dest="null_handling", default="skip",
@@ -3022,6 +3026,10 @@ Compared to yq/jq:
                         help="Raw string output for --get: print the string value without "
                              "YAML quoting. By default --get emits a YAML-safe scalar "
                              "(quoted if needed for round-trip safety, like jq -r).")
+    parser.add_argument("--default", metavar="VALUE", default=None, dest="get_default",
+                        help="Fallback value when --get path is missing. "
+                             "Prints VALUE and exits 0 instead of an error. "
+                             "Example: configforge config.yaml --get timeout --default 30")
     parser.add_argument("--set", metavar=("PATH", "VALUE"), nargs=2,
                         help="Set a value by dot-notation path and write the result. "
                              "VALUE is parsed as JSON (booleans, numbers, null, "
@@ -3051,6 +3059,16 @@ Compared to yq/jq:
                              "'replace' (default) replaces the base list with the overlay list; "
                              "'append' appends the overlay list to the base list "
                              "(useful for Kubernetes env-vars, volumes, containers).")
+    parser.add_argument("--select", metavar="FIELD=VALUE", default=None, dest="select_expr",
+                        help="Filter a list: keep items where FIELD equals VALUE. "
+                             "Use FIELD!=VALUE to negate. Exit 0=matches, 1=no matches. "
+                             "Combine with --get to navigate to a nested list first. "
+                             "Example: configforge pods.yaml --select status=Running")
+    parser.add_argument("--template", metavar="FILE", default=None, dest="template_file",
+                        help="Render a template file using config values as context. "
+                             "${key} and {{ key }} (Jinja2) syntax supported. "
+                             "Dot-path keys available with dots replaced by underscores. "
+                             "Example: configforge app.yaml --template deploy.tmpl > deploy.sh")
     args = parser.parse_args(argv)
 
     options = {
@@ -3058,6 +3076,7 @@ Compared to yq/jq:
         "flatten_xml": args.flatten_xml,
         "preserve_comments": not args.no_comments,
         "sort_keys": args.sort_keys,
+        "sort_keys_reverse": getattr(args, "sort_keys_reverse", False),
         "infer_dates": not args.no_infer_dates,
         "null_handling": args.null_handling,
         "yaml12": args.yaml12,
@@ -3090,6 +3109,75 @@ Compared to yq/jq:
             print(k)
         return 0
 
+    if args.select_expr:
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        detected_fmt = parsed.get("format", "yaml")
+        if args.get:
+            try:
+                data = _get_by_path(data, args.get)
+            except (KeyError, IndexError) as exc:
+                default = getattr(args, "get_default", None)
+                if default is not None:
+                    sys.stdout.write(default + "\n")
+                    return 0
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        if not isinstance(data, list):
+            print("error: --select requires a list; input is not a list "
+                  "(use --get PATH to navigate to one)", file=sys.stderr)
+            return 1
+        expr = args.select_expr
+        if "!=" in expr:
+            field, raw_val = expr.split("!=", 1)
+            negate = True
+        elif "=" in expr:
+            field, raw_val = expr.split("=", 1)
+            negate = False
+        else:
+            print(f"error: invalid --select expression {expr!r}; "
+                  "expected FIELD=VALUE or FIELD!=VALUE", file=sys.stderr)
+            return 1
+        coerced_val = _coerce_set_value(raw_val)
+        def _item_matches(item):
+            if not isinstance(item, dict):
+                return False
+            try:
+                item_val = _get_by_path(item, field)
+            except (KeyError, IndexError, TypeError):
+                return False
+            match = (item_val == coerced_val)
+            return (not match) if negate else match
+        filtered = [item for item in data if _item_matches(item)]
+        if not filtered:
+            return 1
+        to_fmt_sel = args.to or detected_fmt
+        indent = args.indent
+        compact = getattr(args, "compact", False)
+        if to_fmt_sel in ("yaml", "yml"):
+            import yaml as _yaml
+            output_text = _yaml.dump(filtered, default_flow_style=False,
+                                     allow_unicode=True, indent=indent)
+        elif to_fmt_sel in ("json", "jsonc"):
+            output_text = (json.dumps(filtered, separators=(",", ":"))
+                           if compact else json.dumps(filtered, indent=indent)) + "\n"
+        else:
+            try:
+                output_text = serialize(filtered, to_fmt_sel, **options)
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        if not output_text.endswith("\n"):
+            output_text += "\n"
+        sys.stdout.write(output_text)
+        return 0
+
     if args.get:
         text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
         try:
@@ -3102,6 +3190,10 @@ Compared to yq/jq:
         try:
             val = _get_by_path(data, args.get)
         except (KeyError, IndexError) as exc:
+            default = getattr(args, "get_default", None)
+            if default is not None:
+                sys.stdout.write(default + "\n")
+                return 0
             print(f"error: {exc}", file=sys.stderr)
             return 1
         sys.stdout.write(_format_get_output(val, raw=getattr(args, "raw", False)) + "\n")
@@ -3262,6 +3354,59 @@ Compared to yq/jq:
             sys.stdout.write(output_text)
         return 0
 
+    if args.template_file:
+        import re
+        import string as _string
+        try:
+            template_text = Path(args.template_file).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            print(f"error: template file not found: {args.template_file}", file=sys.stderr)
+            return 1
+        except OSError as exc:
+            print(f"error: cannot read template file: {exc}", file=sys.stderr)
+            return 1
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        flat = _flatten_dict(data, sep=".") if isinstance(data, dict) else {}
+        def _to_str(v) -> str:
+            if isinstance(v, bool):
+                return "true" if v else "false"
+            return str(v)
+        context: dict = {}
+        for k, v in flat.items():
+            str_val = _to_str(v)
+            lower_key = re.sub(r"[^a-z0-9]", "_", k.lower())
+            upper_key = re.sub(r"[^A-Z0-9]", "_", k.upper())
+            context[lower_key] = str_val
+            context[upper_key] = str_val
+        use_jinja2 = "{{" in template_text or "{%" in template_text
+        if use_jinja2:
+            try:
+                import jinja2
+                env = jinja2.Environment(undefined=jinja2.Undefined, keep_trailing_newline=True)
+                tmpl = env.from_string(template_text)
+                rendered = tmpl.render(config=data, **context)
+                sys.stdout.write(rendered if rendered.endswith("\n") else rendered + "\n")
+                return 0
+            except ImportError:
+                pass  # fall through to string.Template
+            except Exception as exc:
+                print(f"error: Jinja2 template rendering failed: {exc}", file=sys.stderr)
+                return 1
+        try:
+            rendered = _string.Template(template_text).safe_substitute(context)
+        except (KeyError, ValueError) as exc:
+            print(f"error: template substitution failed: {exc}", file=sys.stderr)
+            return 1
+        sys.stdout.write(rendered if rendered.endswith("\n") else rendered + "\n")
+        return 0
+
     to_fmt = args.to
     if not to_fmt and args.output:
         to_fmt = ext_map.get(Path(args.output).suffix.lower())
@@ -3291,6 +3436,11 @@ Compared to yq/jq:
 
     if not args.output:
         out = result["output"]
+        if getattr(args, "compact", False) and to_fmt in ("json", "jsonc"):
+            try:
+                out = json.dumps(json.loads(out), separators=(",", ":"), ensure_ascii=False)
+            except (json.JSONDecodeError, TypeError):
+                pass
         sys.stdout.write(out if out.endswith("\n") else out + "\n")
     return 0
 

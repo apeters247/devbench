@@ -1993,8 +1993,8 @@ def test_yaml_hell_full_document_multiformat_roundtrip():
 
 @pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
 def test_yaml_norway_unquoted_no_is_bool_false():
-    """Documents the actual (intentional, YAML-1.1) behavior: unquoted `no` -> False."""
-    r = convert("allow_postgres: no\n", "json", "yaml")
+    """Documents the YAML-1.1 behavior: unquoted `no` -> False (requires yaml12=False)."""
+    r = convert("allow_postgres: no\n", "json", "yaml", yaml12=False)
     assert r["success"]
     assert _j(r["output"])["allow_postgres"] is False
 
@@ -2086,11 +2086,13 @@ def test_yaml12_true_false_still_booleans():
 
 
 @pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
-def test_yaml12_default_still_coerces_no_to_false():
-    """Without yaml12, the documented YAML 1.1 behavior: no -> False."""
+def test_yaml12_default_preserves_no_as_string():
+    """New default (yaml12=True): unquoted `no` is preserved as string, not coerced to False."""
     r = convert("allow_postgres: no\n", "json", "yaml")
     assert r["success"]
-    assert _j(r["output"])["allow_postgres"] is False
+    data = _j(r["output"])
+    assert data["allow_postgres"] == "no"
+    assert isinstance(data["allow_postgres"], str)
 
 
 @pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")

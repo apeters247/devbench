@@ -2168,3 +2168,117 @@ def test_append_cli_json_format(tmp_path, capsys):
     assert rc == 0
     result = json.loads(captured.out)
     assert result["plugins"] == ["auth", "cache", "logging"]
+
+
+# ---------------------------------------------------------------------------
+# configforge.main() — 5 new flags (parity with cli.py)
+# ---------------------------------------------------------------------------
+
+def test_main_sort_keys_reverse(tmp_path, capsys):
+    """configforge --sort-keys-reverse emits keys in reverse alphabetical order."""
+    from core.configforge import main
+    src = tmp_path / "cfg.yaml"
+    src.write_text("alpha: 1\nbeta: 2\nzeta: 3\n")
+    rc = main([str(src), "--to", "json", "--sort-keys-reverse"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    keys = list(data.keys())
+    assert keys == sorted(keys, reverse=True)
+
+
+def test_main_compact(tmp_path, capsys):
+    """configforge --compact produces minified single-line JSON."""
+    from core.configforge import main
+    src = tmp_path / "cfg.yaml"
+    src.write_text("host: localhost\nport: 8080\n")
+    rc = main([str(src), "--to", "json", "--compact"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert "\n" not in out
+    data = json.loads(out)
+    assert data["port"] == 8080
+
+
+def test_main_get_default_missing_path(tmp_path, capsys):
+    """configforge --get missing.path --default fallback returns fallback."""
+    from core.configforge import main
+    src = tmp_path / "cfg.yaml"
+    src.write_text("host: localhost\n")
+    rc = main([str(src), "--get", "timeout", "--default", "30"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "30"
+
+
+def test_main_get_default_present_path(tmp_path, capsys):
+    """configforge --get existing.path --default returns actual value, not default."""
+    from core.configforge import main
+    src = tmp_path / "cfg.yaml"
+    src.write_text("timeout: 60\n")
+    rc = main([str(src), "--get", "timeout", "--default", "30"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "60"
+
+
+def test_main_select_basic(tmp_path, capsys):
+    """configforge --select filters list items by field=value."""
+    from core.configforge import main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: app\n  status: Running\n"
+        "- name: db\n  status: Pending\n"
+    )
+    rc = main([str(src), "--select", "status=Running"])
+    assert rc == 0
+    import yaml
+    result = yaml.safe_load(capsys.readouterr().out)
+    assert len(result) == 1
+    assert result[0]["name"] == "app"
+
+
+def test_main_select_no_matches(tmp_path):
+    """configforge --select with no matches returns exit code 1."""
+    from core.configforge import main
+    src = tmp_path / "pods.yaml"
+    src.write_text("- name: app\n  status: Running\n")
+    rc = main([str(src), "--select", "status=Pending"])
+    assert rc == 1
+
+
+def test_main_select_negate(tmp_path, capsys):
+    """configforge --select FIELD!=VALUE keeps non-matching items."""
+    from core.configforge import main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: app\n  status: Running\n"
+        "- name: db\n  status: Pending\n"
+    )
+    rc = main([str(src), "--select", "status!=Running"])
+    assert rc == 0
+    import yaml
+    result = yaml.safe_load(capsys.readouterr().out)
+    assert len(result) == 1
+    assert result[0]["name"] == "db"
+
+
+def test_main_template_string_template(tmp_path, capsys):
+    """configforge --template renders ${key} templates from config."""
+    from core.configforge import main
+    src = tmp_path / "cfg.yaml"
+    src.write_text("host: db.internal\nport: 5432\n")
+    tmpl = tmp_path / "conn.tmpl"
+    tmpl.write_text("postgres://${host}:${port}/mydb\n")
+    rc = main([str(src), "--template", str(tmpl)])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "postgres://db.internal:5432/mydb"
+
+
+def test_main_template_missing_file(tmp_path, capsys):
+    """configforge --template with non-existent template file returns error."""
+    from core.configforge import main
+    src = tmp_path / "cfg.yaml"
+    src.write_text("host: localhost\n")
+    rc = main([str(src), "--template", str(tmp_path / "nonexistent.tmpl")])
+    assert rc != 0
+    assert "error" in capsys.readouterr().err.lower()
