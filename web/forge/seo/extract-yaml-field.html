@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Extract YAML Fields from Command Line — ConfigForge --pick</title>
+  <meta name="description" content="Extract specific fields from YAML, JSON, TOML, and 8 more config formats on the command line. ConfigForge --pick is simpler than yq filter expressions — one flag, multiple fields, any format.">
+  <meta property="og:title" content="Extract YAML Fields CLI — ConfigForge --pick vs yq/jq filter syntax">
+  <meta property="og:description" content="devbench cf deploy.yaml --pick spec.replicas metadata.name — pull specific keys from any config format without filter expressions. Works on YAML, JSON, TOML, INI, .env, and 6 more.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/extract-yaml-field.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Extract YAML/JSON/TOML Fields — ConfigForge --pick">
+  <meta name="twitter:description" content="One flag to extract specific fields from any config format. No filter expressions needed.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config field extractor and converter. Extract specific fields from YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC with --pick. One tool, 11 formats, no filter expressions.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Extract specific YAML/JSON/TOML fields with --pick",
+      "Multi-field projection: pull several paths at once",
+      "Cross-format output: extract from YAML, output as JSON/TOML",
+      "Dot-notation paths: spec.containers[0].image",
+      "No filter expressions needed",
+      "Works offline — no API keys"
+    ]
+  }
+  </script>
+</head>
+<body>
+<div class="page-wrap">
+
+<nav class="breadcrumb">
+  <a href="/tools/devbench/">Devbench</a> › ConfigForge › Extract Fields
+</nav>
+
+<h1>Extract YAML/JSON/TOML Fields from the Command Line</h1>
+
+<p class="lead">
+  <code>devbench cf deploy.yaml --pick spec.replicas metadata.name</code><br>
+  Pull specific keys from any config format without memorising filter syntax.
+  Works with YAML, JSON, TOML, INI, <code>.env</code>, XML, CSV, HCL, <code>.properties</code>, plist, and JSONC.
+</p>
+
+<section>
+  <h2>The Problem with yq and jq for Field Extraction</h2>
+
+  <p>
+    Every DevOps engineer has been there: you want to pull a single value from a Kubernetes YAML manifest
+    and you end up googling "<em>yq get field syntax</em>" for the third time this week.
+  </p>
+
+  <pre><code class="language-bash"># yq v4 — remember which expression syntax?
+yq '.spec.replicas' deploy.yaml
+yq eval '.spec.template.spec.containers[0].image' deploy.yaml
+
+# jq — only works on JSON, quotes required
+jq -r '.database.host' config.json
+
+# Extract two fields with jq? Need to construct an object:
+jq '{host: .database.host, port: .database.port}' config.json</code></pre>
+
+  <p>
+    For a single value these tools are fine. For <em>multiple</em> fields, or for non-JSON formats,
+    the filter expression syntax becomes friction. You're building a new object literal instead of
+    just naming the fields you want.
+  </p>
+</section>
+
+<section>
+  <h2>ConfigForge <code>--pick</code>: Name the Fields You Want</h2>
+
+  <p>
+    <code>--pick PATH [PATH ...]</code> takes one or more dot-notation paths and outputs just those fields.
+    No filter expressions. No format-specific syntax. Works on all 11 supported formats.
+  </p>
+
+  <pre><code class="language-bash">pip install devbench
+
+# Extract a single value from YAML
+devbench cf deploy.yaml --pick spec.replicas
+# → 3
+
+# Extract multiple fields — output is a new YAML with just those keys
+devbench cf deploy.yaml --pick spec.replicas metadata.name metadata.namespace
+
+# Cross-format: extract from YAML, output as JSON
+devbench cf deploy.yaml --pick spec.replicas metadata.name --to json
+
+# Extract from any supported format
+devbench cf config.toml --pick server.host server.port --to json
+devbench cf app.ini --pick database.url cache.ttl
+devbench cf .env --pick DATABASE_URL REDIS_URL --to yaml</code></pre>
+
+  <h3>Single Field: Bare Value Output</h3>
+
+  <p>When you pick exactly one path, ConfigForge outputs the raw value — no wrapping object:</p>
+
+  <pre><code class="language-bash">devbench cf deploy.yaml --pick spec.replicas
+# → 3
+
+# Perfect for shell scripts:
+REPLICAS=$(devbench cf deploy.yaml --pick spec.replicas)
+IMAGE=$(devbench cf deploy.yaml --pick spec.template.spec.containers[0].image)
+echo "Scaling $IMAGE to $REPLICAS replicas"</code></pre>
+
+  <h3>Multiple Fields: Projected Config</h3>
+
+  <p>
+    When you pick two or more paths, ConfigForge builds a new config containing only those fields.
+    The paths become keys in the output — flat, readable, unambiguous:
+  </p>
+
+  <pre><code class="language-bash"># Input: deploy.yaml (200 lines)
+devbench cf deploy.yaml --pick spec.replicas metadata.name spec.template.spec.containers[0].image --to json
+# →
+# {
+#   "spec.replicas": 3,
+#   "metadata.name": "web-deployment",
+#   "spec.template.spec.containers[0].image": "nginx:1.25"
+# }
+
+# Output as YAML:
+devbench cf deploy.yaml --pick spec.replicas metadata.name
+# →
+# spec.replicas: 3
+# metadata.name: web-deployment</code></pre>
+</section>
+
+<section>
+  <h2>Real-World Use Cases</h2>
+
+  <h3>1. Kubernetes Manifest Inspection</h3>
+
+  <pre><code class="language-bash"># What image is deployed?
+devbench cf k8s/production/deploy.yaml --pick spec.template.spec.containers[0].image
+
+# Compare replica counts across environments
+for env in staging production; do
+  echo -n "$env: "
+  devbench cf "k8s/$env/deploy.yaml" --pick spec.replicas
+done
+# → staging: 2
+# → production: 10
+
+# Extract resource limits to audit over-provisioning
+devbench cf deploy.yaml \
+  --pick spec.template.spec.containers[0].resources.requests.cpu \
+         spec.template.spec.containers[0].resources.limits.memory \
+  --to json</code></pre>
+
+  <h3>2. Extract Database Config for a Script</h3>
+
+  <pre><code class="language-bash"># Pull just the database section fields
+DB_HOST=$(devbench cf config.yaml --pick database.host)
+DB_PORT=$(devbench cf config.yaml --pick database.port)
+DB_NAME=$(devbench cf config.yaml --pick database.name)
+
+pg_dump -h "$DB_HOST" -p "$DB_PORT" "$DB_NAME" > backup.sql</code></pre>
+
+  <h3>3. Cross-Format Field Extraction</h3>
+
+  <pre><code class="language-bash"># Terraform .tfvars → extract specific variables for a script
+devbench cf terraform.tfvars --pick aws_region instance_type --to json
+
+# Docker Compose → extract service image names
+devbench cf docker-compose.yaml --pick services.web.image services.db.image
+
+# Ansible inventory → extract hosts
+devbench cf inventory.ini --pick webservers.hosts staging.hosts --to json</code></pre>
+
+  <h3>4. Config Audit: Check Required Keys Exist</h3>
+
+  <pre><code class="language-bash">#!/bin/bash
+# Verify required fields are present in a config
+REQUIRED_FIELDS="database.host database.port app.secret_key"
+for field in $REQUIRED_FIELDS; do
+  if ! devbench cf config.yaml --pick "$field" &>/dev/null; then
+    echo "MISSING: $field"
+    exit 1
+  fi
+done
+echo "All required fields present"</code></pre>
+
+  <h3>5. Generate a Summary Report</h3>
+
+  <pre><code class="language-bash"># Extract key deployment metadata as JSON for a dashboard
+devbench cf deploy.yaml \
+  --pick metadata.name metadata.namespace spec.replicas \
+         spec.template.spec.containers[0].image \
+  --to json | curl -X POST https://dashboard.internal/api/deployments -d @-</code></pre>
+</section>
+
+<section>
+  <h2>Comparison: <code>--pick</code> vs yq/jq</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Task</th>
+        <th>ConfigForge <code>--pick</code></th>
+        <th>yq</th>
+        <th>jq</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Single field from YAML</td>
+        <td><code>--pick spec.replicas</code></td>
+        <td><code>'.spec.replicas'</code></td>
+        <td>YAML not supported</td>
+      </tr>
+      <tr>
+        <td>Two fields from YAML</td>
+        <td><code>--pick host port</code></td>
+        <td><code>'{host: .host, port: .port}'</code></td>
+        <td>YAML not supported</td>
+      </tr>
+      <tr>
+        <td>Extract from TOML</td>
+        <td><code>--pick server.host server.port</code></td>
+        <td>TOML not supported</td>
+        <td>TOML not supported</td>
+      </tr>
+      <tr>
+        <td>Extract from INI</td>
+        <td><code>--pick database.url cache.ttl</code></td>
+        <td>Not supported</td>
+        <td>Not supported</td>
+      </tr>
+      <tr>
+        <td>Output as JSON</td>
+        <td><code>--pick a b --to json</code></td>
+        <td>Extra <code>-o json</code> flag</td>
+        <td>Always JSON</td>
+      </tr>
+      <tr>
+        <td>Shell variable assignment</td>
+        <td><code>VAR=$(--pick field)</code></td>
+        <td><code>VAR=$(yq '.field' f)</code></td>
+        <td><code>VAR=$(jq -r '.field' f)</code></td>
+      </tr>
+      <tr>
+        <td>Supports 11 formats</td>
+        <td>✅</td>
+        <td>❌ (7 usable)</td>
+        <td>❌ (JSON only)</td>
+      </tr>
+      <tr>
+        <td>Preserves comments</td>
+        <td>✅</td>
+        <td>❌ (loses in JSON roundtrips)</td>
+        <td>❌</td>
+      </tr>
+      <tr>
+        <td>TOML write support</td>
+        <td>✅</td>
+        <td>❌</td>
+        <td>❌</td>
+      </tr>
+      <tr>
+        <td>One-time purchase</td>
+        <td>✅ ($19)</td>
+        <td>Free / open source</td>
+        <td>Free / open source</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    <strong>When to use yq:</strong> You're already deep in a YAML-only pipeline,
+    you need complex filter expressions (conditionals, map/select), or you're
+    processing very large files where yq's Go performance matters.
+  </p>
+  <p>
+    <strong>When to use ConfigForge <code>--pick</code>:</strong> You work across
+    multiple config formats, you want readable flag-based syntax, you need the
+    extracted values in a different format (e.g., pick from YAML, output as TOML),
+    or you're building shell scripts that need bare values without quoting gymnastics.
+  </p>
+</section>
+
+<section>
+  <h2>Install and Try It Now</h2>
+
+  <pre><code class="language-bash">pip install devbench
+
+# Quick test
+echo 'name: myapp
+version: 1.2.0
+database:
+  host: localhost
+  port: 5432
+  password: secret' | devbench cf /dev/stdin --pick name database.host database.port --to json</code></pre>
+
+  <p>Expected output:</p>
+  <pre><code class="language-json">{
+  "name": "myapp",
+  "database.host": "localhost",
+  "database.port": 5432
+}</code></pre>
+
+  <p>
+    The <code>password</code> field is not in the output — only the paths you named.
+    No filter expressions, no format-specific syntax, no surprises.
+  </p>
+
+  <h3>All Related ConfigForge Flags</h3>
+
+  <pre><code class="language-bash"># Get a single value (like --pick with one path)
+devbench cf config.yaml --get database.host
+
+# Append to a list
+devbench cf config.yaml --append services "cache"
+
+# Count list items
+devbench cf deploy.yaml --count spec.containers
+
+# List all keys (recursive dot-notation)
+devbench cf config.yaml --keys --recursive
+
+# Validate config files in CI/CD
+devbench cf "*.yaml" --batch --validate</code></pre>
+</section>
+
+<section>
+  <h2>Supported Formats</h2>
+
+  <p>
+    <code>--pick</code> works on all 11 formats ConfigForge supports:
+    <strong>YAML</strong>, <strong>JSON</strong>, <strong>TOML</strong>,
+    <strong>INI</strong>, <strong>.env</strong>, <strong>XML</strong>,
+    <strong>CSV</strong>, <strong>HCL</strong>, <strong>.properties</strong>,
+    <strong>plist</strong>, and <strong>JSONC</strong>.
+  </p>
+
+  <p>
+    You can also extract from one format and output in another:
+  </p>
+
+  <pre><code class="language-bash"># Extract from TOML, output as YAML
+devbench cf pyproject.toml --pick tool.poetry.name tool.poetry.version --to yaml
+
+# Extract from INI, output as JSON
+devbench cf ansible.cfg --pick defaults.remote_user defaults.host_key_checking --to json
+
+# Extract from .properties, output as TOML
+devbench cf application.properties --pick spring.datasource.url spring.datasource.username --to toml</code></pre>
+</section>
+
+<footer>
+  <p>
+    <a href="/tools/devbench/">Devbench / ConfigForge</a> — 11-format config converter with YAML comment preservation, batch mode, and no-subscription pricing.<br>
+    <a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a> ·
+    <a href="/tools/devbench/forge/seo/vs-dasel.html">ConfigForge vs dasel</a> ·
+    <a href="/tools/devbench/forge/seo/validate-config-ci.html">Config validation in CI/CD</a> ·
+    <a href="/tools/devbench/forge/seo/vs-jq.html">ConfigForge vs jq</a>
+  </p>
+</footer>
+
+</div>
+</body>
+</html>

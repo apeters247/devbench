@@ -904,3 +904,196 @@ def test_cf_count_json_input(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert out.strip() == "2"
+
+
+# ---------------------------------------------------------------------------
+# cf --backup (in-place with backup file)
+# ---------------------------------------------------------------------------
+
+
+def test_cf_backup_creates_bak_file(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text("name: alice\nage: 30\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--set", "age", "31", "--in-place", "--backup"])
+    assert rc == 0
+    bak = tmp_path / "config.yaml.bak"
+    assert bak.exists(), "backup file should be created"
+    assert "alice" in bak.read_text()
+    assert "age: 30" in bak.read_text()
+    assert "31" in f.read_text()
+
+
+def test_cf_backup_custom_suffix(tmp_path):
+    f = tmp_path / "config.toml"
+    f.write_text('[server]\nport = 8080\n')
+    from core.cli import main
+    rc = main(["cf", str(f), "--set", "server.port", "9090", "--in-place", "--backup", ".orig"])
+    assert rc == 0
+    orig = tmp_path / "config.toml.orig"
+    assert orig.exists(), ".orig backup should be created"
+    assert "8080" in orig.read_text()
+    assert "9090" in f.read_text()
+
+
+def test_cf_backup_delete_op(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text("name: alice\ntemp: delete_me\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--delete", "temp", "--in-place", "--backup"])
+    assert rc == 0
+    bak = tmp_path / "config.yaml.bak"
+    assert bak.exists()
+    assert "delete_me" in bak.read_text()
+    assert "delete_me" not in f.read_text()
+
+
+def test_cf_no_backup_without_flag(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text("x: 1\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--set", "x", "2", "--in-place"])
+    assert rc == 0
+    bak = tmp_path / "config.yaml.bak"
+    assert not bak.exists(), "no backup without --backup flag"
+
+
+# ---------------------------------------------------------------------------
+# cf --pick: field projection
+# ---------------------------------------------------------------------------
+
+
+def test_cf_pick_single_path(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\npassword: secret\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "host"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "localhost"
+
+
+def test_cf_pick_single_path_raw(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "port", "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "5432"
+
+
+def test_cf_pick_multiple_paths_yaml(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\npassword: secret\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "host", "port"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "host" in out
+    assert "localhost" in out
+    assert "port" in out
+    assert "5432" in out
+    assert "password" not in out
+    assert "secret" not in out
+
+
+def test_cf_pick_multiple_paths_to_json(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\npassword: secret\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "host", "port", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["host"] == "localhost"
+    assert data["port"] == 5432
+    assert "password" not in data
+
+
+def test_cf_pick_nested_path(tmp_path, capsys):
+    f = tmp_path / "deploy.yaml"
+    f.write_text("spec:\n  replicas: 3\n  image: nginx:latest\nmetadata:\n  name: web\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "spec.replicas"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "3"
+
+
+def test_cf_pick_nested_path_multiple(tmp_path, capsys):
+    f = tmp_path / "deploy.yaml"
+    f.write_text("spec:\n  replicas: 3\n  image: nginx:latest\nmetadata:\n  name: web\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "spec.replicas", "metadata.name", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["spec.replicas"] == 3
+    assert data["metadata.name"] == "web"
+
+
+def test_cf_pick_missing_path_error(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "nonexistent"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error" in err.lower() or "not found" in err.lower()
+
+
+def test_cf_pick_missing_one_of_multiple(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "host", "nonexistent"])
+    assert rc == 1
+
+
+def test_cf_pick_from_json_input(tmp_path, capsys):
+    f = tmp_path / "config.json"
+    f.write_text('{"database": {"host": "db.example.com", "port": 5432}, "debug": false}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "database.host"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "db.example.com" in out
+
+
+def test_cf_pick_from_toml_input(tmp_path, capsys):
+    f = tmp_path / "config.toml"
+    f.write_text('[server]\nhost = "localhost"\nport = 8080\n\n[database]\nurl = "postgres://localhost/db"\n')
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "server.host", "server.port", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["server.host"] == "localhost"
+    assert data["server.port"] == 8080
+
+
+def test_cf_pick_list_value(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("services:\n  - web\n  - db\n  - redis\nenv: production\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "services", "env", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["services"] == ["web", "db", "redis"]
+    assert data["env"] == "production"
+
+
+def test_cf_pick_three_paths(tmp_path, capsys):
+    f = tmp_path / "config.yaml"
+    f.write_text("name: myapp\nversion: 2.1.0\nenabled: true\nsecret: hunter2\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--pick", "name", "version", "enabled", "--to", "json"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["name"] == "myapp"
+    assert data["version"] == "2.1.0"
+    assert data["enabled"] is True
+    assert "secret" not in data

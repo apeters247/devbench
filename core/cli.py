@@ -99,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_cf_diff(args)
     if args.command == "cf" and getattr(args, "count", None):
         return _run_cf_count(args)
+    if args.command == "cf" and getattr(args, "pick", None):
+        return _run_cf_pick(args)
 
     # license commands (server starts before reading stdin)
     if args.command == "license":
@@ -246,6 +248,9 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Addresses yq v4 verbosity: no need for '.key += [\"v\"]' sub-expressions.")
             tool_p.add_argument("--in-place", "-i", action="store_true", dest="in_place",
                                 help="Write --set/--append/--delete/--merge result back to the source file (requires a file path argument, not stdin).")
+            tool_p.add_argument("--backup", metavar="SUFFIX", nargs="?", const=".bak", default=None, dest="backup_suffix",
+                                help="Before --in-place write, save the original to FILE<SUFFIX> (default suffix: .bak). "
+                                     "Example: --backup → file.yaml.bak; --backup .orig → file.yaml.orig")
             tool_p.add_argument("--delete", metavar="PATH", default=None,
                                 help="Delete a key by dot-notation path. Output defaults to input format.")
             tool_p.add_argument("--merge", metavar="OVERLAY", default=None,
@@ -268,6 +273,12 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Use '.' for top-level key count. "
                                      "Outputs a plain integer — ideal for shell scripts. "
                                      "Use --raw for JSON output.")
+            tool_p.add_argument("--pick", metavar="PATH", nargs="+", default=None,
+                                help="Extract specific paths from the config and output a new config with just those fields. "
+                                     "Single path: outputs the raw value (like --get). "
+                                     "Multiple paths: outputs a new config dict of {path: value} pairs. "
+                                     "Use --to to control output format. "
+                                     "Example: devbench cf deploy.yaml --pick spec.replicas spec.template.spec.containers --to yaml")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -999,6 +1010,27 @@ def _cf_read_file_or_content(args):
     return "", None
 
 
+def _cf_write_in_place(file_path, output_text: str, backup_suffix) -> bool:
+    """Write output_text to file_path, optionally backing up the original first.
+
+    Returns True on success, False on error (error printed to stderr).
+    """
+    if backup_suffix:
+        bak_path = Path(str(file_path) + backup_suffix)
+        try:
+            import shutil
+            shutil.copy2(file_path, bak_path)
+        except OSError as e:
+            print(f"error: could not create backup {bak_path}: {e}", file=sys.stderr)
+            return False
+    try:
+        file_path.write_text(output_text, encoding="utf-8")
+    except OSError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return False
+    return True
+
+
 def _cf_serialize_options(args) -> dict:
     opts: dict = {}
     if hasattr(args, "indent"):
@@ -1078,7 +1110,8 @@ def _run_cf_set(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
-        file_path.write_text(output_text, encoding="utf-8")
+        if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
+            return EXIT_ERROR
     else:
         sys.stdout.write(output_text)
     return EXIT_SUCCESS
@@ -1120,7 +1153,8 @@ def _run_cf_append(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
-        file_path.write_text(output_text, encoding="utf-8")
+        if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
+            return EXIT_ERROR
     else:
         sys.stdout.write(output_text)
     return EXIT_SUCCESS
@@ -1160,7 +1194,8 @@ def _run_cf_delete(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
-        file_path.write_text(output_text, encoding="utf-8")
+        if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
+            return EXIT_ERROR
     else:
         sys.stdout.write(output_text)
     return EXIT_SUCCESS
@@ -1208,7 +1243,8 @@ def _run_cf_merge(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
-        file_path.write_text(output_text, encoding="utf-8")
+        if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
+            return EXIT_ERROR
     else:
         sys.stdout.write(output_text)
     return EXIT_SUCCESS
@@ -1443,6 +1479,77 @@ def _run_cf_validate(args) -> int:
         _print_result(r)
 
     return EXIT_SUCCESS if r["valid"] else EXIT_ERROR
+
+
+# ---------------------------------------------------------------------------
+# cf --pick: extract / project specific paths from a config
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_pick(args) -> int:
+    """Extract (project) one or more paths from a config file.
+
+    Single path: prints the raw value at that path (like --get, but routed
+    through --pick so it composes with --to for format conversion of the value).
+
+    Multiple paths: builds a new flat dict of {path: value} entries and
+    serializes it to the requested output format (defaulting to the detected
+    input format).  This lets you extract a subset of a Kubernetes manifest,
+    Compose file, etc. without jq filter expressions.
+
+    Exit 0 on success, exit 1 if any path is missing.
+    """
+    from . import configforge as _cf
+
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(
+            content,
+            fmt=None if from_fmt == "auto" else from_fmt,
+            **_cf_parse_opts(args),
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+    detected_fmt = parsed.get("format", "yaml")
+    paths = args.pick  # list[str]
+
+    # Resolve each path; bail on the first missing key
+    picked: dict = {}
+    for path in paths:
+        try:
+            val = _cf._get_by_path(data, path)
+            picked[path] = val
+        except (KeyError, IndexError) as exc:
+            print(f"error: path not found: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
+    # Single path → print value directly (matches --get behaviour)
+    if len(paths) == 1:
+        raw = getattr(args, "raw", False)
+        sys.stdout.write(_cf._format_get_output(picked[paths[0]], raw=raw) + "\n")
+        return EXIT_SUCCESS
+
+    # Multiple paths → serialize the picked dict
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    if not to_fmt:
+        print("error: cannot determine output format; use --to", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        output_text = _cf.serialize(picked, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    sys.stdout.write(output_text)
+    return EXIT_SUCCESS
 
 
 # ---------------------------------------------------------------------------
