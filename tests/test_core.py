@@ -2578,3 +2578,218 @@ def test_rename_completion_zsh_includes_flag(capsys):
     main(["completion", "zsh"])
     out = capsys.readouterr().out
     assert "--rename" in out
+
+
+# ---------------------------------------------------------------------------
+# --type PATH: JSON Schema type inspection
+# ---------------------------------------------------------------------------
+
+def test_type_string_value(tmp_path, capsys):
+    """--type reports 'string' for a string value."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("host: localhost\nport: 8080\n")
+    result = main(["cf", str(f), "--type", "host"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "string"
+
+
+def test_type_integer_value(tmp_path, capsys):
+    """--type reports 'integer' for an integer value."""
+    from core.cli import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("host: localhost\nport: 8080\n")
+    result = main(["cf", str(f), "--type", "port"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "integer"
+
+
+def test_type_boolean_value(tmp_path, capsys):
+    """--type reports 'boolean' for a boolean value."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"debug": true, "count": 1}')
+    result = main(["cf", str(f), "--type", "debug"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "boolean"
+
+
+def test_type_integer_not_confused_with_boolean(tmp_path, capsys):
+    """--type distinguishes integer 1 from boolean true."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"debug": true, "count": 1}')
+    result = main(["cf", str(f), "--type", "count"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "integer"
+
+
+def test_type_array_value(tmp_path, capsys):
+    """--type reports 'array' for a list value."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"tags": ["a", "b", "c"]}')
+    result = main(["cf", str(f), "--type", "tags"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "array"
+
+
+def test_type_object_value(tmp_path, capsys):
+    """--type reports 'object' for a dict value."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"database": {"host": "localhost", "port": 5432}}')
+    result = main(["cf", str(f), "--type", "database"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "object"
+
+
+def test_type_null_value(tmp_path, capsys):
+    """--type reports 'null' for a null value."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"db": null}')
+    result = main(["cf", str(f), "--type", "db"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "null"
+
+
+def test_type_float_value(tmp_path, capsys):
+    """--type reports 'number' for a float value."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"ratio": 0.75, "scale": 1.0}')
+    result = main(["cf", str(f), "--type", "ratio"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "number"
+
+
+def test_type_root_dot(tmp_path, capsys):
+    """--type '.' reports the root value type."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"a": 1, "b": 2}')
+    result = main(["cf", str(f), "--type", "."])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "object"
+
+
+def test_type_missing_path_exits_1(tmp_path, capsys):
+    """--type with non-existent path exits 1."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"key": "val"}')
+    result = main(["cf", str(f), "--type", "missing.path"])
+    assert result == 1
+    err = capsys.readouterr().err
+    assert "error" in err.lower()
+
+
+def test_type_raw_object(tmp_path, capsys):
+    """--type --raw includes length for object."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"database": {"host": "localhost", "port": 5432, "name": "db"}}')
+    result = main(["cf", str(f), "--type", "database", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["type"] == "object"
+    assert data["length"] == 3
+    assert data["path"] == "database"
+
+
+def test_type_raw_array(tmp_path, capsys):
+    """--type --raw includes length for array."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"tags": ["a", "b", "c", "d"]}')
+    result = main(["cf", str(f), "--type", "tags", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["type"] == "array"
+    assert data["length"] == 4
+
+
+def test_type_raw_scalar_no_length(tmp_path, capsys):
+    """--type --raw does not include length for scalars."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"port": 8080}')
+    result = main(["cf", str(f), "--type", "port", "--raw"])
+    assert result == 0
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert data["type"] == "integer"
+    assert "length" not in data
+
+
+def test_type_raw_missing_path(tmp_path, capsys):
+    """--type --raw with missing path outputs JSON with error."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"key": "val"}')
+    result = main(["cf", str(f), "--type", "nonexistent", "--raw"])
+    assert result == 1
+    out = capsys.readouterr().out
+    data = json.loads(out)
+    assert "error" in data
+
+
+def test_type_nested_path(tmp_path, capsys):
+    """--type works on nested dot-notation paths."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"server": {"port": 8080}}')
+    result = main(["cf", str(f), "--type", "server.port"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "integer"
+
+
+def test_type_json_input(tmp_path, capsys):
+    """--type works on JSON input."""
+    from core.cli import main
+    f = tmp_path / "cfg.json"
+    f.write_text('{"enabled": false}')
+    result = main(["cf", str(f), "--type", "enabled"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "boolean"
+
+
+def test_type_toml_input(tmp_path, capsys):
+    """--type works on TOML input."""
+    from core.cli import main
+    f = tmp_path / "cfg.toml"
+    f.write_text('[server]\nport = 9000\nname = "web"\n')
+    result = main(["cf", str(f), "--type", "server.port"])
+    assert result == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "integer"
+
+
+def test_type_completion_bash_includes_flag(capsys):
+    """Shell completion includes --type flag."""
+    from core.cli import main
+    main(["completion", "bash"])
+    out = capsys.readouterr().out
+    assert "--type" in out
+
+
+def test_type_completion_zsh_includes_flag(capsys):
+    """Shell completion includes --type flag."""
+    from core.cli import main
+    main(["completion", "zsh"])
+    out = capsys.readouterr().out
+    assert "--type" in out

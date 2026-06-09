@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Check YAML/JSON Value Type from the Command Line | DevBench</title>
+  <meta name="description" content="Inspect the type (string, integer, boolean, array, object, null) of any config value by path. Works for YAML, JSON, TOML, INI and 7 more formats. No jq required.">
+  <meta name="keywords" content="check yaml value type, yaml type inspection cli, get json value type bash, config type check command line, yaml boolean vs integer, devbench type flag, yq type check">
+  <meta property="og:title" content="Check Config Value Type from the CLI — DevBench">
+  <meta property="og:description" content="devbench cf config.yaml --type database.port outputs 'integer'. Works for all 11 config formats. No jq, no Python script required.">
+  <meta property="og:type" content="article">
+  <link rel="canonical" href="https://naxiai.com/tools/devbench/forge/seo/check-config-value-type.html">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Check YAML/JSON Value Type from the Command Line",
+    "description": "Use devbench cf --type PATH to inspect the JSON Schema type of any config value from a YAML, JSON, TOML, or other config file.",
+    "author": {"@type": "Organization", "name": "DevBench"},
+    "datePublished": "2026-06-09"
+  }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem; color: #1a1a1a; line-height: 1.65; }
+    h1 { font-size: 2rem; margin-bottom: 0.4rem; }
+    h2 { font-size: 1.35rem; margin-top: 2.2rem; }
+    pre { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 1rem 1.2rem; overflow-x: auto; font-size: 0.9rem; }
+    code { font-family: 'SFMono-Regular', Consolas, monospace; }
+    .pill { display: inline-block; background: #e8f5e9; color: #2e7d32; border-radius: 4px; padding: 0.1rem 0.5rem; font-size: 0.82rem; margin: 0.1rem; }
+    .win  { color: #2e7d32; font-weight: 600; }
+    .lose { color: #c62828; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ddd; padding: 0.55rem 0.8rem; text-align: left; }
+    th { background: #f9f9f9; }
+    .cta { background: #1565c0; color: #fff; padding: 0.75rem 1.75rem; border-radius: 6px; text-decoration: none; display: inline-block; margin-top: 1rem; font-weight: 600; }
+    .note { background: #fff8e1; border-left: 4px solid #f9a825; padding: 0.8rem 1rem; border-radius: 0 6px 6px 0; margin: 1.5rem 0; }
+  </style>
+</head>
+<body>
+
+<h1>Check Config Value Type from the CLI</h1>
+<p>
+  <code>devbench cf config.yaml --type server.port</code> outputs the JSON Schema type of any
+  config value: <strong>string</strong>, <strong>integer</strong>, <strong>number</strong>,
+  <strong>boolean</strong>, <strong>array</strong>, <strong>object</strong>, or <strong>null</strong>.
+  Works across all 11 supported config formats. No jq, no Python script, no awk pipeline.
+</p>
+<p>
+  <span class="pill">YAML</span><span class="pill">JSON</span><span class="pill">TOML</span>
+  <span class="pill">INI</span><span class="pill">HCL</span><span class="pill">Properties</span>
+  <span class="pill">.env</span><span class="pill">XML</span><span class="pill">CSV</span>
+  <span class="pill">Plist</span><span class="pill">JSONC</span>
+</p>
+
+<h2>Quick Examples</h2>
+<pre><code># Simple type check
+$ devbench cf app.yaml --type server.port
+integer
+
+$ devbench cf app.yaml --type server.host
+string
+
+$ devbench cf app.yaml --type features
+array
+
+$ devbench cf app.yaml --type database
+object
+
+# JSON output with length for containers
+$ devbench cf app.yaml --type database --raw
+{"path": "database", "type": "object", "length": 3}
+
+$ devbench cf app.yaml --type tags --raw
+{"path": "tags", "type": "array", "length": 5}
+
+# Check root value type
+$ devbench cf app.yaml --type .
+object
+
+# Use in a shell script
+TYPE=$(devbench cf config.yaml --type replicas)
+if [ "$TYPE" = "integer" ]; then
+    echo "Replicas is an integer: OK"
+else
+    echo "ERROR: replicas must be an integer, got $TYPE" >&2
+    exit 1
+fi</code></pre>
+
+<h2>Why You Need This</h2>
+<p>
+  Config type bugs are notoriously silent. A YAML file with <code>port: "8080"</code> (string)
+  instead of <code>port: 8080</code> (integer) passes YAML parsing but breaks downstream
+  applications that call <code>int(config.port)</code>. Docker Compose accepts both forms but
+  Kubernetes rejects the string version. Helm charts fail silently when values are the wrong type.
+</p>
+<p>
+  The classic workaround is a jq expression or a tiny Python script. Both require knowing the
+  target format. <code>devbench cf --type</code> works across all 11 config formats with one
+  consistent interface.
+</p>
+
+<h2>Type Names (JSON Schema)</h2>
+<table>
+  <tr><th>Python type</th><th>Reported type</th><th>Example value</th></tr>
+  <tr><td><code>str</code></td><td><strong>string</strong></td><td><code>host: "localhost"</code></td></tr>
+  <tr><td><code>int</code></td><td><strong>integer</strong></td><td><code>port: 8080</code></td></tr>
+  <tr><td><code>float</code></td><td><strong>number</strong></td><td><code>ratio: 0.75</code></td></tr>
+  <tr><td><code>bool</code></td><td><strong>boolean</strong></td><td><code>debug: true</code></td></tr>
+  <tr><td><code>list</code></td><td><strong>array</strong></td><td><code>tags: [a, b, c]</code></td></tr>
+  <tr><td><code>dict</code></td><td><strong>object</strong></td><td><code>database: {host: ...}</code></td></tr>
+  <tr><td><code>None</code></td><td><strong>null</strong></td><td><code>optional_key: ~</code></td></tr>
+</table>
+<p class="note">
+  <strong>Note:</strong> DevBench correctly distinguishes <code>boolean</code> from <code>integer</code>,
+  even though Python's <code>bool</code> is a subclass of <code>int</code>. A YAML value of
+  <code>true</code> reports <code>boolean</code>; a value of <code>1</code> reports <code>integer</code>.
+  This matches JSON Schema semantics exactly.
+</p>
+
+<h2>Machine-Readable Output (--raw)</h2>
+<pre><code># Array type with length
+$ devbench cf k8s/deployment.yaml --type spec.template.spec.containers --raw
+{"path": "spec.template.spec.containers", "type": "array", "length": 2}
+
+# Scalar — no length field
+$ devbench cf k8s/deployment.yaml --type spec.replicas --raw
+{"path": "spec.replicas", "type": "integer"}
+
+# Error case — machine-readable
+$ devbench cf config.yaml --type missing.key --raw
+{"path": "missing.key", "error": "'missing'"}
+# exit code: 1</code></pre>
+
+<h2>CI/CD Type Validation Pattern</h2>
+<pre><code>#!/bin/bash
+# Validate config types before deployment
+set -e
+
+fail() { echo "CONFIG ERROR: $1" >&2; exit 1; }
+
+check_type() {
+    local file=$1 path=$2 expected=$3
+    actual=$(devbench cf "$file" --type "$path") || fail "$path not found"
+    [ "$actual" = "$expected" ] || fail "$path must be $expected, got $actual"
+}
+
+check_type config/prod.yaml database.port integer
+check_type config/prod.yaml database.ssl_enabled boolean
+check_type config/prod.yaml allowed_hosts array
+check_type config/prod.yaml feature_flags object
+
+echo "All config types valid ✓"</code></pre>
+
+<h2>Comparison: --type vs Alternatives</h2>
+<table>
+  <tr><th>Tool</th><th>Type check command</th><th>Formats</th><th>JSON output</th></tr>
+  <tr>
+    <td><strong>DevBench</strong></td>
+    <td class="win"><code>devbench cf f.yaml --type db.port</code></td>
+    <td class="win">11 formats</td>
+    <td class="win">Yes (--raw)</td>
+  </tr>
+  <tr>
+    <td>jq</td>
+    <td class="lose"><code>jq '.db.port | type' f.json</code></td>
+    <td class="lose">JSON only</td>
+    <td>Yes (always)</td>
+  </tr>
+  <tr>
+    <td>yq</td>
+    <td class="lose"><code>yq '.db.port | type' f.yaml</code></td>
+    <td class="lose">YAML/JSON only</td>
+    <td class="lose">No</td>
+  </tr>
+  <tr>
+    <td>Python script</td>
+    <td class="lose"><code>python3 -c "import yaml; ..."</code></td>
+    <td class="lose">One format</td>
+    <td class="lose">Manual</td>
+  </tr>
+</table>
+
+<h2>Works with Any Supported Format</h2>
+<pre><code># TOML
+$ devbench cf app.toml --type server.port
+integer
+
+# .properties file
+$ devbench cf db.properties --type database.pool_size
+string  # .properties values are always strings
+
+# HCL (Terraform)
+$ devbench cf main.tf --type variable.instance_count.default
+integer
+
+# INI
+$ devbench cf settings.ini --type database.port
+string  # INI values parsed as strings by default
+
+# Combine with --to for cross-format output
+$ devbench cf config.toml --type features --raw --to json
+{"path": "features", "type": "array", "length": 4}</code></pre>
+
+<h2>Install</h2>
+<pre><code>pip install devbench
+# or with all optional parsers:
+pip install devbench[all]
+
+devbench cf config.yaml --type server.port</code></pre>
+
+<p>
+  <a class="cta" href="https://naxiai.com/tools/devbench/">Learn more about DevBench</a>
+  &nbsp;
+  <a class="cta" style="background:#333;" href="https://pypi.org/project/devbench/">PyPI</a>
+</p>
+
+<h2>Related Features</h2>
+<ul>
+  <li><a href="assert-config-value.html">--assert PATH=VALUE — CI/CD config assertions</a></li>
+  <li><a href="validate-config-ci.html">--validate — batch config syntax validation</a></li>
+  <li><a href="mask-sensitive-config-values.html">--mask PATTERN — redact sensitive config values</a></li>
+  <li><a href="grep-config-files.html">--grep PATTERN — search config keys and values</a></li>
+  <li><a href="extract-yaml-field.html">--get PATH — extract a value from any config format</a></li>
+</ul>
+
+</body>
+</html>

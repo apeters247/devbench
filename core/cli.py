@@ -105,6 +105,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_cf_diff(args)
     if args.command == "cf" and getattr(args, "count", None):
         return _run_cf_count(args)
+    if args.command == "cf" and getattr(args, "type_path", None):
+        return _run_cf_type(args)
     if args.command == "cf" and getattr(args, "pick", None):
         return _run_cf_pick(args)
     if args.command == "cf" and getattr(args, "flatten", False):
@@ -308,6 +310,11 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Use '.' for top-level key count. "
                                      "Outputs a plain integer — ideal for shell scripts. "
                                      "Use --raw for JSON output.")
+            tool_p.add_argument("--type", metavar="PATH", default=None, dest="type_path",
+                                help="Output the JSON Schema type of the value at PATH: string, integer, number, "
+                                     "boolean, array, object, or null. Use '.' for the root value. "
+                                     "Exit 0=found, 1=path not found. Use --raw for JSON output "
+                                     "{path, type, length} where length is set for array/object.")
             tool_p.add_argument("--pick", metavar="PATH", nargs="+", default=None,
                                 help="Extract specific paths from the config and output a new config with just those fields. "
                                      "Single path: outputs the raw value (like --get). "
@@ -1677,6 +1684,74 @@ def _run_cf_count(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# cf --type PATH: report JSON Schema type of a value
+# ---------------------------------------------------------------------------
+
+_PYTHON_TO_JSON_TYPE = {
+    bool: "boolean",   # must come before int (bool is subclass of int)
+    int: "integer",
+    float: "number",
+    str: "string",
+    list: "array",
+    dict: "object",
+    type(None): "null",
+}
+
+
+def _json_type_name(val) -> str:
+    for py_type, name in _PYTHON_TO_JSON_TYPE.items():
+        if type(val) is py_type:
+            return name
+    return "unknown"
+
+
+def _run_cf_type(args) -> int:
+    """Output the JSON Schema type of the value at TYPE_PATH.
+
+    Prints one of: string, integer, number, boolean, array, object, null.
+    --raw outputs JSON: {path, type, length} where length is the item count
+    for array/object values (omitted for scalars).
+    Exit 0 = path found, exit 1 = path not found.
+    """
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    path = args.type_path
+    if path == ".":
+        val = data
+    else:
+        try:
+            val = _cf._get_by_path(data, path)
+        except (KeyError, IndexError) as exc:
+            raw = getattr(args, "raw", False)
+            msg = f"error: {exc}"
+            if raw:
+                print(json.dumps({"path": path, "error": str(exc)}))
+            else:
+                print(msg, file=sys.stderr)
+            return EXIT_ERROR
+    type_name = _json_type_name(val)
+    raw = getattr(args, "raw", False)
+    if raw:
+        result: dict = {"path": path, "type": type_name}
+        if isinstance(val, (list, dict)):
+            result["length"] = len(val)
+        print(json.dumps(result))
+    else:
+        print(type_name)
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
 # cf --validate: single-file or batch config validation
 # ---------------------------------------------------------------------------
 
@@ -2373,7 +2448,7 @@ def _run_cf_unflatten(args) -> int:
 
 _CF_FLAGS = (
     "--to --from --get --set --append --delete --rename --merge --list-merge "
-    "--in-place -i --backup --diff --validate --count --keys "
+    "--in-place -i --backup --diff --validate --count --type --keys "
     "--recursive -R --pick --grep --grep-case-sensitive "
     "--flatten --unflatten --sep --env-expand "
     "--batch --stream --output-dir --sort-keys --indent "
@@ -2447,7 +2522,7 @@ _devbench_complete() {{
                 --merge|--diff|--output-dir)
                     COMPREPLY=( $(compgen -f -- "$cur") )
                     return 0 ;;
-                --port|--api-port|--get|--set|--delete|--count|--pick|--grep|--append)
+                --port|--api-port|--get|--set|--delete|--count|--type|--pick|--grep|--append)
                     return 0 ;;
             esac
             if [[ "$cur" == -* ]]; then
@@ -2531,6 +2606,7 @@ _devbench() {{
                         '--diff=[Structural diff against file]:file:_files' \\
                         '--validate[Validate config is parseable]' \\
                         '--count=[Count items at path]:path:' \\
+                        '--type=[JSON Schema type of value at path]:path:' \\
                         '--keys[List top-level config keys]' \\
                         '--recursive[Recursive glob / --keys]' \\
                         '-R[Recursive glob / --keys]' \\
