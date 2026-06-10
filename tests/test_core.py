@@ -3601,3 +3601,87 @@ def test_yaml_implicit_boolean_vs_yaml12(tmp_path, capsys):
     assert result_12["data"]["enabled"] == "yes"
     assert isinstance(result_12["data"]["disabled"], str)
     assert result_12["data"]["disabled"] == "no"
+
+
+# ── --csv-delimiter / --tsv ──────────────────────────────────────────────────
+
+def test_cf_tsv_to_json(tmp_path, capsys):
+    """TSV input converts to JSON via --tsv flag."""
+    from core.cli import main
+    f = tmp_path / "data.tsv"
+    f.write_text("name\tage\tcity\nAlice\t30\tNew York\nBob\t25\tLondon\n")
+    rc = main(["cf", str(f), "--tsv", "--to", "json", "--raw"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = __import__("json").loads(out)
+    assert len(data) == 2
+    assert data[0]["name"] == "Alice"
+    assert data[0]["age"] == "30"
+    assert data[1]["city"] == "London"
+
+
+def test_cf_csv_delimiter_pipe(tmp_path, capsys):
+    """Pipe-separated input converts correctly via --csv-delimiter."""
+    from core.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("id|name|value\n1|foo|bar\n2|baz|qux\n")
+    rc = main(["cf", str(f), "--csv-delimiter", "|", "--to", "json", "--raw"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = __import__("json").loads(out)
+    assert len(data) == 2
+    assert data[0]["id"] == "1"
+    assert data[0]["name"] == "foo"
+    assert data[1]["value"] == "qux"
+
+
+def test_cf_csv_delimiter_semicolon(tmp_path, capsys):
+    """Semicolon-separated input converts correctly via --csv-delimiter."""
+    from core.cli import main
+    f = tmp_path / "data.csv"
+    f.write_text("x;y;z\n1;2;3\n4;5;6\n")
+    rc = main(["cf", str(f), "--csv-delimiter", ";", "--to", "json", "--raw"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = __import__("json").loads(out)
+    assert data[0]["x"] == "1" and data[0]["y"] == "2"
+
+
+def test_cf_tsv_output(tmp_path, capsys):
+    """JSON input converts to TSV output via --tsv --to csv."""
+    from core.cli import main
+    f = tmp_path / "data.json"
+    f.write_text('[{"name": "Alice", "score": 95}, {"name": "Bob", "score": 87}]')
+    rc = main(["cf", str(f), "--tsv", "--to", "csv", "--raw"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    lines = out.splitlines()
+    assert "\t" in lines[0]
+    assert "Alice" in out and "95" in out
+    assert "Bob" in out and "87" in out
+
+
+def test_cf_tsv_roundtrip(tmp_path, capsys):
+    """TSV → JSON → TSV round-trip preserves data."""
+    import json
+    from core.cli import main
+    f = tmp_path / "scores.tsv"
+    f.write_text("player\tscore\nAlice\t100\nBob\t200\n")
+    rc = main(["cf", str(f), "--tsv", "--to", "json", "--raw"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert data[0]["player"] == "Alice"
+    assert data[1]["score"] == "200"
+
+
+def test_cf_csv_delimiter_backslash_t(tmp_path, capsys):
+    """Accepts literal '\\t' string as tab delimiter (shell convenience)."""
+    from core.cli import main
+    f = tmp_path / "data.tsv"
+    f.write_text("a\tb\nc\td\n")
+    rc = main(["cf", str(f), "--csv-delimiter", "\\t", "--to", "json", "--raw"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = __import__("json").loads(out)
+    assert data[0]["a"] == "c"

@@ -1745,16 +1745,23 @@ def _parse_text_impl(text: str, fmt: str = None, **options) -> dict:
             text = text[1:]
         # Use strict CSV parsing with proper dialect detection
         sample = text[:4096]
-        try:
-            # Try to sniff dialect; fall back to excel if ambiguous
+        explicit_delimiter = options.get("csv_delimiter")
+        if explicit_delimiter:
+            # User-specified delimiter bypasses sniffing
+            dialect = csv.excel
+            dialect = type("_D", (csv.excel,), {"delimiter": explicit_delimiter})
+            has_header = True
+        else:
             try:
-                dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+                # Try to sniff dialect; fall back to excel if ambiguous
+                try:
+                    dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+                except csv.Error:
+                    dialect = csv.excel
+                has_header = csv.Sniffer().has_header(sample) if len(sample) > 10 else True
             except csv.Error:
                 dialect = csv.excel
-            has_header = csv.Sniffer().has_header(sample) if len(sample) > 10 else True
-        except csv.Error:
-            dialect = csv.excel
-            has_header = len(sample) > 0
+                has_header = len(sample) > 0
         reader = csv.DictReader(io.StringIO(text), dialect=dialect)
         result = []
         for row in reader:
@@ -2396,6 +2403,7 @@ def serialize(data, fmt: str, **options) -> str:
     elif fmt == "csv":
         sort_keys = options.get("sort_keys", False)
         sort_keys_reverse = options.get("sort_keys_reverse", False)
+        csv_delimiter = options.get("csv_delimiter", ",")
         if isinstance(data, list) and data:
             # Collect ALL fieldnames across all rows for heterogeneous lists
             fieldnames = []
@@ -2413,7 +2421,8 @@ def serialize(data, fmt: str, **options) -> str:
             if sort_keys_reverse:
                 fieldnames = sorted(fieldnames, reverse=True)
             buf = io.StringIO()
-            writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore')
+            writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore',
+                                    delimiter=csv_delimiter)
             writer.writeheader()
             writer.writerows(data)
             return buf.getvalue()
@@ -2426,7 +2435,7 @@ def serialize(data, fmt: str, **options) -> str:
             else:
                 fieldnames = list(data.keys())
             buf = io.StringIO()
-            writer = csv.DictWriter(buf, fieldnames=fieldnames)
+            writer = csv.DictWriter(buf, fieldnames=fieldnames, delimiter=csv_delimiter)
             writer.writeheader()
             writer.writerow(data)
             return buf.getvalue()
@@ -3189,7 +3198,19 @@ Compared to yq/jq:
                         help="Wrap the entire parsed config under a dotted key path. "
                              "Example: configforge config.yaml --wrap-in data → {data: {original...}}. "
                              "Nested paths: --wrap-in spec.template.spec")
+    parser.add_argument("--csv-delimiter", metavar="CHAR", default=None, dest="csv_delimiter",
+                        help="Override CSV field delimiter (default: auto-detect). "
+                             "Use \\t for TSV, | for pipe-separated, ; for semicolon-separated.")
+    parser.add_argument("--tsv", action="store_true", default=False, dest="tsv",
+                        help="Treat input as tab-separated (TSV). Shorthand for --csv-delimiter TAB.")
     args = parser.parse_args(argv)
+
+    _csv_delim = None
+    if getattr(args, "tsv", False):
+        _csv_delim = "\t"
+    elif getattr(args, "csv_delimiter", None):
+        d = args.csv_delimiter
+        _csv_delim = "\t" if d in ("\\t", "TAB", "tab") else d
 
     options = {
         "indent": args.indent,
@@ -3202,8 +3223,12 @@ Compared to yq/jq:
         "yaml12": args.yaml12,
         "template_safe": args.template_safe,
     }
+    if _csv_delim:
+        options["csv_delimiter"] = _csv_delim
     # Parse-only options passed to parse_text() in CRUD handlers.
     parse_opts = {"yaml12": args.yaml12, "template_safe": args.template_safe}
+    if _csv_delim:
+        parse_opts["csv_delimiter"] = _csv_delim
 
     if args.batch:
         if not args.input:

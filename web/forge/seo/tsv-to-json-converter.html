@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSV to JSON Converter CLI — Tab-Separated Files | DevBench ConfigForge</title>
+  <meta name="description" content="Convert TSV (tab-separated) files to JSON, YAML, or TOML from the command line. Also supports pipe-separated and semicolon-separated CSV files. Offline, no signup, part of DevBench.">
+  <meta name="keywords" content="tsv to json converter, tab separated to json, tsv to yaml, csv custom delimiter, pipe separated file converter, tsv command line, convert tsv to json cli">
+  <link rel="canonical" href="https://naxiai.com/tools/devbench/tsv-to-json-converter.html">
+  <meta property="og:title" content="TSV to JSON Converter CLI — DevBench ConfigForge">
+  <meta property="og:description" content="Convert tab-separated (TSV) files to JSON, YAML, or TOML with a single command. Also supports pipe-separated and semicolon-separated files. 100% offline.">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/tsv-to-json-converter.html">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "TSV to JSON Converter CLI",
+    "description": "How to convert tab-separated (TSV) files to JSON, YAML, and other formats using DevBench ConfigForge on the command line.",
+    "author": {"@type": "Organization", "name": "NaxiAI"},
+    "url": "https://naxiai.com/tools/devbench/tsv-to-json-converter.html"
+  }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem; color: #1a1a2e; line-height: 1.7; background: #f8f9ff; }
+    h1 { color: #2d3561; font-size: 2rem; margin-bottom: 0.5rem; }
+    h2 { color: #2d3561; font-size: 1.3rem; margin-top: 2.5rem; border-bottom: 2px solid #e0e4f0; padding-bottom: 0.3rem; }
+    h3 { color: #4a5568; font-size: 1.05rem; margin-top: 1.5rem; }
+    pre { background: #1a1a2e; color: #e2e8f0; padding: 1.2rem 1.5rem; border-radius: 8px; overflow-x: auto; font-size: 0.88rem; line-height: 1.6; }
+    code { background: #e8ecf8; color: #2d3561; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.9em; }
+    .comment { color: #6c8cff; }
+    .tip { background: #eef2ff; border-left: 4px solid #6c8cff; padding: 0.8rem 1.2rem; border-radius: 0 8px 8px 0; margin: 1.5rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
+    th { background: #2d3561; color: #fff; padding: 0.6rem 1rem; text-align: left; }
+    td { padding: 0.55rem 1rem; border-bottom: 1px solid #e0e4f0; }
+    tr:nth-child(even) td { background: #f0f4ff; }
+    a { color: #6c8cff; }
+    .install { background: #1a1a2e; color: #e2e8f0; padding: 1rem 1.5rem; border-radius: 8px; font-family: monospace; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+
+<h1>TSV to JSON Converter — Command Line</h1>
+<p>Convert <strong>tab-separated (TSV)</strong> files to JSON, YAML, TOML, or any other supported format in one command. Also works with pipe-separated (<code>|</code>), semicolon-separated (<code>;</code>), and other custom delimiters. Part of <strong>DevBench ConfigForge</strong> — 100% offline, no data leaves your machine.</p>
+
+<div class="install">pip install devbench</div>
+
+<h2>Quick Examples</h2>
+
+<h3>TSV → JSON</h3>
+<pre><span class="comment"># scores.tsv</span>
+<span class="comment"># player	score	level</span>
+<span class="comment"># Alice	100	expert</span>
+<span class="comment"># Bob	87	intermediate</span>
+
+devbench cf scores.tsv --tsv --to json
+<span class="comment"># [{"player": "Alice", "score": "100", "level": "expert"}, ...]</span>
+
+<span class="comment"># Raw JSON only (pipe-friendly):</span>
+devbench cf scores.tsv --tsv --to json --raw</pre>
+
+<h3>TSV → YAML</h3>
+<pre>devbench cf employees.tsv --tsv --to yaml</pre>
+
+<h3>TSV → TOML</h3>
+<pre>devbench cf data.tsv --tsv --to toml</pre>
+
+<h3>Stdin input</h3>
+<pre>cat data.tsv | devbench cf --tsv --from csv --to json --raw</pre>
+
+<h2>Custom Delimiter (Pipe, Semicolon, etc.)</h2>
+
+<pre><span class="comment"># Pipe-separated file: id|name|value</span>
+devbench cf data.csv --csv-delimiter '|' --to json
+
+<span class="comment"># Semicolon-separated (common in European locales):</span>
+devbench cf report.csv --csv-delimiter ';' --to yaml
+
+<span class="comment"># Explicit tab delimiter (same as --tsv):</span>
+devbench cf data.tsv --csv-delimiter $'\t' --to json</pre>
+
+<div class="tip">
+  <strong>Tip:</strong> The <code>--tsv</code> flag is a shorthand for <code>--csv-delimiter $'\t'</code>. Both work identically. Use whichever is clearer in your scripts.
+</div>
+
+<h2>TSV → CSV Conversion</h2>
+<pre><span class="comment"># Convert TSV to standard comma-separated CSV:</span>
+devbench cf data.tsv --tsv --to csv --raw
+
+<span class="comment"># Convert pipe-separated to CSV:</span>
+devbench cf report.psv --csv-delimiter '|' --to csv --raw</pre>
+
+<h2>Batch Conversion</h2>
+<pre><span class="comment"># Convert all TSV files in a directory to JSON:</span>
+devbench cf '*.tsv' --tsv --batch --to json --output-dir ./json-out/
+
+<span class="comment"># Stream mode for large file collections (memory-efficient):</span>
+devbench cf '*.tsv' --tsv --batch --stream --to json --output-dir ./out/</pre>
+
+<h2>Extract Fields from TSV</h2>
+<pre><span class="comment"># Get value at row index (0-based):</span>
+devbench cf data.tsv --tsv --to json --raw | jq '.[0].player'
+
+<span class="comment"># Filter rows where score > 90 (pipe to jq):</span>
+devbench cf scores.tsv --tsv --to json --raw | jq '[.[] | select(.score | tonumber > 90)]'
+
+<span class="comment"># Use --each to extract a single column:</span>
+devbench cf data.tsv --tsv --to json --raw | devbench cf --each name --raw</pre>
+
+<h2>Real-World Use Cases</h2>
+
+<h3>Database exports</h3>
+<pre><span class="comment"># PostgreSQL COPY exports tab-separated data:</span>
+psql -c "COPY users TO STDOUT" | devbench cf --tsv --from csv --to json --raw > users.json
+
+<span class="comment"># MySQL tab-separated dump:</span>
+mysql -u root -p mydb -e "SELECT * FROM orders" | devbench cf --tsv --from csv --to yaml</pre>
+
+<h3>Spreadsheet data</h3>
+<pre><span class="comment"># Google Sheets / Excel tab-separated paste:</span>
+pbpaste | devbench cf --tsv --from csv --to json --raw
+
+<span class="comment"># LibreOffice CSV export (semicolon-separated):</span>
+devbench cf export.csv --csv-delimiter ';' --to json</pre>
+
+<h3>CI/CD pipelines</h3>
+<pre>steps:
+  - name: Convert metrics TSV to JSON
+    run: |
+      devbench cf metrics.tsv --tsv --to json --raw > metrics.json
+      cat metrics.json | jq '.[] | select(.status == "FAIL")'</pre>
+
+<h3>Log file analysis</h3>
+<pre><span class="comment"># Apache access log (space-separated fields):</span>
+awk '{print $1"\t"$7"\t"$9}' access.log | devbench cf --tsv --from csv --to json --raw | jq .
+
+<span class="comment"># Nginx pipe-delimited custom log format:</span>
+devbench cf nginx.log --csv-delimiter '|' --to json --raw | jq '.[] | select(.status == "500")'</pre>
+
+<h2>Flag Reference</h2>
+<table>
+  <tr><th>Flag</th><th>Description</th><th>Example</th></tr>
+  <tr><td><code>--tsv</code></td><td>Treat input as tab-separated (TSV). Shorthand for <code>--csv-delimiter $'\t'</code></td><td><code>devbench cf f.tsv --tsv --to json</code></td></tr>
+  <tr><td><code>--csv-delimiter CHAR</code></td><td>Override field delimiter. Accepts any single character. Use <code>\t</code> or <code>TAB</code> for tab.</td><td><code>--csv-delimiter '|'</code></td></tr>
+  <tr><td><code>--to FORMAT</code></td><td>Output format: json, yaml, toml, csv, xml, ini, env, hcl, properties, plist</td><td><code>--to yaml</code></td></tr>
+  <tr><td><code>--raw</code></td><td>Output only the converted data (no metadata wrapper)</td><td><code>--raw</code></td></tr>
+  <tr><td><code>--batch</code></td><td>Process all files matching a glob pattern</td><td><code>'*.tsv' --batch</code></td></tr>
+  <tr><td><code>--sort-keys</code></td><td>Sort output keys alphabetically</td><td><code>--sort-keys</code></td></tr>
+</table>
+
+<h2>Comparison with Other Tools</h2>
+<table>
+  <tr><th>Tool</th><th>TSV to JSON</th><th>Custom Delimiter</th><th>Offline</th><th>All Formats</th></tr>
+  <tr><td><strong>devbench cf</strong></td><td>✅ <code>--tsv</code></td><td>✅ <code>--csv-delimiter</code></td><td>✅</td><td>✅ 11 formats</td></tr>
+  <tr><td>miller (mlr)</td><td>✅ <code>--tsv</code></td><td>✅ <code>--ifs</code></td><td>✅</td><td>⚠️ CSV/TSV/JSON only</td></tr>
+  <tr><td>jq</td><td>❌ no CSV/TSV input</td><td>❌</td><td>✅</td><td>❌ JSON only</td></tr>
+  <tr><td>yq</td><td>❌</td><td>❌</td><td>✅</td><td>⚠️ YAML/JSON only</td></tr>
+  <tr><td>dasel</td><td>❌</td><td>❌</td><td>✅</td><td>⚠️ No TSV</td></tr>
+  <tr><td>Online converters</td><td>⚠️ Upload required</td><td>⚠️ Usually not</td><td>❌</td><td>⚠️ Varies</td></tr>
+</table>
+
+<h2>Install</h2>
+<pre>pip install devbench          <span class="comment"># install</span>
+devbench cf data.tsv --tsv --to json --raw  <span class="comment"># use immediately</span></pre>
+
+<p><a href="https://naxiai.com/tools/devbench/">← Back to DevBench</a> &nbsp;|&nbsp; <a href="https://naxiai.com/tools/devbench/csv-to-yaml-converter.html">CSV to YAML →</a></p>
+
+</body>
+</html>

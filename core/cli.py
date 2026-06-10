@@ -446,6 +446,15 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Nested paths create intermediate dicts: --wrap-in spec.template.spec. "
                                      "Compose with --to to convert format while wrapping. "
                                      "Example: devbench cf values.yaml --wrap-in spec.values --to json")
+            tool_p.add_argument("--csv-delimiter", metavar="CHAR", default=None, dest="csv_delimiter",
+                                help="Override CSV field delimiter (default: auto-detect). "
+                                     "Use \\t for TSV, | for pipe-separated, ; for semicolon-separated. "
+                                     "Example: devbench cf data.tsv --csv-delimiter $'\\t' --to json. "
+                                     "See also: --tsv shorthand.")
+            tool_p.add_argument("--tsv", action="store_true", default=False, dest="tsv",
+                                help="Treat input as tab-separated (TSV). Shorthand for --csv-delimiter $'\\t'. "
+                                     "Example: devbench cf data.tsv --tsv --to json. "
+                                     "Combine with --to csv to convert TSV → CSV.")
             tool_p.add_argument("--template", metavar="FILE", default=None, dest="template_file",
                                 help="Render a template file using config values as context. "
                                      "Use ${KEY} syntax (Python string.Template, always available) or "
@@ -761,6 +770,13 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
         options["null_handling"] = args.null_handling
     if hasattr(args, "env_expand") and args.env_expand:
         options["env_expand"] = True
+    if getattr(args, "tsv", False):
+        options["csv_delimiter"] = "\t"
+    elif getattr(args, "csv_delimiter", None):
+        d = args.csv_delimiter
+        if d in ("\\t", "TAB", "tab"):
+            d = "\t"
+        options["csv_delimiter"] = d
 
     if to_fmt:
         # Format specified; run conversion with options
@@ -849,6 +865,13 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
         options["null_handling"] = args.null_handling
     if hasattr(args, "env_expand") and args.env_expand:
         options["env_expand"] = True
+    if getattr(args, "tsv", False):
+        options["csv_delimiter"] = "\t"
+    elif getattr(args, "csv_delimiter", None):
+        d = args.csv_delimiter
+        if d in ("\\t", "TAB", "tab"):
+            d = "\t"
+        options["csv_delimiter"] = d
 
     if getattr(args, "recursive", False):
         options["recursive"] = True
@@ -3094,6 +3117,7 @@ _CF_FLAGS = (
     "--flatten-xml --no-comments --yaml12 --template-safe "
     "--null-handling --list-formats --check-env --schema --mask --mask-value --assert "
     "--path-exists --shell-export --compact -c --template --wrap-in "
+    "--csv-delimiter --tsv "
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
 )
@@ -3288,6 +3312,8 @@ _devbench() {{
                         '-c[Compact/minified JSON output (no whitespace)]' \\
                         '--template=[Render template file using config as context]:template:_files' \\
                         '--wrap-in=[Wrap entire config under a dotted key path]:key:' \\
+                        '--csv-delimiter=[Override CSV field delimiter (tab, pipe, semicolon)]:char:' \\
+                        '--tsv[Treat input as tab-separated (TSV). Shorthand for --csv-delimiter TAB]' \\
                         '--serve[Launch the web UI]' \\
                         '--port=[Web UI port (default 8080)]:port:' \\
                         '--api[Launch JSON HTTP API]' \\
@@ -3411,6 +3437,8 @@ complete -c devbench -n __devbench_seen_cf -l compact      -d 'Compact/minified 
 complete -c devbench -n __devbench_seen_cf -s c            -d 'Compact/minified JSON output (no whitespace)'
 complete -c devbench -n __devbench_seen_cf -l template     -d 'Render template file using config as context'  -r -F
 complete -c devbench -n __devbench_seen_cf -l wrap-in      -d 'Wrap config under a dotted key path'           -r
+complete -c devbench -n __devbench_seen_cf -l csv-delimiter -d 'Override CSV field delimiter (\\t, |, ;)'       -r
+complete -c devbench -n __devbench_seen_cf -l tsv          -d 'Treat input as tab-separated (TSV)'
 complete -c devbench -n __devbench_seen_cf -l serve        -d 'Launch the web UI'
 complete -c devbench -n __devbench_seen_cf -l port         -d 'Web UI port (default 8080)'  -r
 complete -c devbench -n __devbench_seen_cf -l api          -d 'Launch JSON HTTP API'
