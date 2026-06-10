@@ -3,8 +3,8 @@ class Devbench < Formula
 
   desc "ConfigForge: 11-format config converter with comment preservation"
   homepage "https://naxiai.com/tools/devbench/"
-  url "https://files.pythonhosted.org/packages/source/d/devbench/devbench-0.1.0.tar.gz"
-  sha256 "FILL_IN_AFTER_PYPI_UPLOAD"
+  url "https://files.pythonhosted.org/packages/source/d/devbench/devbench-1.0.0.tar.gz"
+  sha256 "31adca225a8994f14cc29468ba91a9cfc324860c0b4810bc64d5f4dd5a122fb8"
   license "MIT"
   head "https://github.com/apeters247/devbench.git", branch: "main"
 
