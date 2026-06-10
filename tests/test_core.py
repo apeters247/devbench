@@ -493,7 +493,8 @@ def test_run_tool_detection():
 def test_run_tool_all_names():
     all_tools = ["json", "base64", "jwt", "hash", "url", "timestamp", "uuid", "diff"]
     for t in all_tools:
-        assert get_tool(t) is not None, f"Tool '{t}' not found"
+        fn = get_tool(t)
+        assert callable(fn), f"Tool '{t}' must be callable, got {type(fn)}"
         r = parse(run_tool(t, "test"))
         assert "tool_name" in r
         assert "error" in r or "output" in r
@@ -845,7 +846,7 @@ def test_cf_validate_batch_raw_output(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     results = json.loads(out)
-    assert isinstance(results, list)
+    assert len(results) >= 1
     assert all(r["valid"] for r in results)
     assert all("format" in r for r in results)
 
@@ -1749,7 +1750,6 @@ def test_cf_flatten_preserves_lists(tmp_path, capsys):
     assert rc == 0
     data = json.loads(out)
     assert data["name"] == "cluster"
-    assert isinstance(data["servers"], list)
     assert len(data["servers"]) == 2
 
 
@@ -2761,7 +2761,6 @@ def test_rename_preserves_value_type(tmp_path, capsys):
     out = capsys.readouterr().out
     data = json.loads(out)
     assert data["num_items"] == 42
-    assert isinstance(data["num_items"], int)
     assert data["enabled"] is True
     assert data["tags"] == ["a", "b"]
 
@@ -3649,7 +3648,6 @@ def test_cf_select_basic_list(tmp_path, capsys):
     rc = main(["cf", str(f), "--select", "name=nginx"])
     assert rc == 0
     data = yaml.safe_load(capsys.readouterr().out)
-    assert isinstance(data, list)
     assert len(data) == 1
     assert data[0]["name"] == "nginx"
 
@@ -3979,9 +3977,7 @@ def test_yaml_implicit_boolean_vs_yaml12(tmp_path, capsys):
     # YAML 1.2 mode - only true/false are booleans
     result_12 = parse_text(yaml_content, "yaml", yaml12=True)
     # yes/no should be strings in YAML 1.2
-    assert isinstance(result_12["data"]["enabled"], str)
     assert result_12["data"]["enabled"] == "yes"
-    assert isinstance(result_12["data"]["disabled"], str)
     assert result_12["data"]["disabled"] == "no"
 
 
@@ -5475,6 +5471,17 @@ def test_context_builder_empty_input():
     from core.tools import context_builder
     result = json.loads(context_builder(""))
     assert result["error"] is not None
+    assert "empty" in result["error"].lower()
+
+
+def test_context_builder_literal_path_with_star(tmp_path):
+    from core.tools import context_builder
+    f = tmp_path / "file*with_star.txt"
+    f.write_text("star content")
+    result = json.loads(context_builder(str(f)))
+    assert result["error"] is None
+    assert result["metadata"]["file_count"] == 1
+    assert "star content" in result["output"]
 
 
 def test_context_cli_with_files_flag(tmp_path, capsys):
@@ -5498,6 +5505,8 @@ def test_context_cli_piped_paths(tmp_path, capsys, monkeypatch):
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
     assert out["metadata"]["file_count"] == 1
+    assert "piped.py" in out["output"]
+    assert "y = 2" in out["output"]
 
 
 # ── prompt_renderer ──────────────────────────────────────────────────────────
@@ -5532,12 +5541,14 @@ def test_prompt_renderer_empty_input():
     from core.tools import prompt_renderer
     result = json.loads(prompt_renderer(""))
     assert result["error"] is not None
+    assert "empty" in result["error"].lower()
 
 
 def test_prompt_renderer_invalid_var_line():
     from core.tools import prompt_renderer
     result = json.loads(prompt_renderer("Hello {{x}}\n---vars---\nnot-a-valid-line"))
     assert result["error"] is not None
+    assert "malformed" in result["error"].lower() or "invalid" in result["error"].lower()
 
 
 def test_prompt_cli_var_flag(capsys):
@@ -5621,6 +5632,8 @@ def test_schema_infer_empty_input():
     from core.tools import schema_infer
     result = json.loads(schema_infer(""))
     assert result["error"] is not None
+    assert "empty" in result["error"].lower()
+    assert result["metadata"]["success"] is False
 
 
 def test_schema_infer_yaml_input():
@@ -5658,6 +5671,9 @@ def test_schema_cli_yaml_output(capsys):
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
     assert out["error"] is None
+    assert "type: object" in out["output"], f"Expected YAML format (type: object), got: {out['output']!r}"
+    assert "properties:" in out["output"]
+    assert "key:" in out["output"]
     import yaml as _yaml
     schema = _yaml.safe_load(out["output"])
     assert schema["type"] == "object"

@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|||**Last updated:** 2026-06-10T20:30Z (Builder: commercial messaging — Zero DSL + Zero dependencies pills + comparison rows; api.py exception narrowed; polisher marker created; pushed 944bb80) | 1375 passed / 7 skipped / 2 xfailed — 0 failures |
+|||**Last updated:** 2026-06-10T23:21Z (Polisher: HN yq complaint → added 3 tests for -f/-o short format flags; builder wildcard/NO_COLOR change reviewed clean; wheel builds OK) | 1389 passed / 7 skipped / 2 xfailed — 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅

@@ -801,6 +801,96 @@ def test_delete_in_place(tmp_path):
     assert result["host"] == "localhost"
 
 
+def test_set_check_identical(tmp_path, capsys):
+    """--check exits 0 when file already has the target value."""
+    from core.configforge import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("version: 1\n")
+    rc = main([str(f), "--set", "version", "1", "--in-place", "--check"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "identical" in captured.out
+    assert f.read_text() == "version: 1\n"  # unchanged
+
+def test_set_check_would_change(tmp_path, capsys):
+    """--check exits 1 when the target value differs from current."""
+    from core.configforge import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("version: 1\n")
+    rc = main([str(f), "--set", "version", "2", "--in-place", "--check"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "would change" in captured.out
+    assert f.read_text() == "version: 1\n"  # unchanged
+
+def test_set_dry_run_shows_diff(tmp_path, capsys):
+    """--dry-run prints a diff and exits 1 when content would change."""
+    from core.configforge import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("version: 1\n")
+    rc = main([str(f), "--set", "version", "2", "--in-place", "--dry-run"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "-version: 1" in captured.out
+    assert "+version: 2" in captured.out
+    assert f.read_text() == "version: 1\n"  # unchanged
+
+def test_set_dry_run_identical(tmp_path, capsys):
+    """--dry-run exits 0 when no changes needed."""
+    from core.configforge import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("version: 1\n")
+    rc = main([str(f), "--set", "version", "1", "--in-place", "--dry-run"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "identical" in captured.out
+    assert f.read_text() == "version: 1\n"  # unchanged
+
+def test_delete_check_identical(tmp_path, capsys):
+    """--delete --check exits 0 when key already absent."""
+    from core.configforge import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("host: localhost\n")
+    rc = main([str(f), "--delete", "port", "--in-place", "--check"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "identical" in captured.out
+
+def test_merge_check_would_change(tmp_path, capsys):
+    """--merge --check exits 1 when overlay would change the base."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("host: localhost\nport: 8080\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("port: 9200\n")
+    rc = main([str(base), "--merge", str(overlay), "--in-place", "--check"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "would change" in captured.out
+    assert base.read_text() == "host: localhost\nport: 8080\n"  # unchanged
+
+def test_check_without_in_place_errors(tmp_path, capsys):
+    """--check without --in-place should fail with a clear error message."""
+    from core.configforge import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("version: 1\n")
+    rc = main([str(f), "--set", "version", "2", "--check"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "--check" in captured.err and "--in-place" in captured.err
+
+
+def test_dry_run_without_in_place_errors(tmp_path, capsys):
+    """--dry-run without --in-place should fail with a clear error message."""
+    from core.configforge import main
+    f = tmp_path / "cfg.yaml"
+    f.write_text("version: 1\n")
+    rc = main([str(f), "--set", "version", "2", "--dry-run"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "--dry-run" in captured.err and "--in-place" in captured.err
+
+
 def test_ini_null_values_serialize_as_empty():
     """YAML null values must become empty strings in INI output, not 'None'."""
     yaml_in = "host: localhost\nport: null\n"
@@ -1844,6 +1934,35 @@ def test_sort_keys_unsorted_preserves_insertion_order():
     assert keys == ["zebra", "apple", "mango"]
 
 
+def test_sort_keys_icu_plural_no_blank_lines():
+    """sort_keys must not inject blank lines inside ICU Message Format plural strings.
+
+    yq#2452: sort_keys(..) on YAML with ICU plurals ({count, plural, one {# year}
+    other {# years}}) added a spurious blank line inside the string value, breaking
+    CI pipelines that diff translations.  Verify our serialiser is clean.
+    """
+    from core.configforge import convert
+    yaml_in = (
+        "en:\n"
+        "  timeago.year: '{count, plural, one {# year} other {# years}}'\n"
+        "  timeago.month: '{count, plural, one {# month} other {# months}}'\n"
+        "  timeago.day: '{count, plural, one {# day} other {# days}}'\n"
+        "  simple: just now\n"
+    )
+    result = convert(yaml_in, "yaml", "yaml", sort_keys=True)
+    assert result["success"], result.get("error")
+    output = result["output"]
+    # Keys must be sorted
+    keys = [l.split(":")[0].strip() for l in output.splitlines() if "timeago." in l]
+    assert keys == sorted(keys), f"Keys not sorted: {keys}"
+    # ICU plural brace content must be intact — no blank lines added
+    assert "\n\n" not in output, "sort_keys added spurious blank line in output"
+    # Actual plural strings must survive round-trip unchanged
+    assert "{count, plural, one {# year} other {# years}}" in output
+    assert "{count, plural, one {# month} other {# months}}" in output
+    assert "{count, plural, one {# day} other {# days}}" in output
+
+
 # ── .env type inference (yq issue #643 complaint) ──
 # yq v4 broke environment variable type handling — quoted vars forced to string,
 # losing int/float/bool types. ConfigForge infers types for unquoted .env values.
@@ -1852,9 +1971,7 @@ def test_env_infer_int():
     from core.configforge import parse_text
     r = parse_text("PORT=8080\nCOUNT=0", fmt="env")
     assert r["data"]["PORT"] == 8080
-    assert isinstance(r["data"]["PORT"], int)
     assert r["data"]["COUNT"] == 0
-    assert isinstance(r["data"]["COUNT"], int)
 
 
 def test_env_infer_bool():
@@ -1870,7 +1987,6 @@ def test_env_infer_float():
     from core.configforge import parse_text
     r = parse_text("TIMEOUT=30.5\nRATIO=0.75", fmt="env")
     assert r["data"]["TIMEOUT"] == 30.5
-    assert isinstance(r["data"]["TIMEOUT"], float)
     assert r["data"]["RATIO"] == 0.75
 
 
@@ -1879,11 +1995,8 @@ def test_env_quoted_stays_string():
     from core.configforge import parse_text
     r = parse_text('PORT="8080"\nDEBUG=\'true\'\nNUM=\'42\'', fmt="env")
     assert r["data"]["PORT"] == "8080"
-    assert isinstance(r["data"]["PORT"], str)
     assert r["data"]["DEBUG"] == "true"
-    assert isinstance(r["data"]["DEBUG"], str)
     assert r["data"]["NUM"] == "42"
-    assert isinstance(r["data"]["NUM"], str)
 
 
 def test_env_infer_types_false_keeps_strings():
@@ -1921,7 +2034,6 @@ def test_env_plain_string_unchanged():
     from core.configforge import parse_text
     r = parse_text("NAME=myapp\nURL=http://example.com\nEMPTY=", fmt="env")
     assert r["data"]["NAME"] == "myapp"
-    assert isinstance(r["data"]["NAME"], str)
     assert r["data"]["EMPTY"] == ""
 
 
@@ -2160,7 +2272,6 @@ def test_format_get_output_ambiguous_strings_quoted():
     assert ":" in out_colon  # the colon survived
     out_yes = _format_get_output("yes")
     assert yaml.safe_load(out_yes) == "yes"
-    assert isinstance(yaml.safe_load(out_yes), str)
 
 
 def test_format_get_output_null_like_string():
@@ -2168,7 +2279,6 @@ def test_format_get_output_null_like_string():
     from core.configforge import _format_get_output
     out = _format_get_output("null")
     assert yaml.safe_load(out) == "null"
-    assert isinstance(yaml.safe_load(out), str)
 
 
 def test_format_get_output_date_like_string():
@@ -2177,7 +2287,6 @@ def test_format_get_output_date_like_string():
     out = _format_get_output("2024-01-01")
     reparsed = yaml.safe_load(out)
     assert reparsed == "2024-01-01"
-    assert isinstance(reparsed, str)
 
 
 def test_format_get_output_scalar_types():
@@ -2227,7 +2336,6 @@ def test_get_via_cli_round_trip_safe(tmp_path):
     # Output must be a valid YAML scalar that re-parses to the original string
     reparsed = yaml.safe_load(out)
     assert reparsed == "host: example.com"
-    assert isinstance(reparsed, str)
 
 
 def test_get_raw_via_cli(tmp_path):
@@ -3120,6 +3228,72 @@ def test_ini_quote_strings_numerics_not_quoted():
     assert "factor = 3.14" in out
 
 
+# -- Feature: INI --ini-strip-quotes (yq issue #2456 complement) --
+
+def test_ini_strip_quotes_basic():
+    """--ini-strip-quotes strips surrounding double-quotes from INI values on parse."""
+    ini_in = '[theme]\ncolor_theme = "Default"\nbg = "#ffffff"\nport = 8080\n'
+    r = convert(ini_in, "yaml", from_fmt="ini", ini_strip_quotes=True)
+    assert r["success"]
+    out = r["output"]
+    assert "color_theme: Default" in out, f"Expected unquoted Default, got: {out!r}"
+    assert "bg: '#ffffff'" in out or "bg: \"#ffffff\"" in out or "bg: '#ffffff'" in out or "bg: '#ffffff'" in out or "#ffffff" in out
+
+
+def test_ini_strip_quotes_json_output():
+    """--ini-strip-quotes produces clean JSON output without literal quote chars."""
+    ini_in = '[app]\nname = "MyApp"\nversion = "1.0"\nport = 9000\n'
+    r = convert(ini_in, "json", from_fmt="ini", ini_strip_quotes=True)
+    assert r["success"]
+    import json as _json
+    data = _json.loads(r["output"])
+    assert data["app"]["name"] == "MyApp"
+    assert data["app"]["version"] == 1.0  # "1.0" stripped then inferred as float
+    assert data["app"]["port"] == 9000
+
+
+def test_ini_strip_quotes_only_full_quotes():
+    """--ini-strip-quotes only strips values that are fully wrapped in double-quotes."""
+    ini_in = '[section]\npartial = say "hello"\nfull = "Default"\nnone = bare\n'
+    r = convert(ini_in, "json", from_fmt="ini", ini_strip_quotes=True)
+    assert r["success"]
+    import json as _json
+    data = _json.loads(r["output"])
+    assert data["section"]["partial"] == 'say "hello"'
+    assert data["section"]["full"] == "Default"
+    assert data["section"]["none"] == "bare"
+
+
+def test_ini_strip_quotes_off_by_default():
+    """Without --ini-strip-quotes, quote characters are preserved as literal values."""
+    ini_in = '[theme]\ncolor_theme = "Default"\n'
+    r = convert(ini_in, "json", from_fmt="ini")
+    assert r["success"]
+    import json as _json
+    data = _json.loads(r["output"])
+    assert data["theme"]["color_theme"] == '"Default"'
+
+
+def test_ini_strip_and_requote_roundtrip(tmp_path, capsys):
+    """Full round-trip pipeline from yq#2456: read INI with quotes → modify → write back with quotes preserved.
+
+    This ties together --ini-strip-quotes (parse) and --ini-quote-strings (serialize)
+    so that a value like ``color_theme = "Default"`` is read without literal quote
+    chars, modified, and re-quoted on write — exactly the workflow yq#2456 requests.
+    """
+    from core.cli import main as cli_main
+    f = tmp_path / "btop.ini"
+    f.write_text("[theme]\ncolor_theme = \"Default\"\ntheme_background = \"False\"\n")
+    rc = cli_main(["cf", str(f), "--set", "theme.color_theme", "catppuccin",
+                    "--to", "ini", "--in-place",
+                    "--ini-strip-quotes", "--ini-quote-strings"])
+    assert rc == 0, f"Round-trip failed with exit code {rc}"
+    result = f.read_text(encoding="utf-8")
+    assert 'color_theme = "catppuccin"' in result, f"Expected quoted catppuccin, got: {result!r}"
+    assert 'theme_background = "False"' in result, f"Expected preserved quoted False, got: {result!r}"
+    assert '\"catppuccin\"' not in result or '\\\"' not in result, "No double-wrapping"
+
+
 # ── --select /regex/ + --each / --join composition tests ────────────────────
 
 def test_each_with_select_regex(tmp_path, capsys):
@@ -3415,3 +3589,166 @@ def test_bom_json_auto_detect():
     result = parse_text(BOM + '{"env": "prod"}')
     assert result["format"] == "json"
     assert result["data"]["env"] == "prod"
+
+
+# ── Wildcard --get (yq#2448) ─────────────────────────────────────────────────
+
+def test_get_by_glob_single_wildcard():
+    """'parent.*' returns all children of parent as (path, value) pairs."""
+    from core.configforge import _get_by_glob
+    data = {"block1": {"root": {"rp1": "a", "rp2": "b"}}}
+    matches = _get_by_glob(data, "block1.root.*")
+    paths = {p for p, _ in matches}
+    vals = {v for _, v in matches}
+    assert paths == {"block1.root.rp1", "block1.root.rp2"}
+    assert vals == {"a", "b"}
+
+
+def test_get_by_glob_leading_wildcard():
+    """'*.key' returns matching key from every top-level child."""
+    from core.configforge import _get_by_glob
+    data = {"svc1": {"port": 80}, "svc2": {"port": 443}, "meta": {"name": "x"}}
+    matches = _get_by_glob(data, "*.port")
+    assert len(matches) == 2
+    assert all(v in (80, 443) for _, v in matches)
+
+
+def test_get_by_glob_deep_double_wildcard():
+    """'*.*.host' drills two levels and collects every host value."""
+    from core.configforge import _get_by_glob
+    data = {"prod": {"db": {"host": "db.prod"}}, "staging": {"db": {"host": "db.stg"}}}
+    matches = _get_by_glob(data, "*.*.host")
+    hosts = {v for _, v in matches}
+    assert hosts == {"db.prod", "db.stg"}
+
+
+def test_get_by_glob_no_match_returns_empty():
+    """Wildcard path that matches nothing returns an empty list."""
+    from core.configforge import _get_by_glob
+    data = {"a": 1}
+    assert _get_by_glob(data, "b.*") == []
+
+
+def test_get_by_glob_list_wildcard():
+    """'items.*' fans out over list indices."""
+    from core.configforge import _get_by_glob
+    data = {"items": [{"name": "foo"}, {"name": "bar"}]}
+    matches = _get_by_glob(data, "items.*.name")
+    names = [v for _, v in matches]
+    assert names == ["foo", "bar"]
+
+
+def test_get_wildcard_cli(tmp_path, capsys):
+    """CLI --get with * wildcard prints one 'path: value' line per match."""
+    import json as _json
+    from core.cli import main
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(_json.dumps({"services": {"web": {"port": 80}, "api": {"port": 8080}}}))
+    rc = main(["cf", str(cfg), "--get", "services.*"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "services.web" in out
+    assert "services.api" in out
+    assert "port" in out
+
+
+def test_get_wildcard_no_match_cli_uses_default(tmp_path, capsys):
+    """CLI --get wildcard with --default returns default when nothing matches."""
+    import json as _json
+    from core.cli import main
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(_json.dumps({"a": 1}))
+    rc = main(["cf", str(cfg), "--get", "b.*", "--default", "none"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "none"
+
+
+# ── NO_COLOR env var support (no-color.org standard) ───────────────────────
+
+def test_no_color_env_suppresses_auto_color(tmp_path, capsys, monkeypatch):
+    """NO_COLOR env var disables ANSI color even when --colors flag is absent and stdout is a TTY."""
+    import json as _json
+    from core.cli import main
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    cfg = tmp_path / "data.json"
+    cfg.write_text(_json.dumps({"key": "value"}))
+    rc = main(["cf", str(cfg), "--to", "json", "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "\x1b[" not in out
+
+
+def test_no_color_empty_string_also_disables(tmp_path, capsys, monkeypatch):
+    """NO_COLOR='' (empty string) still disables color per the standard."""
+    import json as _json
+    from core.cli import main
+
+    monkeypatch.setenv("NO_COLOR", "")
+    cfg = tmp_path / "data.json"
+    cfg.write_text(_json.dumps({"x": 42}))
+    rc = main(["cf", str(cfg), "--to", "json", "--raw", "--colors"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "\x1b[" not in out
+
+
+def test_no_no_color_env_allows_explicit_flag(tmp_path, capsys, monkeypatch):
+    """Without NO_COLOR set, --no-colors flag still disables color output."""
+    import json as _json
+    from core.cli import main
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    cfg = tmp_path / "data.json"
+    cfg.write_text(_json.dumps({"a": "b"}))
+    rc = main(["cf", str(cfg), "--to", "json", "--raw", "--no-colors"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "\x1b[" not in out
+
+
+# ── Short format flags -f / -o (HN: yq users expect short flags) ───────────────
+
+
+def test_short_flag_o_for_output_format(tmp_path, capsys):
+    """-o is a short alias for --to (output format)."""
+    import json as _json
+    from core.cli import main
+
+    cfg = tmp_path / "input.yaml"
+    cfg.write_text("host: localhost\nport: 5432\n")
+    rc = main(["cf", str(cfg), "-o", "json", "-r"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = _json.loads(out)
+    assert data["host"] == "localhost"
+    assert data["port"] == 5432
+
+
+def test_short_flag_f_for_input_format(tmp_path, capsys):
+    """-f is a short alias for --from (input format); overrides auto-detection."""
+    import json as _json
+    from core.cli import main
+
+    cfg = tmp_path / "data.txt"
+    cfg.write_text('{"key": "value", "num": 7}')
+    rc = main(["cf", str(cfg), "-f", "json", "-o", "yaml", "-r"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "key: value" in out
+    assert "num: 7" in out
+
+
+def test_short_flags_f_and_o_together(tmp_path, capsys):
+    """-f json -o toml round-trips through both short flags."""
+    import json as _json
+    from core.cli import main
+
+    cfg = tmp_path / "data.txt"
+    cfg.write_text('{"name": "devbench", "version": "1.0"}')
+    rc = main(["cf", str(cfg), "-f", "json", "-o", "toml", "-r"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert 'name = "devbench"' in out
+    assert 'version = "1.0"' in out

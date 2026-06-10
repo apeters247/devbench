@@ -155,16 +155,19 @@ class LicenseManager:
         True if valid, False otherwise.
         """
         try:
-            payload, metadata, _ = self._parse(key)
+            payload, metadata, actual_sig = self._parse(key)
             expected_sig = self._sign(payload)
-            actual_sig = self._parse(key)[2]
 
             if not hmac.compare_digest(expected_sig, actual_sig):
                 return False
 
-            # Check expiry
+            # Check expiry. A stored expiry of 0 means "never expires"; any
+            # non-zero value is compared against the clock. Negative values are
+            # always in the past, so they correctly read as expired (rather
+            # than slipping through a `> 0` guard and being treated as eternal).
             meta = json.loads(metadata)
-            if meta.get("x") and meta["x"] > 0 and time.time() > meta["x"]:
+            expiry = meta.get("x", 0)
+            if expiry and time.time() > expiry:
                 return False
 
             # Check activation limit
@@ -188,14 +191,18 @@ class LicenseManager:
             raise InvalidKey("Invalid signature")
 
         meta = json.loads(metadata)
+        expiry = meta.get("x", 0)
+        is_expired = bool(expiry and time.time() > expiry)
+        
         return {
+            "key": key,
             "email": meta["e"],
             "customer_id": meta["c"],
             "payment_intent": meta.get("p", ""),
             "issued_at": meta["i"],
-            "expiry": meta.get("x", 0),
-            "key": key,
-            "valid": True,
+            "expiry": expiry,
+            "is_expired": is_expired,
+            "valid": not is_expired # valid if not expired
         }
 
     # ── Activation Tracking ──────────────────────────────────────────────────
@@ -225,8 +232,9 @@ class LicenseManager:
         if not self.db_path:
             return {"status": "ok", "message": "Activation not tracked", "activations": 0}
 
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = self._connect()
             # Check if this machine already activated
             cur = conn.execute(
                 "SELECT id FROM activations WHERE license_key = ? AND machine_id = ?",
@@ -254,15 +262,17 @@ class LicenseManager:
                 "activations": count + 1,
             }
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def deactivate(self, key: str, machine_id: str) -> dict[str, Any]:
         """Remove a machine activation."""
         if not self.db_path:
             return {"status": "ok", "message": "Activation not tracked"}
 
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = self._connect()
             conn.execute(
                 "DELETE FROM activations WHERE license_key = ? AND machine_id = ?",
                 (key, machine_id),
@@ -274,22 +284,25 @@ class LicenseManager:
                 "activations": self._count_activations(key),
             }
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def list_activations(self, key: str) -> list[dict[str, Any]]:
         """List all activations for a license key."""
         if not self.db_path:
             return []
 
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = self._connect()
             cur = conn.execute(
                 "SELECT machine_id, activated_at FROM activations WHERE license_key = ? ORDER BY activated_at",
                 (key,),
             )
             return [{"machine_id": r[0], "activated_at": r[1]} for r in cur.fetchall()]
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     # ── Database Management ──────────────────────────────────────────────────
 
@@ -297,8 +310,9 @@ class LicenseManager:
         """Revoke a license key by setting its expiry to now."""
         if not self.db_path:
             return False
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = self._connect()
             conn.execute(
                 "UPDATE licenses SET expiry = ? WHERE license_key = ?",
                 (int(time.time()), key),
@@ -306,14 +320,16 @@ class LicenseManager:
             conn.commit()
             return conn.total_changes > 0
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def get_key_info(self, key: str) -> dict[str, Any] | None:
         """Get stored info for a key (from DB)."""
         if not self.db_path:
             return None
-        conn = sqlite3.connect(str(self.db_path))
+        conn = None # Initialize conn to None for safer error handling
         try:
+            conn = self._connect()
             cur = conn.execute(
                 "SELECT email, customer_id, payment_intent, issued_at, expiry FROM licenses WHERE license_key = ?",
                 (key,),
@@ -329,6 +345,70 @@ class LicenseManager:
                     "activations": self._count_activations(key),
                 }
             return None
+        finally:
+            if conn:
+                conn.close()
+
+    def find_keys_by_email(self, email: str) -> list[dict[str, Any]]:
+        """Return stored license rows for ``email``, newest first.
+
+        Used to renew an existing customer's license rather than minting a
+        brand-new key on every recurring payment.
+        """
+        if not self.db_path:
+            return []
+        conn = None # Initialize conn to None for safer error handling
+        try:
+            conn = self._connect()
+            rows = conn.execute(
+                "SELECT license_key, email, customer_id, payment_intent, issued_at, expiry "
+                "FROM licenses WHERE email = ? ORDER BY issued_at DESC, created_at DESC",
+                (email,),
+            ).fetchall()
+            return [
+                {
+                    "key": r[0],
+                    "email": r[1],
+                    "customer_id": r[2],
+                    "payment_intent": r[3],
+                    "issued_at": r[4],
+                    "expiry": r[5],
+                }
+                for r in rows
+            ]
+        finally:
+            if conn:
+                conn.close()
+
+    def extend_expiry(self, key: str, additional_seconds: int) -> int:
+        """Extend a stored license's expiry by ``additional_seconds``.
+
+        The extension is anchored to the later of the current expiry or now, so
+        renewing an already-lapsed license still grants a full extra period. A
+        stored expiry of 0 (never expires) is left untouched.
+
+        Returns the new expiry timestamp, or 0 if the key is unknown / has no
+        DB row / never expires.
+        """
+        if not self.db_path:
+            return 0
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT expiry FROM licenses WHERE license_key = ?", (key,)
+            ).fetchone()
+            if row is None:
+                return 0
+            current = row[0] or 0
+            if current == 0:
+                return 0  # never expires — nothing to extend
+            new_expiry = max(current, int(time.time())) + additional_seconds
+            conn.execute(
+                "UPDATE licenses SET expiry = ? WHERE license_key = ?",
+                (new_expiry, key),
+            )
+            conn.commit()
+            return new_expiry
         finally:
             conn.close()
 
@@ -366,10 +446,21 @@ class LicenseManager:
         _, metadata = body.split(":", 1)
         return payload_b64, metadata, sig
 
+    def _connect(self) -> sqlite3.Connection:
+        """Open a SQLite connection with WAL mode and a generous timeout.
+
+        WAL mode allows concurrent reads while a write is in progress, which
+        prevents "database is locked" errors under ThreadingHTTPServer load.
+        timeout=30 lets queued writers wait rather than immediately failing.
+        """
+        conn = sqlite3.connect(str(self.db_path), timeout=30, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
     def _init_db(self) -> None:
         """Create SQLite tables if they don't exist."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._connect()
         try:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS licenses (
@@ -378,7 +469,7 @@ class LicenseManager:
                     customer_id TEXT NOT NULL,
                     payment_intent TEXT DEFAULT '',
                     issued_at INTEGER NOT NULL,
-                    expiry INTEGER DEFAULT 0,
+                    expiry INTEGER NOT NULL DEFAULT 0,
                     created_at INTEGER DEFAULT (strftime('%s','now'))
                 );
                 CREATE TABLE IF NOT EXISTS activations (
@@ -402,7 +493,7 @@ class LicenseManager:
         payment_intent: str,
         expiry: int,
     ) -> None:
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._connect()
         try:
             conn.execute(
                 "INSERT OR IGNORE INTO licenses (license_key, email, customer_id, payment_intent, issued_at, expiry) VALUES (?, ?, ?, ?, ?, ?)",
@@ -415,7 +506,7 @@ class LicenseManager:
     def _count_activations(self, key: str) -> int:
         if not self.db_path:
             return 0
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._connect()
         try:
             row = conn.execute(
                 "SELECT COUNT(*) FROM activations WHERE license_key = ?",
@@ -425,20 +516,46 @@ class LicenseManager:
         finally:
             conn.close()
 
+    def _check_activation_limit(self, key: str) -> bool:
+        if not self.db_path:
+            return True  # No DB, so no activation limits apply
+
+        conn = None  # Initialize conn to None for safer error handling
+        try:
+            conn = self._connect()
+            count = self._count_activations(key)
+            return count < self.max_activations
+        except sqlite3.Error:
+            return False # Database error means we can't confirm validity
+        finally:
+            if conn:
+                conn.close()
+
 
 def _default_secret() -> bytes:
-    """Derive a default secret from host info + fallback.
+    """Return the HMAC signing secret from the environment.
 
-    In production, always set a custom secret via env var.
+    The secret MUST be supplied via ``DEVBENCH_LICENSE_SECRET``. A
+    machine-derived fallback would let anyone who knows the hostname forge
+    valid license keys, so it is only permitted when ``DEVBENCH_DEV=1`` is
+    explicitly set (local development / tests). In every other case a missing
+    secret is a hard error rather than a silent downgrade to weak signing.
     """
     env_secret = os.environ.get("DEVBENCH_LICENSE_SECRET", "")
     if env_secret:
         return env_secret.encode("utf-8")
 
-    # Fallback: derive from machine info (not cryptographically strong
-    # but fine for dev/test)
-    raw = f"{os.uname().nodename}-{os.uname().machine}-ConfigForge-v1"
-    return hashlib.sha256(raw.encode()).digest()
+    if os.environ.get("DEVBENCH_DEV") == "1":
+        # Dev-only fallback: derive from machine info. NOT cryptographically
+        # strong (predictable from the hostname) — never use in production.
+        raw = f"{os.uname().nodename}-{os.uname().machine}-ConfigForge-v1"
+        return hashlib.sha256(raw.encode()).digest()
+
+    raise ValueError(
+        "DEVBENCH_LICENSE_SECRET is required to sign license keys. Set it to a "
+        "strong random secret in production. For local development only, set "
+        "DEVBENCH_DEV=1 to use an insecure machine-derived fallback secret."
+    )
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────

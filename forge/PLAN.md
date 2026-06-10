@@ -184,6 +184,16 @@ Every 15min cycle:
 - ✅ Saved: external-review-20260607-1534.md
 
 ## Section 5: Latest Cycle Log
+### Cycle — 2026-06-10 15:31Z (POLISHER: external review + built review)
+- ✅ **Tests**: 1399 passed, 7 skipped, 2 xfailed — no regressions
+- ✅ **External Review (Rotation 2: HN yq alternatives)**:
+  - yq TOML write gap — yq docs state "does not yet support TOML output" / "cannot roundtrip" — ConfigForge ships bidirectional TOML read/write with comment and blank-line preservation
+  - 3 new AI builder tools (context/prompt/schema) from cbb52c0 reviewed — all edge cases handled (empty input, unicode, missing files, invalid vars, mixed arrays)
+  - `--ini-strip-quotes` + leading-dot path support verified solid
+- ✅ **Wheel build**: `devbench-1.0.0-py3-none-any.whl` — clean build
+- ✅ **PLAN.md §3 updated**: no changes needed — existing items all complete
+- ✅ **Report**: `forge/external-review-20260610-1531.md` saved
+
 ### Cycle — 2026-06-09 (BUILDER: --flatten / --unflatten config transform flags)
 - ✅ **Tests**: 888 passed (+16 net), 7 skipped, 2 xfailed — no regressions
 - ✅ **Shipped**: `--flatten` and `--unflatten` flags for `devbench cf`

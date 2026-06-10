@@ -2083,6 +2083,45 @@ def _get_by_path(data, path: str):
     return node
 
 
+def _get_by_glob(data, path: str) -> list:
+    """Like _get_by_path but supports * wildcard segments (yq#2448).
+
+    Returns a list of (dot_path, value) tuples — one per match.
+    '*' at any segment fans out over all dict keys or list indices.
+    Raises KeyError only when no segment matches at all (empty result is normal)."""
+    parts = _split_path(path)
+
+    def _traverse(node, remaining, prefix):
+        if not remaining:
+            yield (prefix, node)
+            return
+        part = remaining[0]
+        rest = remaining[1:]
+        if part == "*":
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    child_prefix = f"{prefix}.{k}" if prefix else k
+                    yield from _traverse(v, rest, child_prefix)
+            elif isinstance(node, list):
+                for i, v in enumerate(node):
+                    child_prefix = f"{prefix}.{i}" if prefix else str(i)
+                    yield from _traverse(v, rest, child_prefix)
+        elif isinstance(node, dict):
+            if part in node:
+                child_prefix = f"{prefix}.{part}" if prefix else part
+                yield from _traverse(node[part], rest, child_prefix)
+        elif isinstance(node, list):
+            try:
+                idx = int(part)
+                v = node[idx]
+                child_prefix = f"{prefix}.{idx}" if prefix else str(idx)
+                yield from _traverse(v, rest, child_prefix)
+            except (ValueError, IndexError):
+                pass
+
+    return list(_traverse(data, parts, ""))
+
+
 def _set_by_path(data, path: str, value):
     """Set a value at a dot-notation path in a nested dict/list.
 

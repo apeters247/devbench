@@ -29,6 +29,10 @@ from core import configforge as cf  # noqa: E402
 
 DEFAULT_PORT = 8080
 
+# Reject request bodies larger than this to avoid trivial memory-exhaustion
+# from a huge Content-Length. 10 MB is far above any real config payload.
+MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
+
 # ---------------------------------------------------------------------------
 # HTML page (everything inline — no external CSS/JS/fonts/assets)
 # ---------------------------------------------------------------------------
@@ -171,7 +175,7 @@ PAGE = """<!DOCTYPE html>
       <label for="input">Input</label>
       <span id="detected" class="badge">format: —</span>
     </div>
-    <textarea id="input" placeholder="Paste JSON, YAML, TOML, XML, CSV, INI, or .env here…" spellcheck="false"></textarea>
+    <textarea id="input" placeholder="Paste JSON, YAML, TOML, XML, CSV, INI, ENV, HCL, or .properties here…" spellcheck="false"></textarea>
   </section>
 
   <section class="panel">
@@ -193,6 +197,8 @@ PAGE = """<!DOCTYPE html>
         <option value="csv">CSV</option>
         <option value="ini">INI</option>
         <option value="env">ENV</option>
+        <option value="hcl">HCL</option>
+        <option value="properties">Properties</option>
       </select>
     </div>
     <button id="convert" class="btn-primary">Convert</button>
@@ -201,7 +207,7 @@ PAGE = """<!DOCTYPE html>
   </div>
 </main>
 
-<footer>ConfigForge · stdlib only · no data leaves your machine</footer>
+<footer>ConfigForge · stdlib only · no data leaves your machine · 11 formats</footer>
 
 <script>
 (function () {
@@ -383,6 +389,16 @@ class ConfigForgeHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length > MAX_BODY_SIZE:
+            self._send_json(
+                {"error": f"Request body too large (limit is {MAX_BODY_SIZE} bytes)."},
+                status=413,
+            )
+            return
         if path in ("/detect", "/api/detect"):
             self._handle_detect()
         elif path in ("/convert", "/api/convert"):
@@ -407,21 +423,26 @@ class ConfigForgeHandler(BaseHTTPRequestHandler):
         from pathlib import Path as _Path
         demo_root = _Path(__file__).resolve().parent.parent / "demo" / "static"
         # Map /demo/index.html or /demo/ to the static index
-        rel = path.removeprefix("/demo/")
+        rel = path[len("/demo/"):] if path.startswith("/demo/") else path
         if not rel or rel == "index.html":
             rel = "index.html"
         target = demo_root / rel
-        # Security: only serve files under demo/static/
+        # Security: resolve all symlinks then verify the real path is still under demo_root.
+        # This prevents TOCTOU races where a symlink is swapped in between the is_symlink()
+        # check and the actual read.
+        import os as _os
+        real_target = _Path(_os.path.realpath(target))
+        real_root = _Path(_os.path.realpath(demo_root))
         try:
-            target.relative_to(demo_root)
+            real_target.relative_to(real_root)
         except ValueError:
             self._send(403, b"Forbidden", "text/plain; charset=utf-8")
             return
-        if not target.is_file():
+        if not real_target.is_file():
             self._send(404, b"Not found", "text/plain; charset=utf-8")
             return
         try:
-            body = target.read_bytes()
+            body = real_target.read_bytes()
         except OSError:
             self._send(500, b"Server error", "text/plain; charset=utf-8")
             return
@@ -453,7 +474,8 @@ class ConfigForgeHandler(BaseHTTPRequestHandler):
         try:
             result = cf.convert(text, to_fmt, from_fmt)
         except Exception as e:  # defensive — convert() already traps most errors
-            self._send_json(self._convert_error(str(e), to_fmt))
+            print(f"convert error: {e}", file=sys.stderr)
+            self._send_json(self._convert_error("Internal server error", to_fmt))
             return
 
         self._send_json({
@@ -506,4 +528,5 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="ConfigForge web UI")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port (default: 8080)")
     ap.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
-    raise SystemExit(run_server(ap.parse_args().port, ap.parse_args().host))
+    args = ap.parse_args()
+    raise SystemExit(run_server(args.port, args.host))

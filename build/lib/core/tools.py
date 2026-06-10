@@ -1,4 +1,4 @@
-"""Devbench core tools — 9 pure-function developer utilities.
+"""Devbench core tools — developer utilities.
 
 Each tool exposes a ``run(input_text: str) -> str`` interface and returns
 clean JSON-ish output suitable for a SwiftUI shell.
@@ -9,10 +9,14 @@ from __future__ import annotations
 import base64
 import datetime
 import difflib
+import glob as _glob_mod
 import hashlib
 import json
+import os
 import re
+import string
 import uuid
+from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, quote, unquote, urlparse, urlunparse
 
@@ -267,6 +271,12 @@ def _check_jwt_expiry(payload: dict) -> Optional[str]:
     if exp is None:
         return None
 
+    # Some JS-based JWT libraries emit ``exp`` in milliseconds rather than the
+    # spec-mandated seconds. A seconds epoch only crosses 2e10 around the year
+    # 2603, so a value above that is almost certainly milliseconds — normalize.
+    if isinstance(exp, (int, float)) and exp > 2 * 10**10:
+        exp = exp / 1000
+
     now = datetime.datetime.now(datetime.timezone.utc)
     try:
         exp_dt = datetime.datetime.fromtimestamp(exp, tz=datetime.timezone.utc)
@@ -292,18 +302,31 @@ def _check_jwt_expiry(payload: dict) -> Optional[str]:
 
 
 def hash_generator(input_text: str) -> str:
-    """Generate MD5, SHA-1, SHA-256, SHA-512 hashes of the input."""
+    """Generate MD5, SHA-1, SHA-256, SHA-512, Blake2b, and CRC32 hashes of the input.
+
+    An empty string is a valid input: it hashes to the well-defined digests of
+    zero bytes (e.g. MD5 ``d41d8cd98f00b204e9800998ecf8427e``), which users
+    legitimately need when verifying empty files.
+    """
+    import zlib
     input_text = input_text.strip()
-    if not input_text:
-        return _err("hash_generator", "Empty input — nothing to hash.")
 
     data = input_text.encode("utf-8")
 
+    # Wrap MD5 in try/except for FIPS systems where MD5 is completely disabled
+    try:
+        md5_hash = hashlib.md5(data, usedforsecurity=False).hexdigest()
+    except (ValueError, TypeError):
+        # FIPS mode: MD5 is unavailable, use SHA-256 as fallback
+        md5_hash = f"SHA256({hashlib.sha256(data).hexdigest()})"
+
     hashes = {
-        "MD5": hashlib.md5(data).hexdigest(),
-        "SHA-1": hashlib.sha1(data).hexdigest(),
+        "MD5": md5_hash,
+        "SHA-1": hashlib.sha1(data, usedforsecurity=False).hexdigest(),
         "SHA-256": hashlib.sha256(data).hexdigest(),
         "SHA-512": hashlib.sha512(data).hexdigest(),
+        "Blake2b": hashlib.blake2b(data).hexdigest(),
+        "CRC32": f"{zlib.crc32(data) & 0xffffffff:08x}",
     }
 
     lines = [
@@ -765,6 +788,8 @@ def configforge_tool(input_text: str) -> str:
             to_fmt = "json"
 
     raw = _configforge.convert(cleaned, to_fmt, from_fmt)
+    if not raw.get("success", False):
+        return _err("cf", raw.get("error", "Conversion failed."))
     return _ok(
         "cf",
         raw.get("output", ""),
@@ -772,7 +797,6 @@ def configforge_tool(input_text: str) -> str:
         output_format=raw.get("output_format"),
         input_size=raw.get("input_size"),
         output_size=raw.get("output_size"),
-        success=raw.get("success", False),
     )
 
 
@@ -792,6 +816,20 @@ TOOLS: dict[str, Callable[[str], str]] = {
     "cf": configforge_tool,
 }
 
+_LLM_TOOLS_REGISTERED = False
+
+
+def _ensure_llm_tools():
+    """Lazily register token/chunk/context/prompt/schema tools once the module is fully loaded."""
+    global _LLM_TOOLS_REGISTERED
+    if not _LLM_TOOLS_REGISTERED:
+        TOOLS["token"] = token_counter
+        TOOLS["chunk"] = text_chunker
+        TOOLS["context"] = context_builder
+        TOOLS["prompt"] = prompt_renderer
+        TOOLS["schema"] = schema_infer
+        _LLM_TOOLS_REGISTERED = True
+
 TOOL_ALIASES: dict[str, str] = {
     "json_formatter": "json",
     "base64_codec": "base64",
@@ -805,6 +843,12 @@ TOOL_ALIASES: dict[str, str] = {
     "configforge": "cf",
     "convert": "cf",
     "cf_tool": "cf",
+    "token_counter": "token",
+    "text_chunker": "chunk",
+    "context_builder": "context",
+    "prompt_renderer": "prompt",
+    "schema_infer": "schema",
+    "infer": "schema",
 }
 
 TOOL_HELP: dict[str, str] = {
@@ -817,19 +861,26 @@ TOOL_HELP: dict[str, str] = {
     "uuid": "Generate UUIDs (v4) → uuid_generator(input)",
     "diff": "Show text diff → text_diff(input)",
     "cf": "Convert config files: JSON/YAML/TOML/XML/CSV/INI/ENV",
+    "token": "Count tokens for LLMs (tiktoken) → token_counter(input)",
+    "chunk": "Chunk text for RAG (retrieval-augmented generation) → text_chunker(input)",
+    "context": "Bundle files into an LLM context window → context_builder(file_paths)",
+    "prompt": "Render prompt templates with {{var}} substitution → prompt_renderer(input)",
+    "schema": "Infer JSON Schema (Draft 7) from example data → schema_infer(input)",
 }
 
-TOOL_NAMES: list[str] = ["json", "base64", "jwt", "hash", "url", "timestamp", "uuid", "diff", "cf"]
+TOOL_NAMES: list[str] = ["json", "base64", "jwt", "hash", "url", "timestamp", "uuid", "diff", "cf", "token", "chunk", "context", "prompt", "schema"]
 
 
 def get_tool(name: str) -> Optional[Callable[[str], str]]:
     """Resolve a tool name / alias to its callable."""
+    _ensure_llm_tools()
     canonical = TOOL_ALIASES.get(name, name)
     return TOOLS.get(canonical)
 
 
 def run_tool(name: str, input_text: str) -> str:
     """Run a named tool with the given input. Returns error string if not found."""
+    _ensure_llm_tools()
     tool = get_tool(name)
     if tool is None:
         return _err("unknown", f"Unknown tool: {name!r}. Available: {', '.join(TOOLS)}")
@@ -858,7 +909,7 @@ def _err(tool: str, msg: str) -> str:
         "tool_name": tool,
         "output": "",
         "error": msg,
-        "metadata": {},
+        "metadata": {"success": False},
     }
     return json.dumps(result, ensure_ascii=False)
 
@@ -868,6 +919,475 @@ def _truncate(text: str, max_len: int = 80) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
+
+# ---------------------------------------------------------------------------
+# 10. Token Counter (for LLMs)
+# ---------------------------------------------------------------------------
+
+
+def _try_get_tiktoken_encoding(model_name: str = "cl100k_base"):
+    """Try to get a tiktoken encoding. Returns None if tiktoken not installed."""
+    try:
+        import tiktoken
+    except ImportError:
+        return None
+    try:
+        return tiktoken.get_encoding(model_name)
+    except Exception:
+        try:
+            return tiktoken.encoding_for_model(model_name)
+        except Exception:
+            return None
+
+
+_TOKEN_ESTIMATE_RATIO = 4  # ~1 token per 4 chars for English text
+
+
+def token_counter(input_text: str, model_name: str = "cl100k_base") -> str:
+    """Count tokens in text. Uses tiktoken if available, falls back to
+    character-based estimation (≈1 token / 4 chars)."""
+    input_text = input_text.strip()
+    if not input_text:
+        return _err("token", "Empty input — provide text to count tokens.")
+
+    encoding = _try_get_tiktoken_encoding(model_name)
+    if encoding is not None:
+        tokens = encoding.encode(input_text)
+        token_count = len(tokens)
+        method = "tiktoken"
+    else:
+        # Fallback: estimate by char count
+        token_count = max(1, len(input_text) // _TOKEN_ESTIMATE_RATIO)
+        method = "estimate"
+
+    return _ok(
+        "token", str(token_count),
+        token_count=token_count,
+        model=model_name,
+        method=method,
+        char_count=len(input_text),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 11. Text Chunker (for RAG)
+# ---------------------------------------------------------------------------
+
+
+def text_chunker(input_text: str, chunk_size: int = 500, chunk_overlap: int = 100) -> str:
+    """Chunk text into smaller pieces for RAG applications.
+
+    Splits text by paragraphs → sentences → fitting within chunk_size.
+    Uses tiktoken if available, falls back to character estimation.
+    Applies overlap between adjacent chunks.
+    """
+    input_text = input_text.strip()
+    if not input_text:
+        return _err("chunk", "Empty input — provide text to chunk.")
+    if chunk_size <= 0:
+        return _err("chunk", "Chunk size must be greater than 0.")
+    if chunk_overlap < 0:
+        return _err("chunk", "Chunk overlap cannot be negative.")
+    if chunk_overlap >= chunk_size:
+        return _err("chunk", "Chunk overlap must be less than chunk size.")
+
+    encoding = _try_get_tiktoken_encoding("cl100k_base")
+    use_tiktoken = encoding is not None
+
+    def _count_units(text: str) -> int:
+        if use_tiktoken:
+            return len(encoding.encode(text))
+        return max(1, len(text) // _TOKEN_ESTIMATE_RATIO)
+
+    def _encode_unit(text: str):
+        if use_tiktoken:
+            return encoding.encode(text)
+        return text  # pass-through for char-based
+
+    def _unit_len(item) -> int:
+        if use_tiktoken and isinstance(item, list):
+            return len(item)
+        return _count_units(str(item))
+
+    # Normalize the text for chunking
+    # Token-level chunker
+    chunks = []
+    current_chunk = []  # list of piece texts
+    current_unit_count = 0
+    current_unit_items = []  # list of token lists or strings
+
+    # Split into paragraphs, then sentences
+    paragraphs = [p for p in input_text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        paragraphs = [input_text]
+
+    # Common abbreviations that end with a period but are not sentence boundaries.
+    # Replace their dots with a placeholder before splitting, then restore.
+    _ABBREV_RE = re.compile(
+        r'\b(Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|vs|etc|approx|dept|est|ext|fig|govt|'
+        r'incl|lib|max|min|misc|pkg|ref|seq|std|temp|vol|e\.g|i\.e|U\.S|U\.K|'
+        r'U\.N|A\.I|P\.O)\.'
+    )
+
+    for para in paragraphs:
+        safe = _ABBREV_RE.sub(lambda m: m.group().replace(".", "\x00"), para)
+        raw_sentences = re.split(r"(?<=[.!?])\s+", safe)
+        sentences = [s.replace("\x00", ".").strip() for s in raw_sentences if s.strip()]
+
+        for sentence in sentences:
+            sentence_item = _encode_unit(sentence + " ")
+            sentence_units = _unit_len(sentence_item)
+
+            # If a single sentence exceeds chunk_size, force-chunk it word-by-word
+            if sentence_units > chunk_size:
+                # Flush current chunk first
+                if current_chunk:
+                    chunk_str = " ".join(str(p) for p in current_chunk)
+                    chunks.append(chunk_str)
+                    current_chunk = []
+                    current_unit_count = 0
+                    current_unit_items = []
+
+                # Split oversized sentence by words
+                words = sentence.split()
+                word_chunk = []
+                word_units = 0
+                for w in words:
+                    w_item = _encode_unit(w + " ")
+                    w_units = _unit_len(w_item)
+                    if word_units + w_units > chunk_size and word_chunk:
+                        chunks.append(" ".join(word_chunk))
+                        # Apply overlap: keep last words
+                        overlap_words = []
+                        overlap_units = 0
+                        for ow in reversed(word_chunk):
+                            ow_units = _count_units(ow + " ")
+                            if overlap_units + ow_units > chunk_overlap:
+                                break
+                            overlap_words.insert(0, ow)
+                            overlap_units += ow_units
+                        word_chunk = list(overlap_words)
+                        word_units = overlap_units
+                    word_units += w_units
+                    word_chunk.append(w)
+                if word_chunk:
+                    chunks.append(" ".join(word_chunk))
+                continue
+
+            # Normal case: try to add sentence to current chunk
+            if current_unit_count + sentence_units > chunk_size and current_chunk:
+                # Finalize current chunk
+                chunk_str = " ".join(str(p) for p in current_chunk)
+                chunks.append(chunk_str)
+
+                # Apply overlap: keep last N units from current chunk
+                overlap_items = []
+                overlap_units = 0
+                for piece in reversed(current_chunk):
+                    piece_units = _count_units(str(piece) + " ")
+                    if overlap_units + piece_units > chunk_overlap:
+                        break
+                    overlap_items.insert(0, piece)
+                    overlap_units += piece_units
+                current_chunk = list(overlap_items)
+                current_unit_count = overlap_units
+                current_unit_items = []
+
+            current_chunk.append(sentence)
+            current_unit_count += sentence_units
+            current_unit_items.append(sentence_item)
+
+    # Flush last chunk
+    if current_chunk:
+        chunk_str = " ".join(str(p) for p in current_chunk)
+        chunks.append(chunk_str)
+
+    chunks = [c.strip() for c in chunks if c.strip()]
+
+    return _ok(
+        "chunk",
+        json.dumps(chunks, indent=2, ensure_ascii=False),
+        chunk_count=len(chunks),
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        total_chars=len(input_text),
+        method="tiktoken" if use_tiktoken else "estimate",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 12. Context Builder (bundle files for LLM context windows)
+# ---------------------------------------------------------------------------
+
+_CONTEXT_VARS_SEP = "\n---vars---\n"
+_MAX_CONTEXT_FILES = 500
+_MAX_CONTEXT_FILE_BYTES = 10 * 1024 * 1024  # 10 MB per file
+
+
+def context_builder(input_text: str) -> str:
+    """Bundle multiple files into an LLM context window.
+
+    Input: newline-separated list of file paths, OR a single glob pattern.
+    Output: XML-tagged file contents ready to paste into an LLM prompt.
+
+    Format:
+        path/to/file1.py
+        path/to/file2.yaml
+    OR a single line glob:
+        src/**/*.py
+    """
+    if not input_text.strip():
+        return _err("context", "Empty input — provide file paths (one per line) or a glob pattern.")
+
+    lines = [l.strip() for l in input_text.strip().splitlines() if l.strip()]
+
+    # Single-line glob detection — but only if the string isn't a literal existing path
+    if len(lines) == 1 and any(c in lines[0] for c in ("*", "?", "[")):
+        if Path(lines[0]).exists():
+            paths = lines
+        else:
+            pattern = lines[0]
+            matched = sorted(_glob_mod.glob(pattern, recursive=True))
+            if not matched:
+                return _err("context", f"Glob pattern matched no files: {pattern!r}")
+            if len(matched) > _MAX_CONTEXT_FILES:
+                return _err("context", f"Glob matched {len(matched)} files — limit is {_MAX_CONTEXT_FILES}. Narrow the pattern.")
+            paths = matched
+    else:
+        paths = lines
+
+    if len(paths) > _MAX_CONTEXT_FILES:
+        return _err("context", f"Too many paths ({len(paths)}) — limit is {_MAX_CONTEXT_FILES}.")
+
+    parts = []
+    skipped = []
+    total_bytes = 0
+
+    for raw_path in paths:
+        p = Path(raw_path)
+        if not p.exists():
+            skipped.append(f"{raw_path}: not found")
+            continue
+        if not p.is_file():
+            skipped.append(f"{raw_path}: not a regular file")
+            continue
+        size = p.stat().st_size
+        if size > _MAX_CONTEXT_FILE_BYTES:
+            skipped.append(f"{raw_path}: too large ({size // 1024}KB > 10MB)")
+            continue
+        try:
+            content = p.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            skipped.append(f"{raw_path}: {exc}")
+            continue
+        total_bytes += len(content.encode("utf-8"))
+        parts.append(f'<file path="{raw_path}">\n{content}\n</file>')
+
+    if not parts:
+        msgs = "; ".join(skipped) if skipped else "all paths failed"
+        return _err("context", f"No files could be read. {msgs}")
+
+    context_text = "\n\n".join(parts)
+
+    encoding = _try_get_tiktoken_encoding("cl100k_base")
+    if encoding is not None:
+        token_count = len(encoding.encode(context_text))
+        method = "tiktoken"
+    else:
+        token_count = max(1, len(context_text) // _TOKEN_ESTIMATE_RATIO)
+        method = "estimate"
+
+    return _ok(
+        "context",
+        context_text,
+        file_count=len(parts),
+        skipped_count=len(skipped),
+        skipped=skipped,
+        total_bytes=total_bytes,
+        token_count=token_count,
+        token_method=method,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 13. Prompt Renderer (fill template variables, count tokens)
+# ---------------------------------------------------------------------------
+
+_PROMPT_VARS_MARKER = "---vars---"
+
+
+def prompt_renderer(input_text: str, variables: Optional[dict] = None) -> str:
+    """Render a prompt template by substituting {{key}} placeholders.
+
+    Input format (two-part, separated by a line containing only '---vars---'):
+
+        You are a {{role}}. Summarize this: {{text}}
+        ---vars---
+        role=senior engineer
+        text=Hello world
+
+    OR: single-part (no separator) — returns rendered text unchanged with
+    token count. Useful for counting tokens in a finished prompt.
+
+    Supports both ``{{key}}`` (Jinja-style) and ``${key}`` (Python string.Template).
+    """
+    if not input_text.strip():
+        return _err("prompt", "Empty input — provide a prompt template.")
+
+    if _PROMPT_VARS_MARKER in input_text:
+        idx = input_text.index(_PROMPT_VARS_MARKER)
+        template_text = input_text[:idx].rstrip()
+        vars_block = input_text[idx + len(_PROMPT_VARS_MARKER):].lstrip()
+    else:
+        template_text = input_text.strip()
+        vars_block = ""
+
+    # Parse key=value pairs (first '=' splits key from value)
+    merged_vars: dict[str, str] = {}
+    if variables:
+        merged_vars.update({str(k): str(v) for k, v in variables.items()})
+    for raw_line in vars_block.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            return _err("prompt", f"Invalid variable line (expected KEY=VALUE): {line!r}")
+        key, _, val = line.partition("=")
+        merged_vars[key.strip()] = val  # value may contain '='
+
+    # Substitute {{key}} placeholders
+    rendered = template_text
+    if merged_vars:
+        # Braces-style: {{key}}
+        for k, v in merged_vars.items():
+            rendered = rendered.replace("{{" + k + "}}", v)
+        # Also handle ${key} (Python Template style) — only if no braces remain
+        try:
+            tmpl = string.Template(rendered)
+            rendered = tmpl.safe_substitute(merged_vars)
+        except Exception:
+            pass  # fall back to brace-only result
+
+    # Token count
+    encoding = _try_get_tiktoken_encoding("cl100k_base")
+    if encoding is not None:
+        token_count = len(encoding.encode(rendered))
+        method = "tiktoken"
+    else:
+        token_count = max(1, len(rendered) // _TOKEN_ESTIMATE_RATIO)
+        method = "estimate"
+
+    unfilled = re.findall(r"\{\{([^}]+)\}\}", rendered)
+
+    return _ok(
+        "prompt",
+        rendered,
+        token_count=token_count,
+        token_method=method,
+        variables_used=list(merged_vars.keys()),
+        unfilled_placeholders=unfilled,
+        char_count=len(rendered),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 14. Schema Infer (JSON Schema Draft 7 from example data)
+# ---------------------------------------------------------------------------
+
+
+def _infer_schema(value: Any) -> dict:
+    """Recursively infer a JSON Schema Draft 7 from a Python value."""
+    if value is None:
+        return {"type": "null"}
+    if isinstance(value, bool):
+        return {"type": "boolean"}
+    if isinstance(value, int):
+        return {"type": "integer"}
+    if isinstance(value, float):
+        return {"type": "number"}
+    if isinstance(value, str):
+        schema: dict = {"type": "string"}
+        # Annotate common string formats
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            schema["format"] = "date"
+        elif re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*", value):
+            schema["format"] = "date-time"
+        elif re.fullmatch(r"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}", value):
+            schema["format"] = "uuid"
+        elif re.fullmatch(r"https?://.+", value):
+            schema["format"] = "uri"
+        elif re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            schema["format"] = "email"
+        return schema
+    if isinstance(value, list):
+        if not value:
+            return {"type": "array", "items": {}}
+        item_schemas = [_infer_schema(item) for item in value]
+        # Merge: if all items share same type, collapse
+        types = {s.get("type") for s in item_schemas}
+        if len(types) == 1:
+            merged_items = item_schemas[0]
+        else:
+            merged_items = {"oneOf": item_schemas}
+        return {"type": "array", "items": merged_items}
+    if isinstance(value, dict):
+        if not value:
+            return {"type": "object"}
+        properties = {k: _infer_schema(v) for k, v in value.items()}
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": list(value.keys()),
+        }
+    return {}
+
+
+def schema_infer(input_text: str, output_format: str = "json") -> str:
+    """Infer a JSON Schema (Draft 7) from example JSON, YAML, or TOML data.
+
+    Input: JSON object/array, YAML, or TOML.
+    Output: JSON Schema that describes the structure of the input.
+    """
+    if not input_text.strip():
+        return _err("schema", "Empty input — provide JSON, YAML, or TOML data.")
+
+    data = None
+    parse_error = None
+
+    # Try JSON first
+    try:
+        data = json.loads(input_text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Try YAML/TOML via configforge if JSON failed
+    if data is None:
+        try:
+            parsed = _configforge.parse_text(input_text)
+            data = parsed.get("data", parsed)
+        except Exception as exc:
+            parse_error = str(exc)
+
+    if data is None:
+        return _err("schema", f"Could not parse input as JSON, YAML, or TOML. {parse_error or ''}")
+
+    schema = {"$schema": "http://json-schema.org/draft-07/schema#"}
+    schema.update(_infer_schema(data))
+
+    if output_format == "yaml":
+        if not _configforge.HAS_YAML:
+            return _err("schema", "PyYAML not installed; run: pip install pyyaml")
+        import yaml as _yaml
+        schema_out = _yaml.dump(schema, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    else:
+        schema_out = json.dumps(schema, indent=2, ensure_ascii=False)
+
+    return _ok(
+        "schema",
+        schema_out,
+        format="json-schema-draft-07",
+        inferred_type=schema.get("type", "unknown"),
+    )
 
 
 # ---------------------------------------------------------------------------

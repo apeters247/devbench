@@ -22,6 +22,7 @@ import argparse
 import copy
 import json
 import logging
+import os
 import socket
 import sys
 import urllib.parse
@@ -352,8 +353,8 @@ def _build_parser() -> argparse.ArgumentParser:
         tool_p = sub.add_parser(tool_name, help=tool_help)
         # ConfigForge needs extra flags
         if tool_name == "cf":
-            tool_p.add_argument("--to", default=None, help="Output format: json/yaml/toml/xml/csv/ini/env")
-            tool_p.add_argument("--from", dest="from_fmt", default="auto", help="Input format (auto-detect by default)")
+            tool_p.add_argument("--to", "-o", default=None, help="Output format: json/yaml/toml/xml/csv/ini/env")
+            tool_p.add_argument("--from", "-f", dest="from_fmt", default="auto", help="Input format (auto-detect by default)")
             tool_p.add_argument("--list-formats", action="store_true", help="List supported formats")
             tool_p.add_argument("--serve", action="store_true", help="Launch the local web UI (browser config converter)")
             tool_p.add_argument("--port", type=int, default=8080, help="Port for --serve (default: 8080)")
@@ -865,6 +866,10 @@ def _emit_output(result_str: str, args: argparse.Namespace) -> None:
     compact = getattr(args, "compact", False)
     use_colors = getattr(args, "colors", False)
     no_colors = getattr(args, "no_colors", False)
+    # Honor NO_COLOR env var standard (no-color.org) — presence (any value) overrides --colors too
+    if os.environ.get("NO_COLOR") is not None:
+        no_colors = True
+        use_colors = False
     # Auto-enable color when stdout is a TTY and raw output is requested
     if raw and not no_colors and sys.stdout.isatty():
         use_colors = True
@@ -1255,7 +1260,7 @@ def _run_cf_keys(args) -> int:
     return EXIT_SUCCESS
 
 
-def _check_port_available(host: str, port: int) -> bool:
+def _check_port_available(host: str, port: int, command_hint: str = "cf --serve") -> bool:
     """Return True if host:port can be bound; print a clear error and return False if not."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -1265,7 +1270,7 @@ def _check_port_available(host: str, port: int) -> bool:
         except OSError:
             print(
                 f"error: port {port} is already in use on {host}.\n"
-                f"  Try: devbench cf --serve --port {port + 1}",
+                f"  Try: devbench {command_hint} --port {port + 1}",
                 file=sys.stderr,
             )
             return False
@@ -1273,7 +1278,7 @@ def _check_port_available(host: str, port: int) -> bool:
 
 def _run_cf_serve(port: int, host: str = "127.0.0.1") -> int:
     """Launch the ConfigForge web UI (web/serve.py) on the given port."""
-    if not _check_port_available(host, port):
+    if not _check_port_available(host, port, command_hint="cf --serve"):
         return EXIT_ERROR
 
     serve_path = Path(__file__).resolve().parent.parent / "web" / "serve.py"
@@ -1299,7 +1304,7 @@ def _run_cf_api(port: int, host: str = "127.0.0.1") -> int:
     POST /api/v1/convert, GET /api/v1/formats, GET /health and GET /, all
     delegating to ``core.configforge``.
     """
-    if not _check_port_available(host, port):
+    if not _check_port_available(host, port, command_hint="cf --api"):
         return EXIT_ERROR
 
     api_path = Path(__file__).resolve().parent.parent / "web" / "api.py"
@@ -1324,7 +1329,7 @@ def _run_cf_api(port: int, host: str = "127.0.0.1") -> int:
 
 def _run_license_server(host: str = "127.0.0.1", port: int = 9001) -> int:
     """Launch the ConfigForge License Server (web/license_server.py)."""
-    if not _check_port_available(host, port):
+    if not _check_port_available(host, port, command_hint="license server"):
         return EXIT_ERROR
 
     server_path = Path(__file__).resolve().parent.parent / "web" / "license_server.py"
@@ -1919,6 +1924,20 @@ def _run_cf_get(args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
     data = parsed.get("data", parsed)
+    raw = getattr(args, "raw", False)
+    # Wildcard path (yq#2448): fan-out over matching keys without knowing full paths
+    if "*" in _cf._split_path(args.get):
+        matches = _cf._get_by_glob(data, args.get)
+        if not matches:
+            default = getattr(args, "get_default", None)
+            if default is not None:
+                sys.stdout.write(default + "\n")
+                return EXIT_SUCCESS
+            print(f"error: no keys matched '{args.get}'", file=sys.stderr)
+            return EXIT_ERROR
+        for dot_path, val in matches:
+            sys.stdout.write(f"{dot_path}: {_cf._format_get_output(val, raw=raw)}\n")
+        return EXIT_SUCCESS
     try:
         val = _cf._get_by_path(data, args.get)
     except (KeyError, IndexError) as exc:
@@ -1928,7 +1947,7 @@ def _run_cf_get(args) -> int:
             return EXIT_SUCCESS
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    sys.stdout.write(_cf._format_get_output(val, raw=getattr(args, "raw", False)) + "\n")
+    sys.stdout.write(_cf._format_get_output(val, raw=raw) + "\n")
     return EXIT_SUCCESS
 
 
@@ -2251,7 +2270,7 @@ def _run_cf_merge(args) -> int:
             target = _cf._get_by_path(data, merge_at)
         except KeyError:
             print(
-                f"warning: --merge-at path '{merge_at}' does not exist; creating it",
+                f"warning: --merge-at created intermediate key(s) at '{merge_at}'",
                 file=sys.stderr,
             )
             target = {}

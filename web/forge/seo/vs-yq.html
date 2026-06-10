@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <title>ConfigForge vs yq — Best YAML to JSON Converter Alternative for Multi-Format</title>
-  <meta name="description" content="Compare ConfigForge vs yq for config file conversion. ConfigForge supports 9 formats (JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties) vs yq's 2. Comment preservation, batch mode, 100% offline CLI tool.">
+  <meta name="description" content="Compare ConfigForge vs yq for config file conversion. ConfigForge supports 11 formats (JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties, plist, JSONC) vs yq's 2. Comment preservation, batch mode, no DSL, 100% offline CLI tool.">
   <meta property="og:title" content="ConfigForge vs yq — Which Config Converter Wins?">
-  <meta property="og:description" content="ConfigForge beats yq with 9 formats vs 2, comment preservation, batch mode, and true offline operation. Head-to-head comparison with benchmarks.">
+  <meta property="og:description" content="ConfigForge beats yq with 11 formats vs 2, comment preservation, no DSL to learn, batch mode, and true offline operation. Head-to-head comparison.">
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/vs-yq.html">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ConfigForge vs yq — Which Config Converter Wins?">
-  <meta name="twitter:description" content="ConfigForge beats yq with 9 formats vs 2, comment preservation, batch mode, and true offline operation. Head-to-head comparison with benchmarks.">
+  <meta name="twitter:description" content="ConfigForge beats yq with 11 formats vs 2, comment preservation, no DSL to learn, batch mode, and true offline operation. Head-to-head comparison.">
 <link rel="stylesheet" href="/tools/devbench/style.css">
   <!-- JSON-LD Schema.org / SoftwareApplication -->
   <script type="application/ld+json">
@@ -85,7 +85,7 @@
 <tr><td>**.env**</td><td>✅ Read + Write</td><td>❌</td></tr>
 <tr><td>**HCL (Terraform)**</td><td>✅ Read + Write</td><td>❌</td></tr>
 <tr><td>**Java .properties**</td><td>✅ Read + Write</td><td>❌</td></tr>
-<tr><td>**Total formats**</td><td>**9 (bidirectional)**</td><td>2</td></tr>
+<tr><td>**Total formats**</td><td>**11 (bidirectional)**</td><td>2</td></tr>
 <tr><td>**Comment preservation**</td><td>✅ Round-trip safe</td><td>⚠️ Partial (YAML only)</td></tr>
 <tr><td>**Batch / directory mode**</td><td>✅ Native (glob + recursive)</td><td>⚠️ Shell scripting required</td></tr>
 <tr><td>**Offline operation**</td><td>✅ Zero external calls</td><td>✅ Local binary</td></tr>
@@ -94,11 +94,11 @@
 <tr><td>**Install**</td><td>`pip install devbench-cf`</td><td>Binary / package manager</td></tr>
 <tr><td>**License**</td><td>Open source</td><td>Open source (MIT)</td></tr>
 <br />
-<h2 id="format-support-9-vs-2">Format Support: 9 vs 2</h2>
+<h2 id="format-support-11-vs-2">Format Support: 11 vs 2</h2>
 <br />
 <p>This is the headline difference. <code>yq</code> is a superb tool, but at its core it is a YAML and JSON processor (with a <code>jq</code>-compatible expression engine). If your world is purely those two formats, <code>yq</code> is excellent.</p>
 <br />
-<p>ConfigForge is built for the messier reality of modern projects, where a single repository might contain a <code>pyproject.toml</code>, a <code>docker-compose.yaml</code>, a <code>.env</code> file, an <code>appsettings.json</code>, a legacy <code>config.ini</code>, an exported <code>data.csv</code>, an XML manifest, a Terraform <code>.tf</code> file, and a Spring Boot <code>application.properties</code>. ConfigForge reads and writes <strong>all nine formats bidirectionally</strong>, so any-to-any conversion works without chaining tools:</p>
+<p>ConfigForge is built for the messier reality of modern projects, where a single repository might contain a <code>pyproject.toml</code>, a <code>docker-compose.yaml</code>, a <code>.env</code> file, an <code>appsettings.json</code>, a legacy <code>config.ini</code>, an exported <code>data.csv</code>, an XML manifest, a Terraform <code>.tf</code> file, and a Spring Boot <code>application.properties</code>. ConfigForge reads and writes <strong>all 11 formats bidirectionally</strong>, so any-to-any conversion works without chaining tools:</p>
 <br />
 <pre><code class="language-bash">
 # YAML to JSON — the classic
@@ -161,14 +161,7 @@ devbench cf convert --batch --recursive "**/*.json" --to yaml
 <br />
 <p><strong>Choose ConfigForge (<code>devbench cf</code>) if:</strong> you work across more than two formats, you need TOML, XML, CSV, INI, or <code>.env</code> support, you care about preserving comments through conversions, you want native batch/recursive directory processing, and you want a private, fully offline workflow. It's the more complete <strong>yaml to json converter alternative</strong> when "just YAML and JSON" isn't enough.</p>
 <br />
-<p>For most polyglot codebases, ConfigForge is the broader, more future-proof choice — and at <code>pip install devbench-cf</code>, it's one command away.</p>
-<br />
-<hr />
-<br />
-<p>A note on the speed section: I wrote it qualitatively rather than inventing benchmark numbers, since I don't have measured data for either tool. If you have real benchmark figures, I can drop them in for a more concrete comparison. Want me to save this to a file (e.g. <code>docs/configforge-vs-yq.md</code>)?</p>
-<br />
-<hr />
-<p>_Generated by: Claude Opus 4.8 (high effort)_</p>
+<p>For most polyglot codebases, ConfigForge is the broader, more future-proof choice — and at <code>pip install devbench</code>, it's one command away.</p>
 
     </div>
   </main>
