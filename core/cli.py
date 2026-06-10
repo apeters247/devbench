@@ -3436,6 +3436,28 @@ def _run_cf_each(args) -> int:
         except (KeyError, IndexError, TypeError):
             pass  # silently skip items missing the key
 
+    # --join DELIM: join extracted scalars into a single string (composes with --each)
+    join_delim = getattr(args, "join_delim", None)
+    if join_delim is not None:
+        delim = join_delim.replace("\\n", "\n").replace("\\t", "\t")
+        parts = []
+        for item in extracted:
+            if isinstance(item, bool):
+                parts.append("true" if item else "false")
+            elif item is None:
+                parts.append("null")
+            elif isinstance(item, (dict, list)):
+                parts.append(json.dumps(item, ensure_ascii=False))
+            else:
+                parts.append(str(item))
+        result = delim.join(parts)
+        raw = getattr(args, "raw", False)
+        if raw:
+            print(json.dumps({"join": result, "count": len(extracted), "delimiter": join_delim}))
+        else:
+            sys.stdout.write(result + "\n")
+        return EXIT_SUCCESS
+
     to_fmt = getattr(args, "to", None) or detected_fmt
     indent = getattr(args, "indent", 2)
     compact = getattr(args, "compact", False)

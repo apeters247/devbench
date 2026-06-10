@@ -4871,3 +4871,203 @@ def test_ini_quote_strings_escapes_embedded_quotes(tmp_path, capsys):
     data = {"section": {"msg": 'say "hello"'}}
     out = serialize(data, "ini", ini_quote_strings=True)
     assert '\\"hello\\"' in out or '"say \\"hello\\""' in out
+
+
+# ---------------------------------------------------------------------------
+# --join: join list items with a delimiter
+# ---------------------------------------------------------------------------
+
+
+def test_cf_join_basic(tmp_path, capsys):
+    """--join , joins list items into a comma-separated string."""
+    from core.cli import main
+    f = tmp_path / "tags.yaml"
+    f.write_text("- alpha\n- beta\n- gamma\n")
+    rc = main(["cf", str(f), "--join", ","])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "alpha,beta,gamma"
+
+
+def test_cf_join_with_get(tmp_path, capsys):
+    """--join + --get navigates to nested list before joining."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("services:\n  - web\n  - api\n  - db\n")
+    rc = main(["cf", str(f), "--get", "services", "--join", " "])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "web api db"
+
+
+def test_cf_join_space_delimiter(tmp_path, capsys):
+    """--join with space delimiter joins items space-separated."""
+    from core.cli import main
+    f = tmp_path / "words.yaml"
+    f.write_text("- hello\n- world\n")
+    rc = main(["cf", str(f), "--join", " "])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "hello world"
+
+
+def test_cf_join_numeric_list(tmp_path, capsys):
+    """--join serializes numeric list items as strings."""
+    from core.cli import main
+    f = tmp_path / "nums.yaml"
+    f.write_text("- 1\n- 2\n- 3\n")
+    rc = main(["cf", str(f), "--join", "-"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "1-2-3"
+
+
+def test_cf_join_not_a_list_exits_1(tmp_path, capsys):
+    """--join on a dict exits 1 with an error message."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\n")
+    rc = main(["cf", str(f), "--join", ","])
+    assert rc != 0
+
+
+# ---------------------------------------------------------------------------
+# --each --join: composition (--each fires in dispatch, handles --join internally)
+# ---------------------------------------------------------------------------
+
+
+def test_cf_each_join_composition(tmp_path, capsys):
+    """--each KEY --join DELIM extracts field from each item then joins results."""
+    from core.cli import main
+    f = tmp_path / "pods.yaml"
+    f.write_text("- name: web\n  port: 80\n- name: api\n  port: 8080\n- name: db\n  port: 5432\n")
+    rc = main(["cf", str(f), "--each", "name", "--join", ","])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "web,api,db"
+
+
+def test_cf_each_join_with_get(tmp_path, capsys):
+    """--each --join --get: navigate to list, extract field, then join."""
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text("spec:\n  containers:\n  - name: app\n  - name: sidecar\n  - name: init\n")
+    rc = main(["cf", str(f), "--get", "spec.containers", "--each", "name", "--join", " "])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "app sidecar init"
+
+
+def test_cf_select_each_join_chain(tmp_path, capsys):
+    """--select + --each + --join: filter → extract → join in one command."""
+    from core.cli import main
+    f = tmp_path / "hosts.yaml"
+    f.write_text(
+        "- name: web1\n  env: prod\n"
+        "- name: web2\n  env: prod\n"
+        "- name: dev1\n  env: dev\n"
+    )
+    rc = main(["cf", str(f), "--select", "env=prod", "--each", "name", "--join", ","])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "web1,web2"
+
+
+def test_cf_each_join_newline_delimiter(tmp_path, capsys):
+    """--each --join with \\n escape outputs one value per line."""
+    from core.cli import main
+    f = tmp_path / "svcs.yaml"
+    f.write_text("- svc: alpha\n- svc: beta\n")
+    rc = main(["cf", str(f), "--each", "svc", "--join", r"\n"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "alpha\nbeta"
+
+
+# ---------------------------------------------------------------------------
+# Dispatch ordering regression tests — guard against flag-shadowing regressions
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_sort_by_before_unique(tmp_path, capsys):
+    """When --sort-by and --unique are both passed, sort-by fires (higher dispatch priority).
+
+    This is a regression guard: if the dispatch order changes so that --unique
+    fires before --sort-by, the output will be unsorted.
+    """
+    import yaml
+    from core.cli import main
+    f = tmp_path / "items.yaml"
+    # Three items, two duplicates. sort-by fires first → output is sorted (duplicates kept).
+    # If unique fires first it would remove duplicates then sort-by would still sort —
+    # but the key is the result has 2 items not 3, catching the order change.
+    f.write_text("- id: 3\n- id: 1\n- id: 3\n")
+    rc = main(["cf", str(f), "--sort-by", "id", "--unique", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    # sort-by wins: all 3 items present, sorted by id
+    assert [d["id"] for d in data] == [1, 3, 3]
+
+
+def test_dispatch_select_before_sort_by(tmp_path, capsys):
+    """When --select and --sort-by are both passed, select fires (higher dispatch priority)."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "items.yaml"
+    f.write_text("- name: b\n  active: true\n- name: a\n  active: false\n- name: c\n  active: true\n")
+    rc = main(["cf", str(f), "--select", "active=true", "--sort-by", "name", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    # select wins: only active=true items, NOT sorted (sort-by was not dispatched)
+    names = [d["name"] for d in data]
+    assert "a" not in names
+    assert set(names) == {"b", "c"}
+
+
+def test_dispatch_each_before_select_standalone(tmp_path, capsys):
+    """When --each and --select are both passed, --each fires (higher dispatch priority).
+
+    --each internally handles --select, so the output is correctly filtered+extracted.
+    This test verifies --each's internal --select handling works as expected.
+    """
+    from core.cli import main
+    f = tmp_path / "pods.yaml"
+    f.write_text(
+        "- name: web\n  status: Running\n"
+        "- name: db\n  status: Pending\n"
+        "- name: api\n  status: Running\n"
+    )
+    rc = main(["cf", str(f), "--each", "name", "--select", "status=Running", "--join", ","])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    # --each dispatches first, handles --select internally, then --join internally
+    assert out == "web,api"
+
+
+def test_dispatch_sort_by_with_to_json(tmp_path, capsys):
+    """--sort-by + --to json applies output format after sorting (regression guard)."""
+    import json
+    from core.cli import main
+    f = tmp_path / "items.yaml"
+    f.write_text("- z: 3\n- z: 1\n- z: 2\n")
+    rc = main(["cf", str(f), "--sort-by", "z", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert [d["z"] for d in data] == [1, 2, 3]
+
+
+def test_dispatch_unique_with_to_json(tmp_path, capsys):
+    """--unique + --to json deduplicates then outputs JSON (regression guard)."""
+    import json
+    from core.cli import main
+    f = tmp_path / "tags.yaml"
+    f.write_text("- go\n- python\n- go\n- rust\n")
+    rc = main(["cf", str(f), "--unique", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert len(data) == 3
+    assert "go" in data
