@@ -91,19 +91,28 @@ def _is_escaped(line: str, pos: int) -> bool:
 
 
 def _count_delims_outside_quotes(line: str, delim: str) -> int:
-    """Count how many `delim` characters appear outside string quotes."""
+    """Count how many `delim` characters appear outside string quotes.
+    
+    Tracks single and double quotes independently so that a line like
+    ``a,'b"c',d`` does not miscount — the ``"`` inside single quotes
+    does not toggle the double-quote state."""
+
     count = 0
-    in_quotes = False
+    in_single = in_double = False
     i = 0
     while i < len(line):
         ch = line[i]
-        if ch in ('"', "'"):
-            # Skip escaped quotes — don't toggle in_quotes
+        if ch == '"' and not in_single:
             if _is_escaped(line, i):
                 i += 1
                 continue
-            in_quotes = not in_quotes
-        elif ch == delim and not in_quotes:
+            in_double = not in_double
+        elif ch == "'" and not in_double:
+            if _is_escaped(line, i):
+                i += 1
+                continue
+            in_single = not in_single
+        elif ch == delim and not in_single and not in_double:
             count += 1
         i += 1
     return count
@@ -2405,16 +2414,20 @@ def serialize(data, fmt: str, **options) -> str:
         explicit_start = options.get("explicit_start", False)
         explicit_end = options.get("explicit_end", False)
         yaml_width_opt = options.get("yaml_width", None)
-        # yaml.dump width=0 is treated as no-wrap; translate None→80 (PyYAML default)
-        width = None if yaml_width_opt is None else (None if yaml_width_opt == 0 else yaml_width_opt)
         if sort_keys_reverse:
             data = _sort_keys_reverse_recursive(data)
         dumper_cls = _make_block_scalar_dumper() if block_scalars else yaml.Dumper
         dump_kwargs = dict(default_flow_style=False, allow_unicode=True,
                            sort_keys=sort_keys, indent=indent, Dumper=dumper_cls,
                            explicit_start=explicit_start, explicit_end=explicit_end)
-        if width is not None:
-            dump_kwargs["width"] = width
+        # PyYAML 6.0.1: width=0 is falsy in its emitter init so falls back to 80.
+        # Use sys.maxsize to effectively disable wrapping when user passes 0.
+        # Not passing width at all lets PyYAML default to 80.
+        if yaml_width_opt is not None:
+            if yaml_width_opt == 0:
+                dump_kwargs["width"] = 2 ** 31
+            else:
+                dump_kwargs["width"] = yaml_width_opt
         # Handle multi-document YAML: list of dicts → --- separated docs
         if isinstance(data, list) and all(isinstance(d, dict) for d in data):
             return yaml.dump_all(data, **dump_kwargs)
