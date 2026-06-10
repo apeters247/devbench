@@ -35,6 +35,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from web.license import LicenseManager, LicenseError, InvalidKey, ActivationLimit
+from web.api import RateLimiter
 
 DEFAULT_PORT = 9001
 LICENSE_DB = _PROJECT_ROOT / "var" / "licenses.db"
@@ -66,30 +67,35 @@ def _error(code: int, message: str) -> tuple[str, int, dict]:
     return _json_response(code, {"error": True, "message": message})
 
 
+# Reject request bodies larger than this to avoid trivial memory-exhaustion
+# from a huge Content-Length. 1 MB is far above any real webhook/activation
+# payload.
+MAX_BODY_SIZE = 1 * 1024 * 1024  # 1 MB
+
+
+class _BodyTooLarge(Exception):
+    """Raised when a request body exceeds MAX_BODY_SIZE."""
+
+
 def _read_body(handler: BaseHTTPRequestHandler) -> str | None:
-    length = int(handler.headers.get("Content-Length", 0))
+    try:
+        length = int(handler.headers.get("Content-Length", 0))
+    except (TypeError, ValueError):
+        length = 0
     if length == 0:
         return None
+    if length > MAX_BODY_SIZE:
+        raise _BodyTooLarge(length)
     return handler.rfile.read(length).decode("utf-8")
 
 
-# ── Rate Limiter (simple in-memory per-IP) ──────────────────────────────────
+# ── Rate Limiter (thread-safe, imported from api.py) ─────────────────────────
 
-_RATE_LIMIT = 60  # requests per minute
-_RATE_WINDOW = 60  # seconds
-_rates: dict[str, list[float]] = {}
+_rate_limiter = RateLimiter(max_requests=60, window=60)
 
 
 def _check_rate(ip: str) -> bool:
-    now = time.time()
-    if ip not in _rates:
-        _rates[ip] = []
-    # Prune old entries
-    _rates[ip] = [t for t in _rates[ip] if now - t < _RATE_WINDOW]
-    if len(_rates[ip]) >= _RATE_LIMIT:
-        return False
-    _rates[ip].append(now)
-    return True
+    return _rate_limiter.allow(ip)
 
 
 # ── Request Handler ──────────────────────────────────────────────────────────
@@ -205,14 +211,18 @@ class LicenseHandler(BaseHTTPRequestHandler):
     # ── POST ─────────────────────────────────────────────────────────────────
 
     def do_POST(self) -> None:
-        path = self.path.rstrip("/")
+        path = urllib.parse.urlparse(self.path).path.rstrip("/")
         client_ip = self.client_address[0]
 
         if not _check_rate(client_ip):
             self._respond(*_error(429, "Rate limit exceeded (60/min)"))
             return
 
-        body_text = _read_body(self)
+        try:
+            body_text = _read_body(self)
+        except _BodyTooLarge:
+            self._respond(*_error(413, f"Request body too large (limit is {MAX_BODY_SIZE} bytes)"))
+            return
         if body_text is None and path not in ("/webhook/stripe", "/webhook/gumroad"):
             self._respond(*_error(400, "Request body required"))
             return
@@ -229,8 +239,10 @@ class LicenseHandler(BaseHTTPRequestHandler):
         elif path == "/license/revoke":
             self._handle_revoke(body_text)
 
+        elif path == "/license/trial":
+            self._handle_trial(body_text)
         else:
-            self._respond(*_error(404, f"Unknown path: {path}"))
+            self._respond(*_error(404, "Unknown endpoint"))
 
     # ── Endpoint Handlers ───────────────────────────────────────────────────
 
@@ -331,8 +343,9 @@ class LicenseHandler(BaseHTTPRequestHandler):
             body = _read_body(self)
         sig = self.headers.get("Stripe-Signature", "")
 
-        # In development mode, accept unsigned events
-        is_dev = os.environ.get("DEVBENCH_DEV", "1") == "1"
+        # Production by default: signatures are verified unless DEVBENCH_DEV=1
+        # is explicitly set to accept unsigned events for local development.
+        is_dev = os.environ.get("DEVBENCH_DEV", "0") == "1"
         if STRIPE_WEBHOOK_SECRET and not is_dev:
             # Verify Stripe signature (simple HMAC match)
             if not _verify_stripe_sig(body or "", sig):
@@ -356,7 +369,7 @@ class LicenseHandler(BaseHTTPRequestHandler):
             self._process_checkout(session)
         elif event_type == "invoice.paid":
             session = event.get("data", {}).get("object", {})
-            self._process_checkout(session)
+            self._process_renewal(session)
         else:
             # Acknowledge but don't process unknown event types
             self._respond(*_json_response(200, {
@@ -389,6 +402,40 @@ class LicenseHandler(BaseHTTPRequestHandler):
             "expires_at": one_year,
             "delivery": "License key generated. Sent via email (configure SMTP in production).",
         }))
+
+    def _process_renewal(self, session: dict) -> None:
+        """Renew an existing license on ``invoice.paid`` (recurring payment).
+
+        The customer already received a key from the original
+        ``checkout.session.completed`` event, so minting a fresh key on every
+        renewal would leave them with a pile of duplicate licenses. Instead,
+        look up their existing license by email and extend its expiry by a
+        year. Only fall back to issuing a new key if no prior license exists.
+        """
+        customer_email = (
+            session.get("customer_email")
+            or session.get("customer_details", {}).get("email", "")
+        )
+        one_year_seconds = 365 * 86400
+
+        existing = lm.find_keys_by_email(customer_email) if customer_email else []
+        if existing:
+            latest = existing[0]
+            new_expiry = lm.extend_expiry(latest["key"], one_year_seconds)
+            self._respond(*_json_response(200, {
+                "received": True,
+                "type": "invoice.paid",
+                "license_key": latest["key"],
+                "customer_email": customer_email,
+                "customer_id": latest["customer_id"],
+                "expires_at": new_expiry,
+                "renewed": True,
+                "delivery": "Existing license renewed (expiry extended by 1 year).",
+            }))
+            return
+
+        # No prior license for this customer — issue a fresh one.
+        self._process_checkout(session)
 
     def _handle_activate(self, body_text: str | None) -> None:
         """Activate a license key on a specific machine."""
@@ -438,9 +485,50 @@ class LicenseHandler(BaseHTTPRequestHandler):
             "message": "License revoked" if ok else "Key not found in database",
         }))
 
+
+    def _handle_trial(self, body_text: str | None) -> None:
+        """Generate a 14-day trial license key."""
+        if not body_text:
+            body_text = '{}'
+        try:
+            data = json.loads(body_text)
+        except json.JSONDecodeError:
+            self._respond(*_error(400, "Invalid JSON"))
+            return
+
+        email = data.get("email", "trial@example.com")
+        trial_days = 14
+        expiry = int(time.time()) + trial_days * 86400
+        try:
+            license_key = lm.generate(
+                email=email,
+                customer_id=f"trial_{time.time_ns()}",
+                payment_intent="",
+                expiry=expiry,
+            )
+        except Exception as e:
+            self._respond(*_error(500, f"Failed to generate trial key: {e}"))
+            return
+
+        self._respond(*_json_response(200, {
+            "received": True,
+            "type": "trial",
+            "license_key": license_key,
+            "email": email,
+            "expires_at": expiry,
+            "message": f"Trial license key generated. Valid for {trial_days} days.",
+        }))
+
     # ── Response Helper ──────────────────────────────────────────────────────
 
     def _respond(self, body: str, code: int, headers: dict) -> None:
+        # Webhook endpoints (Stripe/Gumroad) are server-to-server only and must
+        # never be browser-callable, so strip the permissive CORS header from
+        # their responses. A leaked `Access-Control-Allow-Origin: *` here would
+        # let any website read webhook responses cross-origin.
+        request_path = urllib.parse.urlparse(self.path).path.rstrip("/")
+        if request_path.startswith("/webhook/"):
+            headers = {k: v for k, v in headers.items() if k != "Access-Control-Allow-Origin"}
         self.send_response(code)
         for k, v in headers.items():
             self.send_header(k, v)
@@ -453,27 +541,42 @@ class LicenseHandler(BaseHTTPRequestHandler):
 import hmac
 import hashlib
 
+# Reject Stripe webhooks with timestamps older than this (replay protection).
+_STRIPE_TIMESTAMP_TOLERANCE = 300  # 5 minutes
+
 
 def _verify_stripe_sig(body: str, sig_header: str) -> bool:
-    """Verify Stripe webhook signature (simplified — production should use
-    ``stripe.Webhook.construct_event()`` with the ``stripe`` pip package)."""
+    """Verify Stripe webhook signature per Stripe's v1 scheme.
+
+    Stripe signed payload: ``{t}.{body}`` where ``t`` is the timestamp from
+    the ``Stripe-Signature`` header.  Events older than
+    ``_STRIPE_TIMESTAMP_TOLERANCE`` seconds are rejected to prevent replays.
+    """
     if not sig_header:
         return False
-    # Stripe sends: t=<timestamp>,v1=<signature>,v0=<signature>...
-    # We check v1 only (the current version)
+    # Stripe sends: t=<timestamp>,v1=<signature>[,v0=<legacy-signature>]
     try:
-        pairs = {}
+        pairs: dict[str, str] = {}
         for part in sig_header.split(","):
             kv = part.split("=", 1)
             if len(kv) == 2:
                 pairs[kv[0]] = kv[1]
+        timestamp = pairs.get("t", "")
         expected_sig = pairs.get("v1", "")
-        if not expected_sig:
+        if not timestamp or not expected_sig:
             return False
-        # Compute HMAC
+        # Replay protection: reject stale events
+        try:
+            ts_int = int(timestamp)
+        except ValueError:
+            return False
+        if abs(time.time() - ts_int) > _STRIPE_TIMESTAMP_TOLERANCE:
+            return False
+        # Stripe signed payload is "{timestamp}.{body}" — NOT just the body
+        signed_payload = f"{timestamp}.{body}"
         computed = hmac.new(
             STRIPE_WEBHOOK_SECRET.encode("utf-8"),
-            body.encode("utf-8"),
+            signed_payload.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
         return hmac.compare_digest(computed, expected_sig)
@@ -511,7 +614,7 @@ def run_server(host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> None:
     server = ThreadingHTTPServer((host, port), LicenseHandler)
     print(f"[license] server listening on http://{host}:{port}")
     print(f"[license] license DB: {DB_PATH}")
-    print(f"[license] dev mode: {os.environ.get('DEVBENCH_DEV', '1')}")
+    print(f"[license] dev mode: {os.environ.get('DEVBENCH_DEV', '0')}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

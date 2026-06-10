@@ -28,12 +28,15 @@ Features:
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import threading
 import time
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # Make ``core`` importable no matter the current working directory.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -255,7 +258,8 @@ class ConfigForgeAPIHandler(BaseHTTPRequestHandler):
             else:
                 self._send_json({"success": False, "error": "Not found: %s" % path}, status=404)
         except Exception as e:  # defensive — never leak a stack trace as HTML
-            self._send_json({"success": False, "error": "Internal error: %s" % e}, status=500)
+            log.debug("GET handler error: %s", e)
+            self._send_json({"success": False, "error": "Internal server error"}, status=500)
 
     def do_POST(self) -> None:  # noqa: N802
         if self._rate_limited():
@@ -267,7 +271,8 @@ class ConfigForgeAPIHandler(BaseHTTPRequestHandler):
             else:
                 self._send_json({"success": False, "error": "Not found: %s" % path}, status=404)
         except Exception as e:  # defensive catch-all -> 500
-            self._send_json({"success": False, "error": "Internal error: %s" % e}, status=500)
+            log.debug("POST handler error: %s", e)
+            self._send_json({"success": False, "error": "Internal server error"}, status=500)
 
     # -- handlers ---------------------------------------------------------
 

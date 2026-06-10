@@ -103,7 +103,8 @@
 <tr><td><strong>Total formats</strong></td><td><strong>11 (bidirectional)</strong></td><td>8</td></tr>
 <tr><td><strong>Comment preservation</strong></td><td>✅ Round-trip safe (YAML, TOML, INI, .env)</td><td>❌ <strong>Explicitly dropped on write</strong> (documented)</td></tr>
 <tr><td><strong>Native batch / glob mode</strong></td><td>✅ Built-in (<code>--batch "**/*.yaml"</code>)</td><td>❌ Shell scripting required</td></tr>
-<tr><td><strong>In-place value selector</strong></td><td>Path-based (<code>--get</code>/<code>--set</code>/<code>--delete</code>)</td><td>✅ Full selector expression language</td></tr>
+<tr><td><strong>In-place value selector</strong></td><td>Path-based (<code>--get</code>/<code>--set</code>/<code>--delete</code>) — no DSL to learn</td><td>✅ Full selector expression language (learning curve)</td></tr>
+<tr><td><strong>DSL required?</strong></td><td>❌ Just flags — no query language needed</td><td>✅ dasel selector syntax required</td></tr>
 <tr><td><strong>Config deep-merge</strong></td><td>✅ <code>--merge overlay.yaml --list-merge append</code></td><td>❌ Manual selector scripting</td></tr>
 <tr><td><strong>Streaming large files</strong></td><td>✅ Generator-based streaming batch</td><td>✅ Streaming-capable</td></tr>
 <tr><td><strong>Offline / no telemetry</strong></td><td>✅ Zero external calls</td><td>✅ Local binary</td></tr>

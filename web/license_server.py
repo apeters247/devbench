@@ -242,7 +242,7 @@ class LicenseHandler(BaseHTTPRequestHandler):
         elif path == "/license/trial":
             self._handle_trial(body_text)
         else:
-            self._respond(*_error(404, f"Unknown path: {path}"))
+            self._respond(*_error(404, "Unknown endpoint"))
 
     # ── Endpoint Handlers ───────────────────────────────────────────────────
 
