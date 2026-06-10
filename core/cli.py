@@ -263,7 +263,7 @@ def _main_dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
                 ctx_input = input_text
             result_str = tools.prompt_renderer(ctx_input)
         elif args.command == "schema":
-            result_str = tools.schema_infer(input_text)
+            result_str = tools.schema_infer(input_text, output_format=getattr(args, "to", "json"))
         else:
             result_str = tools.run_tool(args.command, input_text)
     else:
@@ -271,13 +271,18 @@ def _main_dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         return EXIT_ERROR
 
     _emit_output(result_str, args)
-    
-    try:
-        parsed_result = json.loads(result_str)
-        if parsed_result.get("error") or parsed_result.get("metadata", {}).get("success") is False:
-            return EXIT_ERROR
-    except json.JSONDecodeError:
-        pass  # Not a JSON result, assume success if no other errors.
+
+    # cf, token, chunk are script/CLI tools — exit codes signal success/failure.
+    # UI-backend tools (json, diff, jwt, etc.) always exit 0; the JSON envelope
+    # carries error details so the Swift caller can always parse the response.
+    _ERROR_EXIT_COMMANDS = {"cf", "token", "chunk", "context", "prompt", "schema"}
+    if args.command in _ERROR_EXIT_COMMANDS:
+        try:
+            parsed_result = json.loads(result_str)
+            if parsed_result.get("error") or parsed_result.get("metadata", {}).get("success") is False:
+                return EXIT_ERROR
+        except json.JSONDecodeError:
+            pass
 
     return EXIT_SUCCESS
 
@@ -389,6 +394,12 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "because configparser strips them when parsing. "
                                      "Numerics and booleans are never quoted. "
                                      "Example: devbench cf config.ini -t ini --ini-quote-strings")
+            tool_p.add_argument("--ini-strip-quotes", action="store_true", dest="ini_strip_quotes",
+                                help="Strip surrounding double-quotes from INI values during parsing. "
+                                     "Addresses yq issue #2456: configparser preserves literal quote characters "
+                                     "so color_theme = \"Default\" is read as '\"Default\"' (with quotes). "
+                                     "This flag strips them so cross-format conversion (INI→YAML/JSON) is clean. "
+                                     "Example: devbench cf config.ini -t yaml --ini-strip-quotes")
             tool_p.add_argument("--null-handling", default="skip", choices=["skip", "comment", "empty", "error"],
                                 help="How to represent null/None in TOML (default: skip)")
             tool_p.add_argument("--get", metavar="PATH", default=None,
@@ -410,6 +421,15 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--backup", metavar="SUFFIX", nargs="?", const=".bak", default=None, dest="backup_suffix",
                                 help="Before --in-place write, save the original to FILE<SUFFIX> (default suffix: .bak). "
                                      "Example: --backup → file.yaml.bak; --backup .orig → file.yaml.orig")
+            tool_p.add_argument("--check", action="store_true", dest="check_mode",
+                                help="With --in-place: exit 0 if the file is already at the target value, "
+                                     "exit 1 if it would change. No write is performed. "
+                                     "Drift detection for CI/CD pipelines. "
+                                     "Addresses the yq/dasel gap: no built-in way to detect config drift.")
+            tool_p.add_argument("--dry-run", action="store_true", dest="dry_run",
+                                help="With --in-place: show diff between current file and what would be written. "
+                                     "No write is performed. "
+                                     "Addresses the yq/dasel gap: no --dry-run / preview-before-write.")
             tool_p.add_argument("--delete", metavar="PATH", default=None,
                                 help="Delete a key by dot-notation path. Output defaults to input format.")
             tool_p.add_argument("--rename", metavar=("OLD_PATH", "NEW_PATH"), nargs=2, dest="rename_paths",
@@ -1051,6 +1071,8 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
         options["infer_dates"] = False
     if getattr(args, "ini_quote_strings", False):
         options["ini_quote_strings"] = True
+    if getattr(args, "ini_strip_quotes", False):
+        options["ini_strip_quotes"] = True
     if hasattr(args, "null_handling"):
         options["null_handling"] = args.null_handling
     if hasattr(args, "env_expand") and args.env_expand:
@@ -1148,6 +1170,8 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
         options["infer_dates"] = False
     if getattr(args, "ini_quote_strings", False):
         options["ini_quote_strings"] = True
+    if getattr(args, "ini_strip_quotes", False):
+        options["ini_strip_quotes"] = True
     if hasattr(args, "null_handling"):
         options["null_handling"] = args.null_handling
     if hasattr(args, "env_expand") and args.env_expand:
@@ -1732,6 +1756,41 @@ def _cf_read_file_or_content(args):
     return "", None
 
 
+def _cf_handle_check_or_dry_run(file_path, output_text: str, args) -> Optional[int]:
+    """Handle --check and --dry-run for in-place operations.
+
+    Returns None if neither flag is set (caller should proceed with write).
+    Returns EXIT_SUCCESS (0) if check passes (identical) or dry-run shows no diff.
+    Returns EXIT_ERROR (1) if check detects changes or dry-run shows diff.
+    """
+    check_mode = getattr(args, "check_mode", False)
+    dry_run = getattr(args, "dry_run", False)
+    if not check_mode and not dry_run:
+        return None
+    try:
+        current_text = Path(file_path).read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"error: cannot read {file_path}: {e}", file=sys.stderr)
+        return EXIT_ERROR
+    if dry_run:
+        from difflib import unified_diff
+        cur_lines = current_text.splitlines(keepends=True)
+        out_lines = output_text.splitlines(keepends=True)
+        diff = list(unified_diff(cur_lines, out_lines, fromfile=str(file_path), tofile=str(file_path)))
+        if diff:
+            sys.stdout.writelines(diff)
+            return EXIT_ERROR
+        print("identical")
+        return EXIT_SUCCESS
+    if check_mode:
+        if current_text == output_text:
+            print("identical")
+            return EXIT_SUCCESS
+        print("would change")
+        return EXIT_ERROR
+    return None
+
+
 def _cf_write_in_place(file_path, output_text: str, backup_suffix) -> bool:
     """Write output_text to file_path atomically, optionally backing up the original.
 
@@ -1887,6 +1946,9 @@ def _run_cf_set(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
+        rc = _cf_handle_check_or_dry_run(file_path, output_text, args)
+        if rc is not None:
+            return rc
         if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
             return EXIT_ERROR
     else:
@@ -1941,6 +2003,9 @@ def _run_cf_append(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
+        rc = _cf_handle_check_or_dry_run(file_path, output_text, args)
+        if rc is not None:
+            return rc
         if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
             return EXIT_ERROR
     else:
@@ -1993,6 +2058,9 @@ def _run_cf_delete(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
+        rc = _cf_handle_check_or_dry_run(file_path, output_text, args)
+        if rc is not None:
+            return rc
         if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
             return EXIT_ERROR
     else:
@@ -2089,6 +2157,9 @@ def _run_cf_rename(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
+        rc = _cf_handle_check_or_dry_run(file_path, output_text, args)
+        if rc is not None:
+            return rc
         if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
             return EXIT_ERROR
     else:
@@ -2096,64 +2167,89 @@ def _run_cf_rename(args) -> int:
     return EXIT_SUCCESS
 
 
+# ---------------------------------------------------------------------------
+# cf --merge: deep merge overlay onto base input
+# ---------------------------------------------------------------------------
+
+
 def _run_cf_merge(args) -> int:
+    """Deep-merge overlay onto base config. Overlay is a file path."""
     from . import configforge as _cf
     content, file_path = _cf_read_file_or_content(args)
     if content is None:
         return EXIT_ERROR
-    from_fmt = getattr(args, "from_fmt", "auto")
-    try:
-        base_parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
-                                     **_cf_parse_opts(args))
-    except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    merge_file = args.merge
+    if not merge_file:
+        print("error: --merge requires an overlay file argument", file=sys.stderr)
         return EXIT_ERROR
-    detected_fmt = base_parsed.get("format")
-    base_data = base_parsed.get("data", base_parsed)
     try:
-        overlay_text = Path(args.merge).read_text(encoding="utf-8")
+        overlay_content = Path(merge_file).read_text(encoding="utf-8")
     except OSError as e:
         print(f"error: cannot read overlay file: {e}", file=sys.stderr)
         return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    parse_opts = _cf_parse_opts(args)
     try:
-        overlay_parsed = _cf.parse_text(overlay_text, **_cf_parse_opts(args))
+        parsed_base = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt, **parse_opts)
     except ValueError as exc:
-        print(f"error reading overlay: {exc}", file=sys.stderr)
+        print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    overlay_data = overlay_parsed.get("data", overlay_parsed)
-    list_mode = getattr(args, "list_merge", "replace")
-    new_only = getattr(args, "merge_new_only", False)
-    dedupe_lists = getattr(args, "merge_dedupe_lists", False)
+    try:
+        parsed_overlay = _cf.parse_text(overlay_content, **parse_opts)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    detected_fmt = parsed_base.get("format")
+    data = parsed_base.get("data", parsed_base)
+    overlay_data = parsed_overlay.get("data", parsed_overlay)
     merge_at = getattr(args, "merge_at", None)
     if merge_at:
         try:
-            target = _cf._get_by_path(base_data, merge_at)
-        except (KeyError, IndexError):
+            target = _cf._get_by_path(data, merge_at)
+        except KeyError:
             target = {}
-        merged_target = _cf._deep_merge(target, overlay_data, list_mode=list_mode, new_only=new_only, dedupe_lists=dedupe_lists)
-        merged = copy.deepcopy(base_data)
-        try:
-            _cf._set_by_path(merged, merge_at, merged_target)
-        except KeyError as exc:
-            print(f"error: --merge-at path invalid: {exc}", file=sys.stderr)
-            return EXIT_ERROR
+            _cf._set_by_path(data, merge_at, target)
+        merged = _cf._deep_merge(
+            target, overlay_data,
+            list_mode=getattr(args, "list_merge", "replace"),
+            new_only=getattr(args, "merge_new_only", False),
+            dedupe_lists=getattr(args, "merge_dedupe_lists", False),
+        )
+        _cf._set_by_path(data, merge_at, merged)
     else:
-        merged = _cf._deep_merge(base_data, overlay_data, list_mode=list_mode, new_only=new_only, dedupe_lists=dedupe_lists)
+        data = _cf._deep_merge(
+            data, overlay_data,
+            list_mode=getattr(args, "list_merge", "replace"),
+            new_only=getattr(args, "merge_new_only", False),
+            dedupe_lists=getattr(args, "merge_dedupe_lists", False),
+        )
+    comments, blanks = [], []
+    if detected_fmt == "yaml" and _cf.HAS_YAML and content:
+        comments = _cf._extract_yaml_comments(content)
+        blanks = _cf._extract_yaml_blank_lines(content)
     to_fmt = getattr(args, "to", None) or detected_fmt
     if not to_fmt:
         print("error: cannot determine output format; use --to", file=sys.stderr)
         return EXIT_ERROR
     try:
-        output_text = _cf.serialize(merged, to_fmt, **_cf_serialize_options(args))
+        output_text = _cf.serialize(data, to_fmt, **_cf_serialize_options(args))
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
     if not output_text.endswith("\n"):
         output_text += "\n"
+    if to_fmt == "yaml":
+        if blanks:
+            output_text = _cf._reinsert_yaml_blank_lines(output_text, blanks)
+        if comments:
+            output_text = _cf._reinsert_yaml_comments(output_text, comments)
     if getattr(args, "in_place", False):
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
+        rc = _cf_handle_check_or_dry_run(file_path, output_text, args)
+        if rc is not None:
+            return rc
         if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
             return EXIT_ERROR
     else:
@@ -2161,6 +2257,8 @@ def _run_cf_merge(args) -> int:
     return EXIT_SUCCESS
 
 
+# ---------------------------------------------------------------------------
+# cf --diff: structural cross-format config comparison
 # ---------------------------------------------------------------------------
 # cf --diff: structural cross-format config comparison
 # ---------------------------------------------------------------------------
@@ -3230,6 +3328,9 @@ def _run_cf_flatten(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
+        rc = _cf_handle_check_or_dry_run(file_path, output_text, args)
+        if rc is not None:
+            return rc
         if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
             return EXIT_ERROR
     else:
@@ -3289,6 +3390,9 @@ def _run_cf_unflatten(args) -> int:
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
             return EXIT_ERROR
+        rc = _cf_handle_check_or_dry_run(file_path, output_text, args)
+        if rc is not None:
+            return rc
         if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
             return EXIT_ERROR
     else:
@@ -3296,6 +3400,8 @@ def _run_cf_unflatten(args) -> int:
     return EXIT_SUCCESS
 
 
+# ---------------------------------------------------------------------------
+# cf --shell-export
 # ---------------------------------------------------------------------------
 # cf --path-exists: check whether a path exists in the config
 # ---------------------------------------------------------------------------
@@ -4387,18 +4493,22 @@ def _run_cf_replace_value(args) -> int:
 
     if not output_text.endswith("\n"):
         output_text += "\n"
-
-    in_place = getattr(args, "in_place", False)
-    backup_suffix = getattr(args, "backup_suffix", None)
-    if in_place and file_path:
-        _cf_write_in_place(file_path, output_text, backup_suffix)
-        print(f"replaced {match_count} value(s): {old_str!r} → {new_raw!r}")
+    if getattr(args, "in_place", False):
+        if file_path is None:
+            print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
+            return EXIT_ERROR
+        rc = _cf_handle_check_or_dry_run(file_path, output_text, args)
+        if rc is not None:
+            return rc
+        if not _cf_write_in_place(file_path, output_text, getattr(args, "backup_suffix", None)):
+            return EXIT_ERROR
     else:
         sys.stdout.write(output_text)
-
     return EXIT_SUCCESS
 
 
+# ---------------------------------------------------------------------------
+# cf --diff: structural cross-format config comparison
 # ---------------------------------------------------------------------------
 # Shell completion
 # ---------------------------------------------------------------------------
