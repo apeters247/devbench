@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Sort YAML / JSON List by Field Value — devbench cf --sort-by | ConfigForge</title>
+  <meta name="description" content="Sort a YAML or JSON array of objects by any field in one command. devbench cf pods.yaml --sort-by metadata.name — replaces yq's sort_by(.) expression across 11 config formats.">
+  <meta property="og:title" content="Sort YAML / JSON List by Field — devbench cf --sort-by | ConfigForge">
+  <meta property="og:description" content="Sort a list of objects by any field value — ascending or descending. devbench cf pods.yaml --sort-by metadata.name — no yq expressions needed.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/sort-yaml-list-by-field.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Sort YAML / JSON List by Field — devbench cf --sort-by">
+  <meta name="twitter:description" content="devbench cf pods.yaml --sort-by metadata.name — sort any YAML/JSON list of objects by field value. Add --sort-desc for descending order.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI tool to sort YAML/JSON lists of objects by any field value, ascending or descending. Works across YAML, JSON, TOML, CSV, and 7 more formats.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<header>
+  <a href="/tools/devbench/">ConfigForge / Devbench</a> — 11-format config converter
+</header>
+
+<main>
+  <h1>Sort YAML / JSON List by Field Value — <code>devbench cf --sort-by</code></h1>
+  <p class="subtitle">
+    <code>devbench cf pods.yaml --sort-by metadata.name</code><br>
+    Sort a list of objects by any field — ascending or descending. No yq expressions needed.
+  </p>
+
+  <section>
+    <h2>The Problem: Sorting Lists in yq / jq Is Error-Prone</h2>
+    <p>Sorting a YAML list of objects by a field in yq or jq requires remembering expression syntax:</p>
+    <pre><code># yq: sort a list by a field value
+yq '.items | sort_by(.metadata.name)' pods.yaml
+
+# jq: sort list by a field
+jq '.items | sort_by(.metadata.name)' pods.json
+
+# yq: sort descending (verbose)
+yq '.items | sort_by(.spec.replicas) | reverse' deploy.yaml</code></pre>
+    <p>These expressions are format-specific, break on nested paths, and don't work on the top-level list without <code>.</code> wrapping.</p>
+  </section>
+
+  <section>
+    <h2>The Solution: <code>devbench cf --sort-by FIELD</code></h2>
+    <pre><code># Sort Kubernetes pods by name
+devbench cf pods.yaml --sort-by metadata.name
+
+# Sort descending (highest replicas first)
+devbench cf deploy.yaml --sort-by spec.replicas --sort-desc
+
+# Sort a nested list after navigating with --get
+devbench cf cluster.yaml --get spec.containers --sort-by name
+
+# Sort and convert to JSON
+devbench cf pods.yaml --sort-by metadata.name --to json
+
+# Sort a CSV by a column value
+devbench cf data.csv --sort-by price --sort-desc</code></pre>
+  </section>
+
+  <section>
+    <h2>Example: Sort Kubernetes Pods by Name</h2>
+    <p>Input <code>pods.yaml</code>:</p>
+    <pre><code>items:
+  - metadata:
+      name: web-c
+      namespace: default
+    spec:
+      replicas: 2
+  - metadata:
+      name: api-a
+      namespace: default
+    spec:
+      replicas: 5
+  - metadata:
+      name: db-b
+      namespace: default
+    spec:
+      replicas: 1</code></pre>
+
+    <pre><code>devbench cf pods.yaml --get items --sort-by metadata.name</code></pre>
+
+    <p>Output (sorted alphabetically by name):</p>
+    <pre><code>- metadata:
+    name: api-a
+    namespace: default
+  spec:
+    replicas: 5
+- metadata:
+    name: db-b
+    namespace: default
+  spec:
+    replicas: 1
+- metadata:
+    name: web-c
+    namespace: default
+  spec:
+    replicas: 2</code></pre>
+  </section>
+
+  <section>
+    <h2>Sort Descending — Highest Replicas First</h2>
+    <pre><code>devbench cf pods.yaml --get items --sort-by spec.replicas --sort-desc</code></pre>
+    <p>Output:</p>
+    <pre><code>- metadata: {name: api-a, namespace: default}
+  spec: {replicas: 5}
+- metadata: {name: web-c, namespace: default}
+  spec: {replicas: 2}
+- metadata: {name: db-b, namespace: default}
+  spec: {replicas: 1}</code></pre>
+  </section>
+
+  <section>
+    <h2>Compose with Other Flags</h2>
+    <pre><code># Filter then sort: Running pods sorted by name
+devbench cf pods.yaml --get items --select status.phase=Running --sort-by metadata.name
+
+# Sort then extract: names of pods in replica order
+devbench cf pods.yaml --get items --sort-by spec.replicas --sort-desc --each metadata.name
+
+# Sort CSV rows by a numeric column
+devbench cf report.csv --sort-by revenue --sort-desc --to json</code></pre>
+  </section>
+
+  <section>
+    <h2>Install</h2>
+    <pre><code>pip install devbench
+# or
+brew install apeters247/devbench/devbench</code></pre>
+    <p>
+      <a href="/tools/devbench/">Back to ConfigForge homepage</a> ·
+      <a href="/tools/devbench/forge/seo/deduplicate-yaml-list-cli.html">--unique / --unique-by</a> ·
+      <a href="/tools/devbench/forge/seo/filter-yaml-array-by-field.html">--select</a> ·
+      <a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a>
+    </p>
+  </section>
+</main>
+</body>
+</html>

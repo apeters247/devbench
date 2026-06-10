@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Check If Key Exists in YAML / JSON — devbench cf --has | ConfigForge</title>
+  <meta name="description" content="Test whether a key or path exists in any config file with devbench cf config.yaml --has db.host (exit 0=found, 1=missing). Works in shell conditionals across YAML, JSON, TOML, and 8 more formats.">
+  <meta property="og:title" content="Check If Key Exists in YAML / JSON — devbench cf --has | ConfigForge">
+  <meta property="og:description" content="Shell-scriptable key-existence check for any config format. devbench cf config.yaml --has database.host — exit 0 if found, exit 1 if missing. No jq, no yq expressions.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/check-if-key-exists-yaml.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Check If Key Exists in YAML / JSON — devbench cf --has">
+  <meta name="twitter:description" content="devbench cf config.yaml --has db.host — exit 0/1 for use in shell conditionals. Works across YAML, JSON, TOML, INI, .env, and 6 more formats.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI config key-existence checker. Test whether a dotted path exists in YAML, JSON, TOML, INI, .env, XML, CSV, HCL, .properties, plist, JSONC. Exit 0=found, 1=missing.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<header>
+  <a href="/tools/devbench/">ConfigForge / Devbench</a> — 11-format config converter
+</header>
+
+<main>
+  <h1>Check If a Key Exists in YAML / JSON — <code>devbench cf --has</code></h1>
+  <p class="subtitle">
+    <code>devbench cf config.yaml --has database.host</code><br>
+    Exit 0 if the path exists, exit 1 if missing. Shell-scriptable across 11 config formats.
+  </p>
+
+  <section>
+    <h2>The Problem: Testing Key Existence in Shell Scripts</h2>
+    <p>Shell scripts often need to check whether a key exists before reading it. The yq/jq approaches are verbose and inconsistent:</p>
+    <pre><code># yq: check if key exists (verbose, fails for nested paths)
+if yq '.database.host' config.yaml | grep -q 'null'; then
+  echo "missing"
+fi
+
+# jq: check key exists
+if [ "$(jq '.database.host // empty' config.json)" = "" ]; then
+  echo "missing"
+fi</code></pre>
+    <p>Neither approach works across formats. ConfigForge's <code>--has</code> flag makes this trivial with a clean exit code:</p>
+  </section>
+
+  <section>
+    <h2>The Solution: <code>devbench cf --has PATH</code></h2>
+    <pre><code># Check if a key exists — exit 0 = found, exit 1 = missing
+devbench cf config.yaml --has database.host
+
+# Use in a shell conditional
+if devbench cf config.yaml --has database.host; then
+  echo "host is configured"
+fi
+
+# Check nested path
+devbench cf k8s.yaml --has spec.template.spec.containers
+
+# Machine-readable output (prints true/false as JSON)
+devbench cf config.yaml --has feature.flags.dark_mode --raw</code></pre>
+  </section>
+
+  <section>
+    <h2>Works Across All 11 Config Formats</h2>
+    <pre><code># YAML
+devbench cf app.yaml --has server.port
+
+# TOML
+devbench cf Cargo.toml --has dependencies.serde
+
+# JSON
+devbench cf package.json --has devDependencies.typescript
+
+# .env
+devbench cf .env --has DATABASE_URL
+
+# INI
+devbench cf config.ini --has database.host
+
+# TOML → check then convert
+if devbench cf pyproject.toml --has tool.ruff; then
+  devbench cf pyproject.toml --get tool.ruff --to json
+fi</code></pre>
+  </section>
+
+  <section>
+    <h2>Example: CI Guard Before Deployment</h2>
+    <p>Input <code>deploy.yaml</code>:</p>
+    <pre><code>app:
+  name: my-service
+  version: 1.2.0
+database:
+  host: db.internal
+  port: 5432</code></pre>
+
+    <p>Guard script:</p>
+    <pre><code>#!/bin/bash
+# Abort deploy if database credentials are not configured
+for required_key in database.host database.port app.name; do
+  if ! devbench cf deploy.yaml --has "$required_key"; then
+    echo "ERROR: missing required config key: $required_key"
+    exit 1
+  fi
+done
+echo "Config OK — all required keys present"</code></pre>
+  </section>
+
+  <section>
+    <h2>Combine with --get and --default</h2>
+    <pre><code># Check first, then safely read with a fallback
+if devbench cf config.yaml --has cache.ttl; then
+  TTL=$(devbench cf config.yaml --get cache.ttl)
+else
+  TTL=300
+fi
+
+# Or just use --default to handle missing keys gracefully
+TTL=$(devbench cf config.yaml --get cache.ttl --default 300)</code></pre>
+  </section>
+
+  <section>
+    <h2>Install</h2>
+    <pre><code>pip install devbench
+# or
+brew install apeters247/devbench/devbench</code></pre>
+    <p>
+      <a href="/tools/devbench/">Back to ConfigForge homepage</a> ·
+      <a href="/tools/devbench/forge/seo/get-default-value-cli.html">--get --default</a> ·
+      <a href="/tools/devbench/forge/seo/filter-yaml-array-by-field.html">--select</a> ·
+      <a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a>
+    </p>
+  </section>
+</main>
+</body>
+</html>

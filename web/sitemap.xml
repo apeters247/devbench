@@ -312,5 +312,20 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/check-if-key-exists-yaml.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/sort-yaml-list-by-field.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/deduplicate-yaml-list-cli.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
 
 </urlset>

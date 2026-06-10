@@ -306,6 +306,10 @@ def _build_parser() -> argparse.ArgumentParser:
                                 help="YAML 1.2 booleans: only true/false (not yes/no/on/off)")
             tool_p.add_argument("--template-safe", action="store_true", dest="template_safe",
                                 help="Pre-quote Jinja/Helm/Ansible {{ var }} values in YAML before parsing")
+            tool_p.add_argument("--block-scalars", action="store_true", dest="block_scalars",
+                                help="Force multiline strings to use YAML block scalar style (|) in output. "
+                                     "Prevents yq-style corruption of strings with trailing spaces. "
+                                     "Example: devbench cf config.yaml -t yaml --block-scalars")
             tool_p.add_argument("--sort-keys", action="store_true", help="Sort keys in output")
             tool_p.add_argument("--sort-keys-reverse", action="store_true", dest="sort_keys_reverse",
                                 help="Sort keys in reverse order (yq#2390 alternative to sort_keys(.) | reverse)")
@@ -827,6 +831,8 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
         options["yaml12"] = True
     if hasattr(args, "template_safe") and args.template_safe:
         options["template_safe"] = True
+    if hasattr(args, "block_scalars") and args.block_scalars:
+        options["block_scalars"] = True
     if hasattr(args, "sort_keys") and args.sort_keys:
         options["sort_keys"] = True
     if hasattr(args, "sort_keys_reverse") and args.sort_keys_reverse:
@@ -1459,6 +1465,8 @@ def _cf_serialize_options(args) -> dict:
         opts["sort_keys_reverse"] = True
     if getattr(args, "no_comments", False):
         opts["preserve_comments"] = False
+    if getattr(args, "block_scalars", False):
+        opts["block_scalars"] = True
     return opts
 
 
@@ -3623,9 +3631,10 @@ _CF_FLAGS = (
     "--recursive -R --pick --select --each --grep --grep-case-sensitive "
     "--flatten --unflatten --sep --env-expand "
     "--batch --stream --output-dir --sort-keys --sort-keys-reverse --indent "
-    "--flatten-xml --no-comments --yaml12 --template-safe "
+    "--sort-by --sort-desc --unique --unique-by "
+    "--flatten-xml --no-comments --yaml12 --template-safe --block-scalars "
     "--null-handling --list-formats --check-env --schema --mask --mask-value --assert "
-    "--path-exists --shell-export --compact -c --template --wrap-in "
+    "--path-exists --shell-export --bash-arrays --compact -c --template --wrap-in "
     "--csv-delimiter --tsv --schema-gen --replace-value "
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
@@ -3697,7 +3706,8 @@ _devbench_complete() {{
                     return 0 ;;
                 --port|--api-port|--get|--set|--delete|--count|--type|--pick|--grep|--append|\
                 --each|--select|--default|--rename|--assert|--mask|--mask-value|--path-exists|\
-                --backup|--sep|--indent|--replace-value|--wrap-in|--template|--csv-delimiter)
+                --backup|--sep|--indent|--replace-value|--wrap-in|--template|--csv-delimiter|\
+                --has|--sort-by|--unique-by|--schema-gen)
                     return 0 ;;
             esac
             if [[ "$cur" == -* ]]; then
@@ -3808,6 +3818,7 @@ _devbench() {{
                         '--no-comments[Strip comments from output]' \\
                         '--yaml12[YAML 1.2 mode: only true/false are booleans]' \\
                         '--template-safe[Quote Jinja/Helm/Ansible template expressions]' \\
+                        '--block-scalars[Force YAML block scalar (|) style for multiline strings]' \\
                         '--null-handling=[Null handling strategy]:mode:(skip comment empty error)' \\
                         '--list-formats[List all supported formats]' \\
                         '--check-env[Show environment info (Python, formats, deps)]' \\
@@ -3816,7 +3827,13 @@ _devbench() {{
                         '--mask-value=[Replacement text for masked values]:text:' \\
                         '--assert=[Assert PATH=VALUE (exit 0=pass, 1=fail)]:assertion:' \\
                         '--path-exists=[Check if a path exists in the config]:path:' \\
+                        '--has=[Check if a key path exists (exit 0=found, 1=missing)]:path:' \\
                         '--shell-export[Output as shell export KEY=VALUE statements]' \\
+                        '--bash-arrays[Use bash declare -a syntax for array values with --shell-export]' \\
+                        '--sort-by=[Sort list by a field value]:field:' \\
+                        '--sort-desc[Reverse sort order for --sort-by (descending)]' \\
+                        '--unique[Deduplicate list items]' \\
+                        '--unique-by=[Deduplicate list of objects by a field]:field:' \\
                         '--compact[Compact/minified JSON output (no whitespace)]' \\
                         '-c[Compact/minified JSON output (no whitespace)]' \\
                         '--template=[Render template file using config as context]:template:_files' \\
@@ -3916,6 +3933,12 @@ complete -c devbench -n __devbench_seen_cf -l sep              -d 'Key separator
 complete -c devbench -n __devbench_seen_cf -l env-expand       -d 'Expand ${{VAR}} env references'
 complete -c devbench -n __devbench_seen_cf -l sort-keys        -d 'Sort keys alphabetically'
 complete -c devbench -n __devbench_seen_cf -l sort-keys-reverse -d 'Sort keys in reverse alphabetical order'
+complete -c devbench -n __devbench_seen_cf -l has              -d 'Check if key path exists (exit 0=found, 1=missing)'  -r
+complete -c devbench -n __devbench_seen_cf -l sort-by          -d 'Sort list by a field value'  -r
+complete -c devbench -n __devbench_seen_cf -l sort-desc        -d 'Reverse sort order for --sort-by (descending)'
+complete -c devbench -n __devbench_seen_cf -l unique           -d 'Deduplicate list items'
+complete -c devbench -n __devbench_seen_cf -l unique-by        -d 'Deduplicate object list by a field'  -r
+complete -c devbench -n __devbench_seen_cf -l bash-arrays      -d 'Use bash declare -a syntax with --shell-export'
 
 # cf: batch flags
 complete -c devbench -n __devbench_seen_cf -l batch      -d 'Treat input as glob pattern'
@@ -3928,6 +3951,7 @@ complete -c devbench -n __devbench_seen_cf -l flatten-xml   -d 'Flatten nested X
 complete -c devbench -n __devbench_seen_cf -l no-comments   -d 'Strip comments'
 complete -c devbench -n __devbench_seen_cf -l yaml12        -d 'YAML 1.2 (true/false only)'
 complete -c devbench -n __devbench_seen_cf -l template-safe -d 'Quote Jinja/Helm/Ansible templates'
+complete -c devbench -n __devbench_seen_cf -l block-scalars -d 'Force | block scalar style for multiline strings'
 complete -c devbench -n __devbench_seen_cf -l null-handling -d 'Null handling mode'   -r -f -a 'skip comment empty error'
 
 # cf: in-place edit
@@ -3950,6 +3974,8 @@ complete -c devbench -n __devbench_seen_cf -l template     -d 'Render template f
 complete -c devbench -n __devbench_seen_cf -l wrap-in      -d 'Wrap config under a dotted key path'           -r
 complete -c devbench -n __devbench_seen_cf -l csv-delimiter -d 'Override CSV field delimiter (\\t, |, ;)'       -r
 complete -c devbench -n __devbench_seen_cf -l tsv          -d 'Treat input as tab-separated (TSV)'
+complete -c devbench -n __devbench_seen_cf -l schema-gen   -d 'Generate JSON Schema Draft 7 from config structure'
+complete -c devbench -n __devbench_seen_cf -l replace-value -d 'Find and replace all matching values (OLD NEW)'  -r
 complete -c devbench -n __devbench_seen_cf -l serve        -d 'Launch the web UI'
 complete -c devbench -n __devbench_seen_cf -l port         -d 'Web UI port (default 8080)'  -r
 complete -c devbench -n __devbench_seen_cf -l api          -d 'Launch JSON HTTP API'

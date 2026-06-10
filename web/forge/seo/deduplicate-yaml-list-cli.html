@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Deduplicate YAML / JSON List — devbench cf --unique | ConfigForge</title>
+  <meta name="description" content="Remove duplicate items from a YAML or JSON list in one command. devbench cf tags.yaml --unique or --unique-by FIELD for object lists. Works across 11 config formats, no jq expressions.">
+  <meta property="og:title" content="Deduplicate YAML / JSON List — devbench cf --unique | ConfigForge">
+  <meta property="og:description" content="Remove duplicate values or deduplicate object lists by a field. devbench cf tags.yaml --unique — replaces jq unique_by(.) across YAML, JSON, TOML and 8 more formats.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/deduplicate-yaml-list-cli.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Deduplicate YAML / JSON List — devbench cf --unique">
+  <meta name="twitter:description" content="devbench cf tags.yaml --unique — remove duplicate list items. --unique-by FIELD for object lists. No jq expressions.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench / ConfigForge",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "CLI tool to deduplicate YAML/JSON lists. Remove duplicate scalar values with --unique or deduplicate object lists by a specific field with --unique-by. Works across 11 config formats.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "19.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+<body>
+<header>
+  <a href="/tools/devbench/">ConfigForge / Devbench</a> — 11-format config converter
+</header>
+
+<main>
+  <h1>Deduplicate YAML / JSON List — <code>devbench cf --unique</code></h1>
+  <p class="subtitle">
+    <code>devbench cf tags.yaml --unique</code><br>
+    Remove duplicate values from any list. Use <code>--unique-by FIELD</code> for object lists.
+  </p>
+
+  <section>
+    <h2>The Problem: Deduplicating Lists in yq / jq</h2>
+    <p>Removing duplicates from a YAML or JSON list requires remembering expression syntax:</p>
+    <pre><code># jq: deduplicate a list of strings
+jq '. | unique' tags.json
+
+# jq: deduplicate objects by a field
+jq '. | unique_by(.name)' services.json
+
+# yq: deduplicate (yq doesn't have unique_by natively — needs complex expression)
+yq '. | map(select(. != null)) | unique_by(.)' tags.yaml</code></pre>
+    <p>These don't work across formats and the object-dedup syntax is easy to forget.</p>
+  </section>
+
+  <section>
+    <h2>The Solution: <code>--unique</code> and <code>--unique-by FIELD</code></h2>
+    <pre><code># Deduplicate a list of strings
+devbench cf tags.yaml --unique
+
+# Deduplicate a list of objects by a field (keep first occurrence)
+devbench cf services.yaml --unique-by name
+
+# Navigate then deduplicate
+devbench cf log.json --get events --unique
+
+# Deduplicate Kubernetes pods by node name
+devbench cf pods.yaml --get items --unique-by spec.nodeName
+
+# Combine: deduplicate, then sort
+devbench cf services.yaml --unique-by name --sort-by name</code></pre>
+  </section>
+
+  <section>
+    <h2>Example: Deduplicate Tags List</h2>
+    <p>Input <code>tags.yaml</code>:</p>
+    <pre><code>tags:
+  - python
+  - backend
+  - python
+  - api
+  - backend
+  - python</code></pre>
+
+    <pre><code>devbench cf tags.yaml --get tags --unique</code></pre>
+
+    <p>Output:</p>
+    <pre><code>- python
+- backend
+- api</code></pre>
+  </section>
+
+  <section>
+    <h2>Example: Deduplicate Services by Name</h2>
+    <p>Input <code>services.yaml</code>:</p>
+    <pre><code>services:
+  - name: auth
+    port: 8080
+    region: us-east
+  - name: api
+    port: 8081
+    region: us-west
+  - name: auth
+    port: 8080
+    region: eu-west</code></pre>
+
+    <pre><code>devbench cf services.yaml --get services --unique-by name</code></pre>
+
+    <p>Output (first occurrence of each name kept):</p>
+    <pre><code>- name: auth
+  port: 8080
+  region: us-east
+- name: api
+  port: 8081
+  region: us-west</code></pre>
+  </section>
+
+  <section>
+    <h2>Compose with Other List Flags</h2>
+    <pre><code># Filter, then deduplicate by name
+devbench cf pods.yaml --get items --select status.phase=Running --unique-by metadata.name
+
+# Deduplicate log entries then sort by timestamp
+devbench cf events.json --get items --unique-by id --sort-by timestamp
+
+# Extract unique tag names from a list of objects
+devbench cf releases.yaml --get releases --unique-by tag --each tag</code></pre>
+  </section>
+
+  <section>
+    <h2>Install</h2>
+    <pre><code>pip install devbench
+# or
+brew install apeters247/devbench/devbench</code></pre>
+    <p>
+      <a href="/tools/devbench/">Back to ConfigForge homepage</a> ·
+      <a href="/tools/devbench/forge/seo/sort-yaml-list-by-field.html">--sort-by</a> ·
+      <a href="/tools/devbench/forge/seo/filter-yaml-array-by-field.html">--select</a> ·
+      <a href="/tools/devbench/forge/seo/vs-yq.html">ConfigForge vs yq</a>
+    </p>
+  </section>
+</main>
+</body>
+</html>
