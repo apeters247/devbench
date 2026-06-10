@@ -1671,7 +1671,7 @@ def test_get_malformed_input_clean_error(tmp_path, capsys):
     from core.configforge import main
     f = tmp_path / "bad.yaml"
     f.write_text("key: : invalid: :\n")
-    rc = main([str(f), "--get", "key", "-f", "yaml"])
+    rc = main([str(f), "--get", "key", "--from", "yaml"])
     captured = capsys.readouterr()
     assert rc == 1
     assert captured.err.startswith("error:")
@@ -1683,7 +1683,7 @@ def test_set_malformed_input_returns_1(tmp_path, capsys):
     from core.configforge import main
     f = tmp_path / "bad.yaml"
     f.write_text("key: : invalid: :\n")
-    rc = main([str(f), "--set", "key", "val", "-f", "yaml"])
+    rc = main([str(f), "--set", "key", "val", "--from", "yaml"])
     captured = capsys.readouterr()
     assert rc == 1
     assert captured.err.startswith("error:")
@@ -1695,7 +1695,7 @@ def test_delete_malformed_input_returns_1(tmp_path, capsys):
     from core.configforge import main
     f = tmp_path / "bad.yaml"
     f.write_text("key: : invalid: :\n")
-    rc = main([str(f), "--delete", "key", "-f", "yaml"])
+    rc = main([str(f), "--delete", "key", "--from", "yaml"])
     captured = capsys.readouterr()
     assert rc == 1
     assert captured.err.startswith("error:")
@@ -1709,7 +1709,7 @@ def test_merge_malformed_base_returns_1(tmp_path, capsys):
     base.write_text("key: : invalid: :\n")
     overlay = tmp_path / "overlay.yaml"
     overlay.write_text("key: value\n")
-    rc = main([str(base), "--merge", str(overlay), "-f", "yaml"])
+    rc = main([str(base), "--merge", str(overlay), "--from", "yaml"])
     captured = capsys.readouterr()
     assert rc == 1
     assert captured.err.startswith("error:")
@@ -1723,7 +1723,7 @@ def test_merge_malformed_overlay_returns_1(tmp_path, capsys):
     base.write_text("host: localhost\n")
     overlay = tmp_path / "bad_overlay.yaml"
     overlay.write_text("key: : invalid: :\n")
-    rc = main([str(base), "--merge", str(overlay), "-f", "yaml"])
+    rc = main([str(base), "--merge", str(overlay), "--from", "yaml"])
     captured = capsys.readouterr()
     assert rc == 1
     assert "error" in captured.err
@@ -2679,6 +2679,68 @@ def test_main_each_not_a_list_error(tmp_path, capsys):
     assert "error" in capsys.readouterr().err.lower()
 
 
+def test_main_select_count_composition(tmp_path, capsys):
+    """--select --count . counts matching items after filtering."""
+    from core.cli import main as cli_main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: pod-a\n  status: Running\n"
+        "- name: pod-b\n  status: Pending\n"
+        "- name: pod-c\n  status: Running\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "status=Running", "--count", "."])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "2"
+
+
+# ── --select regex tests ─────────────────────────────────────────────────────
+
+def test_select_regex_match(tmp_path, capsys):
+    """--select FIELD=/pattern/ keeps items whose field matches the regex."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: web-frontend\n  status: Running\n"
+        "- name: api-backend\n  status: CrashLoopBackOff\n"
+        "- name: web-proxy\n  status: Running\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "name=/^web/", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert len(result) == 2
+    assert all(item["name"].startswith("web") for item in result)
+
+
+def test_select_regex_not_match(tmp_path, capsys):
+    """--select FIELD!=/pattern/ excludes items whose field matches the regex."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: web-frontend\n  status: Running\n"
+        "- name: api-backend\n  status: Running\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "name!=/^web/", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert len(result) == 1
+    assert result[0]["name"] == "api-backend"
+
+
+def test_select_regex_case_insensitive(tmp_path, capsys):
+    """--select regex matching is case-insensitive."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "items.yaml"
+    src.write_text("- name: Alpha\n- name: BETA\n- name: gamma\n")
+    rc = cli_main(["cf", str(src), "--select", "name=/alpha/", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert len(result) == 1
+    assert result[0]["name"] == "Alpha"
+
+
 # ── --wrap-in tests ──────────────────────────────────────────────────────────
 
 def test_wrap_in_simple_key(tmp_path, capsys):
@@ -2758,3 +2820,195 @@ def test_wrap_in_stdin(capsys, monkeypatch):
     assert rc == 0
     result = json.loads(capsys.readouterr().out)
     assert result == {"data": {"key": "value"}}
+
+
+# -- Feature: INI --ini-quote-strings round-trip (yq issue #2456) --
+
+def test_ini_quote_strings_bare_values():
+    """Bare INI values get double-quoted when --ini-quote-strings is set."""
+    ini_in = "[theme]\ncolor = Default\nbg = ffffff\n"
+    r = convert(ini_in, "ini", from_fmt="ini", ini_quote_strings=True)
+    assert r["success"]
+    assert 'color = "Default"' in r["output"]
+    assert 'bg = "ffffff"' in r["output"]
+
+
+def test_ini_quote_strings_already_quoted_round_trip():
+    """Pre-quoted INI values don't get double-wrapped when --ini-quote-strings is set.
+
+    Addresses yq issue #2456: tools that write quoted INI values like
+    color_theme = "Default" must survive a round-trip without gaining
+    extra quotes (e.g. "\\\"Default\\\"").
+    """
+    ini_in = '[theme]\ncolor = "Default"\nbg = "#ffffff"\n'
+    r = convert(ini_in, "ini", from_fmt="ini", ini_quote_strings=True)
+    assert r["success"]
+    out = r["output"]
+    assert 'color = "Default"' in out, f"Expected single-quoted value, got: {out!r}"
+    assert '"Default"' in out and '\\\"' not in out
+
+
+def test_ini_quote_strings_numerics_not_quoted():
+    """Numeric and boolean INI values are not quoted even with --ini-quote-strings."""
+    ini_in = "[app]\nport = 8080\ndebug = true\nfactor = 3.14\n"
+    r = convert(ini_in, "ini", from_fmt="ini", ini_quote_strings=True)
+    assert r["success"]
+    out = r["output"]
+    assert "port = 8080" in out
+    assert "debug = true" in out
+    assert "factor = 3.14" in out
+
+
+# ── --select /regex/ + --each / --join composition tests ────────────────────
+
+def test_each_with_select_regex(tmp_path, capsys):
+    """--select FIELD=/regex/ --each extracts field from regex-matching items only."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: web-frontend\n  status: Running\n"
+        "- name: api-backend\n  status: CrashLoopBackOff\n"
+        "- name: web-proxy\n  status: Running\n"
+        "- name: db\n  status: Pending\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "name=/^web/", "--each", "name", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert sorted(result) == ["web-frontend", "web-proxy"]
+
+
+def test_each_with_select_regex_not_match(tmp_path, capsys):
+    """--select FIELD!=/regex/ --each excludes regex-matching items before extracting."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "services.yaml"
+    src.write_text(
+        "- name: nginx\n  port: 80\n"
+        "- name: internal-api\n  port: 8080\n"
+        "- name: internal-db\n  port: 5432\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "name!=/^internal/", "--each", "name", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert result == ["nginx"]
+
+
+def test_join_with_select_regex(tmp_path, capsys):
+    """--select FIELD=/regex/ --join filters before joining."""
+    from core.cli import main as cli_main
+    src = tmp_path / "items.yaml"
+    src.write_text(
+        "- host: web-01.prod\n  ip: 10.0.0.1\n"
+        "- host: db-01.prod\n  ip: 10.0.0.2\n"
+        "- host: web-02.prod\n  ip: 10.0.0.3\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "host=/^web/", "--join", "host", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "web-01.prod" in out
+    assert "web-02.prod" in out
+    assert "db-01.prod" not in out
+
+
+def test_each_select_regex_case_insensitive(tmp_path, capsys):
+    """--select regex matching is case-insensitive in --each composition."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: Alpha\n  env: PROD\n"
+        "- name: Beta\n  env: dev\n"
+        "- name: Gamma\n  env: Prod\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "env=/prod/", "--each", "name", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert sorted(result) == ["Alpha", "Gamma"]
+
+
+# ── --select + --sort-by / --unique composition tests ───────────────────────
+
+def test_select_then_sort_by(tmp_path, capsys):
+    """--select filters before --sort-by; both flags compose correctly."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: zeta\n  env: prod\n  replicas: 3\n"
+        "- name: alpha\n  env: prod\n  replicas: 1\n"
+        "- name: beta\n  env: staging\n  replicas: 2\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "env=prod", "--sort-by", "name", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert [r["name"] for r in result] == ["alpha", "zeta"]
+
+
+def test_select_then_sort_by_desc(tmp_path, capsys):
+    """--select --sort-by --sort-desc: filters then sorts descending."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "services.yaml"
+    src.write_text(
+        "- name: svc-a\n  tier: frontend\n  port: 80\n"
+        "- name: svc-b\n  tier: frontend\n  port: 443\n"
+        "- name: svc-c\n  tier: backend\n  port: 8080\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "tier=frontend", "--sort-by", "port", "--sort-desc", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert [r["port"] for r in result] == [443, 80]
+
+
+def test_select_then_unique_by(tmp_path, capsys):
+    """--select filters before --unique-by; both flags compose correctly."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- image: nginx\n  env: prod\n"
+        "- image: nginx\n  env: prod\n"
+        "- image: redis\n  env: prod\n"
+        "- image: nginx\n  env: dev\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "env=prod", "--unique-by", "image", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert len(result) == 2
+    assert sorted(r["image"] for r in result) == ["nginx", "redis"]
+
+
+def test_select_then_unique(tmp_path, capsys):
+    """--select filters before --unique; both flags compose correctly."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "items.yaml"
+    src.write_text(
+        "- name: a\n  active: true\n"
+        "- name: a\n  active: true\n"
+        "- name: b\n  active: true\n"
+        "- name: c\n  active: false\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "active=true", "--unique", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert len(result) == 2
+    assert sorted(r["name"] for r in result) == ["a", "b"]
+
+
+def test_select_regex_then_sort_by(tmp_path, capsys):
+    """--select /regex/ --sort-by: regex filter then sort composes correctly."""
+    import json as _json
+    from core.cli import main as cli_main
+    src = tmp_path / "pods.yaml"
+    src.write_text(
+        "- name: web-03\n  status: Running\n"
+        "- name: web-01\n  status: Running\n"
+        "- name: db-01\n  status: Running\n"
+        "- name: web-02\n  status: Pending\n"
+    )
+    rc = cli_main(["cf", str(src), "--select", "name=/^web/", "--sort-by", "name", "--to", "json"])
+    assert rc == 0
+    result = _json.loads(capsys.readouterr().out)
+    assert [r["name"] for r in result] == ["web-01", "web-02", "web-03"]

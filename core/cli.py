@@ -69,7 +69,6 @@ def main(argv: list[str] | None = None) -> int:
             return _main_dispatch(args, parser)
         finally:
             sys.stdout = _orig_stdout
-        return EXIT_SUCCESS  # unreachable; finally restores stdout
 
     return _main_dispatch(args, parser)
 
@@ -116,17 +115,21 @@ def _main_dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     if args.command == "cf" and getattr(args, "join_delim", None) is not None:
         return _run_cf_join(args)
 
-    # cf --select  → filter list items by field condition (check before --get)
-    if args.command == "cf" and getattr(args, "select_expr", None):
-        return _run_cf_select(args)
+    # cf --count + optional --select: count before select so both flags compose
+    if args.command == "cf" and getattr(args, "count", None):
+        return _run_cf_count(args)
 
-    # cf --sort-by FIELD → sort list by field value (must precede --get so --get + --sort-by composes)
+    # cf --sort-by FIELD → sort list by field value (must precede --select so --select + --sort-by composes)
     if args.command == "cf" and getattr(args, "sort_by", None):
         return _run_cf_sort_by(args)
 
-    # cf --unique / --unique-by FIELD → deduplicate list items (must precede --get so --get + --unique composes)
+    # cf --unique / --unique-by FIELD → deduplicate list items (must precede --select so --select + --unique composes)
     if args.command == "cf" and (getattr(args, "unique", False) or getattr(args, "unique_by", None)):
         return _run_cf_unique(args)
+
+    # cf --select  → filter list items by field condition (check before --get)
+    if args.command == "cf" and getattr(args, "select_expr", None):
+        return _run_cf_select(args)
 
     # cf CRUD / merge ops — read input themselves (file path or stdin)
     if args.command == "cf" and getattr(args, "get", None):
@@ -143,8 +146,6 @@ def _main_dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         return _run_cf_merge(args)
     if args.command == "cf" and getattr(args, "diff", None):
         return _run_cf_diff(args)
-    if args.command == "cf" and getattr(args, "count", None):
-        return _run_cf_count(args)
     if args.command == "cf" and getattr(args, "length_path", None):
         return _run_cf_length(args)
     if args.command == "cf" and getattr(args, "type_path", None):
@@ -250,10 +251,10 @@ def _main_dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     
     try:
         parsed_result = json.loads(result_str)
-        if parsed_result.get("error"):
+        if parsed_result.get("error") or parsed_result.get("metadata", {}).get("success") is False:
             return EXIT_ERROR
     except json.JSONDecodeError:
-        pass # Not a JSON result, assume success if no other errors.
+        pass  # Not a JSON result, assume success if no other errors.
 
     return EXIT_SUCCESS
 
@@ -587,10 +588,11 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--sort-by", metavar="FIELD", default=None, dest="sort_by",
                                 help="Sort a list of objects by a field value. FIELD is a dot-notation path. "
                                      "Strings sort alphabetically, numbers numerically. Items missing FIELD sort last. "
+                                     "Use comma-separated fields for multi-key sort: --sort-by team,score. "
                                      "Use --sort-desc to reverse. Combine with --get PATH to navigate to a nested list. "
                                      "Exit 0 = sorted output written, exit 1 = input is not a list. "
                                      "Example: devbench cf pods.yaml --sort-by metadata.name "
-                                     "         devbench cf deploy.yaml --sort-by spec.replicas --sort-desc")
+                                     "         devbench cf scores.yaml --sort-by team,score --sort-desc")
             tool_p.add_argument("--sort-desc", action="store_true", default=False, dest="sort_desc",
                                 help="Reverse the sort order for --sort-by (descending instead of ascending).")
             tool_p.add_argument("--unique", action="store_true", default=False, dest="unique",
@@ -2062,6 +2064,7 @@ def _run_cf_count(args) -> int:
     """Count items at PATH: list length, dict key count, or 1 for scalars.
 
     Use '.' to count top-level keys. Outputs a plain integer for shell scripts.
+    Composes with --select: filters the list before counting.
     """
     from . import configforge as _cf
     content, _ = _cf_read_file_or_content(args)
@@ -2075,6 +2078,11 @@ def _run_cf_count(args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
     data = parsed.get("data", parsed)
+
+    # Apply --select filter before counting when both are specified
+    if getattr(args, "select_expr", None) and isinstance(data, list):
+        data = _apply_select_filter(data, args.select_expr, _cf)
+
     path = args.count
     if path == ".":
         val = data
@@ -3365,7 +3373,13 @@ def _run_cf_select(args) -> int:
 
 
 def _apply_select_filter(data: list, select_expr: str, _cf) -> list:
-    """Filter a list by a --select FIELD=VALUE / FIELD!=VALUE / FIELD~VALUE / FIELD!~VALUE expression."""
+    """Filter a list by a --select expression.
+
+    Supports FIELD=VALUE, FIELD!=VALUE, FIELD=/regex/, FIELD!=/regex/,
+    FIELD~VALUE (array-contains), FIELD!~VALUE (array-not-contains).
+    Prints an error and returns an empty list for unrecognised expressions.
+    """
+    import re as _re
     if "!~" in select_expr:
         field, raw_val = select_expr.split("!~", 1)
         op = "not_contains"
@@ -3379,9 +3393,24 @@ def _apply_select_filter(data: list, select_expr: str, _cf) -> list:
         field, raw_val = select_expr.split("=", 1)
         op = "eq"
     else:
-        return data  # unrecognised expression: return unmodified
+        import sys as _sys
+        print(f"error: invalid --select expression {select_expr!r}; "
+              "expected FIELD=VALUE, FIELD!=VALUE, FIELD=/regex/, FIELD~VALUE, or FIELD!~VALUE",
+              file=_sys.stderr)
+        return []
 
-    coerced_val = _cf._coerce_set_value(raw_val)
+    # Detect /pattern/ regex syntax for eq and neq operators
+    regex_pat = None
+    if op in ("eq", "neq") and raw_val.startswith("/") and raw_val.endswith("/") and len(raw_val) >= 2:
+        import sys as _sys
+        try:
+            regex_pat = _re.compile(raw_val[1:-1], _re.IGNORECASE)
+            op = "regex_match" if op == "eq" else "regex_not_match"
+        except _re.error as exc:
+            print(f"error: invalid regex {raw_val!r}: {exc}", file=_sys.stderr)
+            return []
+
+    coerced_val = _cf._coerce_set_value(raw_val) if regex_pat is None else None
 
     def _matches(item):
         if not isinstance(item, dict):
@@ -3390,6 +3419,10 @@ def _apply_select_filter(data: list, select_expr: str, _cf) -> list:
             item_val = _cf._get_by_path(item, field)
         except (KeyError, IndexError, TypeError):
             return False
+        if op == "regex_match":
+            return bool(regex_pat.search(str(item_val)))
+        if op == "regex_not_match":
+            return not regex_pat.search(str(item_val))
         if op == "eq":
             return item_val == coerced_val
         if op == "neq":
@@ -3486,8 +3519,8 @@ def _run_cf_each(args) -> int:
     compact = getattr(args, "compact", False)
     raw = getattr(args, "raw", False)
 
-    # Scalar list with --raw: one value per line
-    if raw and all(not isinstance(v, (dict, list)) for v in extracted):
+    # Scalar list with --raw: one value per line (but respect explicit --to format)
+    if raw and getattr(args, "to", None) is None and all(not isinstance(v, (dict, list)) for v in extracted):
         for v in extracted:
             sys.stdout.write(str(v) + "\n")
         return EXIT_SUCCESS
@@ -3736,24 +3769,58 @@ def _run_cf_sort_by(args) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return EXIT_ERROR
 
+    if getattr(args, "select_expr", None):
+        data = _apply_select_filter(data, args.select_expr, _cf)
+
     if not isinstance(data, list):
         print("error: --sort-by requires a list; input is not a list (use --get PATH to navigate to one)",
               file=sys.stderr)
         return EXIT_ERROR
 
-    field = args.sort_by
+    # Apply --unique / --unique-by before sorting when both flags are set
+    unique_by_field = getattr(args, "unique_by", None)
+    if unique_by_field:
+        seen_ub: set = set()
+        deduped = []
+        for item in data:
+            try:
+                val = _cf._get_by_path(item, unique_by_field)
+                key = repr(val)
+            except (KeyError, IndexError, TypeError):
+                key = None
+            if key is None or key not in seen_ub:
+                if key is not None:
+                    seen_ub.add(key)
+                deduped.append(item)
+        data = deduped
+    elif getattr(args, "unique", False):
+        seen_exact: set = set()
+        deduped_exact = []
+        for item in data:
+            fingerprint = json.dumps(item, sort_keys=True, default=str)
+            if fingerprint not in seen_exact:
+                seen_exact.add(fingerprint)
+                deduped_exact.append(item)
+        data = deduped_exact
+
+    fields = [f.strip() for f in args.sort_by.split(",") if f.strip()]
     desc = getattr(args, "sort_desc", False)
 
     def _sort_key(item):
-        try:
-            val = _cf._get_by_path(item, field)
-        except (KeyError, IndexError, TypeError):
-            return (2, "")  # items without the field sort last
-        if isinstance(val, bool):
-            return (1, int(val))
-        if isinstance(val, (int, float)):
-            return (0, val)
-        return (1, str(val))
+        result = []
+        for f in fields:
+            try:
+                val = _cf._get_by_path(item, f)
+            except (KeyError, IndexError, TypeError):
+                result += [2, ""]  # missing fields sort last
+                continue
+            if isinstance(val, bool):
+                result += [1, int(val)]
+            elif isinstance(val, (int, float)):
+                result += [0, val]
+            else:
+                result += [1, str(val)]
+        return tuple(result)
 
     sorted_data = sorted(data, key=_sort_key, reverse=desc)
     try:
@@ -3798,6 +3865,9 @@ def _run_cf_unique(args) -> int:
                 return EXIT_SUCCESS
             print(f"error: {exc}", file=sys.stderr)
             return EXIT_ERROR
+
+    if getattr(args, "select_expr", None):
+        data = _apply_select_filter(data, args.select_expr, _cf)
 
     if not isinstance(data, list):
         print("error: --unique/--unique-by requires a list; input is not a list (use --get PATH to navigate to one)",
