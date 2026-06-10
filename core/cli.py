@@ -3364,6 +3364,45 @@ def _run_cf_select(args) -> int:
     return EXIT_SUCCESS
 
 
+def _apply_select_filter(data: list, select_expr: str, _cf) -> list:
+    """Filter a list by a --select FIELD=VALUE / FIELD!=VALUE / FIELD~VALUE / FIELD!~VALUE expression."""
+    if "!~" in select_expr:
+        field, raw_val = select_expr.split("!~", 1)
+        op = "not_contains"
+    elif "!=" in select_expr:
+        field, raw_val = select_expr.split("!=", 1)
+        op = "neq"
+    elif "~" in select_expr:
+        field, raw_val = select_expr.split("~", 1)
+        op = "contains"
+    elif "=" in select_expr:
+        field, raw_val = select_expr.split("=", 1)
+        op = "eq"
+    else:
+        return data  # unrecognised expression: return unmodified
+
+    coerced_val = _cf._coerce_set_value(raw_val)
+
+    def _matches(item):
+        if not isinstance(item, dict):
+            return False
+        try:
+            item_val = _cf._get_by_path(item, field)
+        except (KeyError, IndexError, TypeError):
+            return False
+        if op == "eq":
+            return item_val == coerced_val
+        if op == "neq":
+            return item_val != coerced_val
+        if op == "contains":
+            return isinstance(item_val, list) and coerced_val in item_val
+        if op == "not_contains":
+            return not (isinstance(item_val, list) and coerced_val in item_val)
+        return False
+
+    return [item for item in data if _matches(item)]
+
+
 def _run_cf_each(args) -> int:
     """Extract a field (KEY) from every element in a list and output the results.
 
@@ -3404,46 +3443,8 @@ def _run_cf_each(args) -> int:
             return EXIT_ERROR
 
     # Apply --select filter before --each if both are present
-    if getattr(args, "select_expr", None):
-        expr = args.select_expr
-        if "!~" in expr:
-            field, raw_val = expr.split("!~", 1)
-            op = "not_contains"
-        elif "!=" in expr:
-            field, raw_val = expr.split("!=", 1)
-            op = "neq"
-        elif "~" in expr:
-            field, raw_val = expr.split("~", 1)
-            op = "contains"
-        elif "=" in expr:
-            field, raw_val = expr.split("=", 1)
-            op = "eq"
-        else:
-            print(f"error: invalid --select expression {expr!r}; "
-                  "expected FIELD=VALUE, FIELD!=VALUE, FIELD~VALUE, or FIELD!~VALUE",
-                  file=sys.stderr)
-            return EXIT_ERROR
-        coerced_val = _cf._coerce_set_value(raw_val)
-
-        def _item_matches(item):
-            if not isinstance(item, dict):
-                return False
-            try:
-                item_val = _cf._get_by_path(item, field)
-            except (KeyError, IndexError, TypeError):
-                return False
-            if op == "eq":
-                return item_val == coerced_val
-            if op == "neq":
-                return item_val != coerced_val
-            if op == "contains":
-                return isinstance(item_val, list) and coerced_val in item_val
-            if op == "not_contains":
-                return not (isinstance(item_val, list) and coerced_val in item_val)
-            return False
-
-        if isinstance(data, list):
-            data = [item for item in data if _item_matches(item)]
+    if getattr(args, "select_expr", None) and isinstance(data, list):
+        data = _apply_select_filter(data, args.select_expr, _cf)
 
     if not isinstance(data, list):
         print("error: --each requires a list; input is not a list (use --get PATH to navigate to one)",
@@ -3882,6 +3883,10 @@ def _run_cf_join(args) -> int:
         print("error: --join requires a list; input is not a list "
               "(use --get PATH to navigate to one)", file=sys.stderr)
         return EXIT_ERROR
+
+    # Apply --select filter before joining (mirrors _run_cf_each behaviour)
+    if getattr(args, "select_expr", None) and isinstance(data, list):
+        data = _apply_select_filter(data, args.select_expr, _cf)
 
     # Expand escape sequences in delimiter
     delim_raw = args.join_delim
