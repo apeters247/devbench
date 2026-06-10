@@ -283,6 +283,16 @@
 
   <!-- SEO — new features -->
   <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/replace-value-yaml-cli.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/positional-merge-yaml-lists.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://naxiai.com/tools/devbench/forge/seo/merge-yaml-files-cli.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
@@ -326,6 +336,11 @@
     <loc>https://naxiai.com/tools/devbench/forge/seo/deduplicate-yaml-list-cli.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/yaml-to-toml-converter.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
   </url>
 
 </urlset>

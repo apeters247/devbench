@@ -4973,6 +4973,36 @@ def test_cf_select_each_join_chain(tmp_path, capsys):
     assert out == "web1,web2"
 
 
+def test_cf_select_regex_with_each(tmp_path, capsys):
+    """--select with /regex/ pattern works when combined with --each."""
+    from core.cli import main
+    f = tmp_path / "services.yaml"
+    f.write_text(
+        "- name: web-prod\n  env: production\n"
+        "- name: api-prod\n  env: production\n"
+        "- name: worker-dev\n  env: development\n"
+    )
+    rc = main(["cf", str(f), "--select", "env=/prod/", "--each", "name", "--join", ","])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "web-prod,api-prod"
+
+
+def test_cf_select_regex_with_join(tmp_path, capsys):
+    """--select with /regex/ pattern works when combined with --join."""
+    from core.cli import main
+    f = tmp_path / "hosts.yaml"
+    f.write_text(
+        "- host: alpha-01\n- host: beta-01\n- host: alpha-02\n"
+    )
+    rc = main(["cf", str(f), "--select", "host=/^alpha/", "--each", "host", "--join", " "])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert "alpha-01" in out
+    assert "alpha-02" in out
+    assert "beta-01" not in out
+
+
 def test_cf_each_join_newline_delimiter(tmp_path, capsys):
     """--each --join with \\n escape outputs one value per line."""
     from core.cli import main
@@ -4990,24 +5020,23 @@ def test_cf_each_join_newline_delimiter(tmp_path, capsys):
 
 
 def test_dispatch_sort_by_before_unique(tmp_path, capsys):
-    """When --sort-by and --unique are both passed, sort-by fires (higher dispatch priority).
+    """When --sort-by and --unique are both passed, both compose: deduplicate then sort.
 
-    This is a regression guard: if the dispatch order changes so that --unique
-    fires before --sort-by, the output will be unsorted.
+    Regression guard: ensures --unique + --sort-by composes rather than one silently
+    shadowing the other in the dispatch chain.
     """
     import yaml
     from core.cli import main
     f = tmp_path / "items.yaml"
-    # Three items, two duplicates. sort-by fires first → output is sorted (duplicates kept).
-    # If unique fires first it would remove duplicates then sort-by would still sort —
-    # but the key is the result has 2 items not 3, catching the order change.
+    # Three items, two duplicates. Both flags should compose: unique removes duplicate 3,
+    # then sort-by orders by id → [1, 3].
     f.write_text("- id: 3\n- id: 1\n- id: 3\n")
     rc = main(["cf", str(f), "--sort-by", "id", "--unique", "--to", "yaml"])
     assert rc == 0
     out = capsys.readouterr().out.strip()
     data = yaml.safe_load(out)
-    # sort-by wins: all 3 items present, sorted by id
-    assert [d["id"] for d in data] == [1, 3, 3]
+    # both compose: duplicates removed and result sorted
+    assert [d["id"] for d in data] == [1, 3]
 
 
 def test_dispatch_select_before_sort_by(tmp_path, capsys):
@@ -5118,3 +5147,169 @@ def test_cf_quiet_get_suppresses_value(tmp_path, capsys):
     rc = main(["cf", str(f), "--get", "timeout", "--quiet"])
     assert rc == 0
     assert capsys.readouterr().out == ""
+
+
+# ═══════════════════════════════════════════════
+# DISPATCH ORDERING — cross-flag combinations
+# ═══════════════════════════════════════════════
+
+def test_cf_dispatch_sort_by_with_get(tmp_path, capsys):
+    """--get navigates first, then --sort-by sorts the result list."""
+    from core.cli import main
+    f = tmp_path / "data.yaml"
+    f.write_text("items:\n  - name: charlie\n  - name: alice\n  - name: bob\n")
+    rc = main(["cf", str(f), "--get", "items", "--sort-by", "name"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    names = [line.strip().lstrip("- ").replace("name: ", "") for line in out.splitlines() if "name:" in line]
+    assert names == ["alice", "bob", "charlie"]
+
+
+def test_cf_dispatch_unique_with_to(tmp_path, capsys):
+    """--unique deduplicates then --to converts output format."""
+    from core.cli import main
+    import json as _json
+    f = tmp_path / "data.yaml"
+    f.write_text("- alpha\n- beta\n- alpha\n- gamma\n")
+    rc = main(["cf", str(f), "--unique", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    result = _json.loads(out)
+    assert sorted(result) == ["alpha", "beta", "gamma"]
+
+
+def test_cf_dispatch_select_with_get(tmp_path, capsys):
+    """--select filters the list, then --get navigates inside each item."""
+    from core.cli import main
+    f = tmp_path / "pods.yaml"
+    f.write_text(
+        "- name: web-1\n  status: Running\n"
+        "- name: db-1\n  status: Pending\n"
+        "- name: web-2\n  status: Running\n"
+    )
+    rc = main(["cf", str(f), "--select", "status=Running", "--each", "name"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert "web-1" in out
+    assert "web-2" in out
+    assert "db-1" not in out
+
+
+def test_cf_dispatch_sort_desc_with_sort_by(tmp_path, capsys):
+    """--sort-by combined with --sort-desc produces descending order."""
+    from core.cli import main
+    f = tmp_path / "items.yaml"
+    f.write_text("- score: 10\n- score: 30\n- score: 20\n")
+    rc = main(["cf", str(f), "--sort-by", "score", "--sort-desc"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    # lines are '- score: 30', '- score: 20', '- score: 10'
+    scores = [int(line.strip().lstrip("- ").replace("score: ", "")) for line in out.splitlines() if "score:" in line]
+    assert scores == [30, 20, 10]
+
+
+def test_cf_dispatch_each_with_to(tmp_path, capsys):
+    """--each extracts a field from each item, --to converts output."""
+    from core.cli import main
+    import json as _json
+    f = tmp_path / "users.yaml"
+    f.write_text("- id: 1\n  role: admin\n- id: 2\n  role: user\n- id: 3\n  role: admin\n")
+    rc = main(["cf", str(f), "--each", "role", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    result = _json.loads(out)
+    assert result == ["admin", "user", "admin"]
+
+
+def test_cf_dispatch_sort_by_unique_by(tmp_path, capsys):
+    """--unique-by deduplicates then --sort-by sorts without shadowing either flag."""
+    from core.cli import main
+    import json as _json
+    f = tmp_path / "data.yaml"
+    f.write_text(
+        "- env: prod\n  region: us-east\n"
+        "- env: dev\n  region: us-west\n"
+        "- env: prod\n  region: eu-west\n"
+    )
+    rc = main(["cf", str(f), "--unique-by", "env", "--sort-by", "env", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    result = _json.loads(out)
+    assert len(result) == 2
+    assert [r["env"] for r in result] == ["dev", "prod"]
+
+
+def test_cf_dispatch_replace_value_with_to(tmp_path, capsys):
+    """--replace-value transforms content, then --to converts the output format."""
+    from core.cli import main
+    import json as _json
+    f = tmp_path / "config.yaml"
+    f.write_text("env: staging\nregion: us-east\n")
+    rc = main(["cf", str(f), "--replace-value", "staging", "production", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    result = _json.loads(out)
+    assert result["env"] == "production"
+    assert result["region"] == "us-east"
+
+
+def test_cf_dispatch_wrap_in_with_to(tmp_path, capsys):
+    """--wrap-in nests the document, then --to converts the result format."""
+    from core.cli import main
+    import json as _json
+    f = tmp_path / "data.yaml"
+    f.write_text("name: alice\nrole: admin\n")
+    rc = main(["cf", str(f), "--wrap-in", "user", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    result = _json.loads(out)
+    assert "user" in result
+    assert result["user"]["name"] == "alice"
+
+
+def test_cf_dispatch_get_with_to(tmp_path, capsys):
+    """--get extracts a nested value, then --to converts the extracted data."""
+    from core.cli import main
+    import json as _json
+    f = tmp_path / "config.yaml"
+    f.write_text("database:\n  host: localhost\n  port: 5432\n  name: mydb\n")
+    rc = main(["cf", str(f), "--get", "database", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    result = _json.loads(out)
+    assert result["host"] == "localhost"
+    assert result["port"] == 5432
+
+
+def test_cf_dispatch_hash_field_with_to(tmp_path, capsys):
+    """--hash-field replaces matching field values with hashes, then --to converts output."""
+    from core.cli import main
+    import json as _json
+    f = tmp_path / "users.yaml"
+    f.write_text("- id: 1\n  email: alice@example.com\n- id: 2\n  email: bob@example.com\n")
+    rc = main(["cf", str(f), "--hash-field", "email", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    result = _json.loads(out)
+    assert len(result) == 2
+    # email value should be replaced by a hash string, not the original address
+    assert result[0]["email"] != "alice@example.com"
+    assert result[0]["email"].startswith("sha256:")  # prefixed hash format
+
+
+def test_cf_dispatch_select_regex_with_each_and_to(tmp_path, capsys):
+    """--select /regex/ + --each + --to all compose without shadowing."""
+    from core.cli import main
+    import json as _json
+    f = tmp_path / "services.yaml"
+    f.write_text(
+        "- name: web-frontend\n  status: running\n"
+        "- name: db-primary\n  status: stopped\n"
+        "- name: web-backend\n  status: running\n"
+        "- name: cache\n  status: running\n"
+    )
+    rc = main(["cf", str(f), "--select", "name=/^web/", "--each", "name", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    result = _json.loads(out)
+    assert sorted(result) == ["web-backend", "web-frontend"]

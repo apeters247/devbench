@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>YAML to TOML Converter CLI — What yq Can't Do | devbench cf</title>
+  <meta name="description" content="Convert YAML to TOML from the command line. yq has never supported TOML output (issue #1364, open since 2020). devbench cf converts YAML to TOML natively with full type support — nested tables, arrays, booleans, comments. pip install devbench.">
+  <meta property="og:title" content="YAML to TOML Converter CLI — yq Can't Do This">
+  <meta property="og:description" content="yq has no TOML write support (open issue since 2020). devbench cf converts YAML→TOML natively. One command, offline, no jq required.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/yaml-to-toml-converter.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="YAML to TOML CLI Converter — yq Alternative with TOML Write Support">
+  <meta name="twitter:description" content="yq issue #1364: no TOML output. devbench cf adds it. Convert YAML to TOML offline in one command.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "11-format config file converter and 9 developer tools. Convert YAML to TOML, JSON, CSV, INI, .env, HCL, XML, plist, JSONC. Comment preservation, batch mode, offline.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>YAML to TOML Converter — The CLI Tool yq Never Built</h1>
+<br />
+<p>If you've tried to convert YAML to TOML using <strong>yq</strong>, you already know: it doesn't work. <a href="https://github.com/mikefarah/yq/issues/1364" rel="noopener">yq issue #1364</a> — "support TOML output" — has been open since 2020 with no resolution. yq can <em>read</em> TOML, but it cannot <em>write</em> it.</p>
+<br />
+<p><strong>devbench cf</strong> fills this gap. One command, native TOML output, full type fidelity, 100% offline.</p>
+<br />
+<pre><code class="language-bash"># Convert YAML to TOML — what yq can't do
+devbench cf config.yaml -t toml
+
+# From stdin
+cat config.yaml | devbench cf -f yaml -t toml
+
+# Batch: convert entire directory
+devbench cf "*.yaml" -t toml --out-dir ./toml-output/
+
+# Write to file
+devbench cf app.yaml -t toml > app.toml</code></pre>
+<br />
+<h2>Why yq Still Has No TOML Output</h2>
+<br />
+<p>mikefarah/yq is a Go tool. Its TOML write support has been blocked for years because Go's TOML libraries lack the round-trip precision needed to produce valid TOML from arbitrary YAML. Common failure modes:</p>
+<br />
+<ul>
+  <li>Inline tables serialized incorrectly</li>
+  <li>YAML merge keys (<code>&amp;anchor / *alias</code>) with no TOML equivalent</li>
+  <li>Null values (<code>~</code> / <code>null</code>) not representable in TOML</li>
+  <li>Multi-document YAML with no TOML counterpart</li>
+</ul>
+<br />
+<p><strong>devbench cf</strong> handles these edge cases explicitly — null values become empty strings or are omitted, anchors are resolved before conversion, and multi-document YAML is split into separate TOML outputs.</p>
+<br />
+<h2>Real-World Example: Kubernetes Deployment → TOML</h2>
+<br />
+<p><strong>Input: <code>deployment.yaml</code></strong></p>
+<br />
+<pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: production
+  labels:
+    app: my-app
+    version: "1.0.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    spec:
+      containers:
+        - name: app
+          image: my-app:1.0.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ENV
+              value: production
+            - name: LOG_LEVEL
+              value: info</code></pre>
+<br />
+<p><strong>Command:</strong></p>
+<br />
+<pre><code class="language-bash">devbench cf deployment.yaml -t toml</code></pre>
+<br />
+<p><strong>Output: <code>deployment.toml</code></strong></p>
+<br />
+<pre><code class="language-toml">apiVersion = "apps/v1"
+kind = "Deployment"
+
+[metadata]
+name = "my-app"
+namespace = "production"
+
+[metadata.labels]
+app = "my-app"
+version = "1.0.0"
+
+[spec]
+replicas = 3
+
+[spec.selector.matchLabels]
+app = "my-app"
+
+[[spec.template.spec.containers]]
+name = "app"
+image = "my-app:1.0.0"
+
+[[spec.template.spec.containers.ports]]
+containerPort = 8080
+
+[[spec.template.spec.containers.env]]
+name = "ENV"
+value = "production"
+
+[[spec.template.spec.containers.env]]
+name = "LOG_LEVEL"
+value = "info"</code></pre>
+<br />
+<h2>Example: Python pyproject.yaml → pyproject.toml</h2>
+<br />
+<p>Teams that author pyproject config in YAML and need to publish TOML (e.g. for Poetry or Hatch):</p>
+<br />
+<pre><code class="language-yaml"># pyproject.yaml
+project:
+  name: my-package
+  version: 1.0.0
+  description: A Python package
+  requires-python: ">=3.10"
+  dependencies:
+    - requests>=2.28
+    - pydantic>=2.0
+
+build-system:
+  requires:
+    - hatchling
+  build-backend: hatchling.build</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf pyproject.yaml -t toml > pyproject.toml</code></pre>
+<br />
+<p><strong>Output:</strong></p>
+<br />
+<pre><code class="language-toml">[project]
+name = "my-package"
+version = "1.0.0"
+description = "A Python package"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.28", "pydantic>=2.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"</code></pre>
+<br />
+<h2>Type Mapping: YAML → TOML</h2>
+<br />
+<p>devbench cf preserves native types across the conversion:</p>
+<br />
+<table style="width:100%;border-collapse:collapse;">
+  <thead>
+    <tr style="background:#f5f5f5;">
+      <th style="text-align:left;padding:8px;border:1px solid #ddd;">YAML type</th>
+      <th style="text-align:left;padding:8px;border:1px solid #ddd;">TOML equivalent</th>
+      <th style="text-align:left;padding:8px;border:1px solid #ddd;">Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;"><code>string</code></td>
+      <td style="padding:8px;border:1px solid #ddd;"><code>"string"</code></td>
+      <td style="padding:8px;border:1px solid #ddd;">Quoted automatically</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;"><code>integer</code></td>
+      <td style="padding:8px;border:1px solid #ddd;"><code>42</code></td>
+      <td style="padding:8px;border:1px solid #ddd;">Native integer</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;"><code>float</code></td>
+      <td style="padding:8px;border:1px solid #ddd;"><code>3.14</code></td>
+      <td style="padding:8px;border:1px solid #ddd;">Native float</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;"><code>true / false</code></td>
+      <td style="padding:8px;border:1px solid #ddd;"><code>true / false</code></td>
+      <td style="padding:8px;border:1px solid #ddd;">YAML 1.2 booleans only</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;"><code>null / ~</code></td>
+      <td style="padding:8px;border:1px solid #ddd;">Key omitted</td>
+      <td style="padding:8px;border:1px solid #ddd;">TOML has no null type</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;"><code>sequence (list)</code></td>
+      <td style="padding:8px;border:1px solid #ddd;"><code>[array]</code> or <code>[[table-array]]</code></td>
+      <td style="padding:8px;border:1px solid #ddd;">Objects become table arrays</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;"><code>mapping (dict)</code></td>
+      <td style="padding:8px;border:1px solid #ddd;"><code>[table]</code></td>
+      <td style="padding:8px;border:1px solid #ddd;">Nested sections</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;"><code>&amp;anchor / *alias</code></td>
+      <td style="padding:8px;border:1px solid #ddd;">Resolved inline</td>
+      <td style="padding:8px;border:1px solid #ddd;">TOML has no alias concept</td>
+    </tr>
+  </tbody>
+</table>
+<br />
+<h2>Combining with Other Flags</h2>
+<br />
+<p>Because devbench cf is a full config manipulation tool, you can transform and convert in one step:</p>
+<br />
+<pre><code class="language-bash"># Extract a nested section and convert to TOML
+devbench cf config.yaml --get spec.template -t toml
+
+# Filter a list, then convert matching items to TOML
+devbench cf pods.yaml --select status=Running --each name --join , -t toml
+
+# Set a value, then output as TOML
+devbench cf config.yaml --set version=2.0.0 -t toml
+
+# Convert while validating required keys exist
+devbench cf config.yaml --has version --has name -t toml</code></pre>
+<br />
+<h2>Why Not kislyuk/yq?</h2>
+<br />
+<p>kislyuk/yq is a Python wrapper around <strong>jq</strong> — it requires both Python and jq to be installed. It does support TOML output via <code>tomlkit</code>, but:</p>
+<br />
+<ul>
+  <li>Requires: <code>pip install yq</code> + <code>brew install jq</code> (or apt-get jq)</li>
+  <li>Syntax: <code>cat file.yaml | yq -t '.' > output.toml</code> — jq filter required</li>
+  <li>Not self-contained: jq processes the data; yq is just a format shim</li>
+  <li>No CRUD operations: can't <code>--set</code>, <code>--get</code>, <code>--delete</code>, <code>--merge</code></li>
+</ul>
+<br />
+<p><strong>devbench cf</strong> is self-contained Python, no jq dependency, with full CRUD, filtering, and batch mode:</p>
+<br />
+<pre><code class="language-bash">pip install devbench
+devbench cf config.yaml -t toml  # done</code></pre>
+<br />
+<h2>Install &amp; Quick Start</h2>
+<br />
+<pre><code class="language-bash"># Install
+pip install devbench
+
+# YAML → TOML (the thing yq can't do)
+devbench cf app.yaml -t toml
+
+# Verify round-trip
+devbench cf app.yaml -t toml | devbench cf -f toml -t yaml
+
+# Check supported formats
+devbench cf --check-env</code></pre>
+<br />
+<p>Supports Python 3.10–3.13. Works on macOS, Linux, and Windows. No internet connection required.</p>
+<br />
+<h2>See Also</h2>
+<br />
+<ul>
+  <li><a href="/tools/devbench/forge/seo/toml-to-yaml-converter.html">TOML to YAML converter</a></li>
+  <li><a href="/tools/devbench/forge/seo/json-to-toml-converter.html">JSON to TOML converter</a></li>
+  <li><a href="/tools/devbench/forge/seo/vs-yq.html">devbench cf vs yq — full comparison</a></li>
+  <li><a href="/tools/devbench/forge/seo/ini-to-toml-converter.html">INI to TOML converter</a></li>
+  <li><a href="/tools/devbench/forge/seo/toml-converter.html">TOML format overview</a></li>
+</ul>
+<br />
+<p style="margin-top:2rem;padding:1rem;background:#f9f9f9;border-left:4px solid #0070f3;">
+  <strong>pip install devbench</strong> — YAML → TOML in one command. The conversion yq has never supported.
+</p>
+
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 NaxiAI. <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+    </div>
+  </footer>
+</body>
+</html>
