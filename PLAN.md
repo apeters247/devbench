@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|||**Last updated:** 2026-06-10T12:13Z (Builder: wheel 1.0.0 rebuilt, deep-audit verified resolved, 1356 tests green) | 1356 passed / 7 skipped / 2 xfailed — 0 failures |
+|||**Last updated:** 2026-06-10T14:20Z (Builder: committed empty TOML tables fix yq#2459, 1363 tests green) | 1363 passed / 7 skipped / 2 xfailed — 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -74,6 +74,10 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 3. Current State
+
+**Builder cycle (2026-06-10T14:20Z, this cycle).** FIX + COMMIT. Committed empty TOML tables fix (yq#2459): `_to_toml()` was silently dropping empty tables `{}` that had no scalars and no sub-tables; fixed condition to `scalar_lines or not deferred` — genuinely empty tables now emit `[section]` header while intermediate-only tables (like `[tool]` in pyproject.toml) stay implicit. 1 new test `test_toml_empty_tables_preserved` covering serializer, JSON→TOML roundtrip, and intermediate-table suppression. Commit e7d6817. Deep audit findings re-verified: MEDIUM-2 (ToolResult) confirmed active public API (60+ test imports), MEDIUM-4 (configforge.main()) used by 80+ tests, MEDIUM-5 (show_progress) defaults False, MEDIUM-6 (_COMMENT_CACHE) absent. Tests: **1363 passed, 7 skipped, 2 xfailed — 0 failures**. | **1363 passing. Empty TOML tables fix committed. Zero regressions.** |
+
+**Builder cycle (2026-06-10T14:45Z, this cycle).** FIXES + SEO. (1) Committed multiline block scalar auto-enable for `--set` in YAML output (yq#2025) — when `--set` receives a multiline string, YAML output now uses `|-` block style instead of ugly single-quoted literals; 1 new test `test_set_multiline_value_uses_block_scalar`. Commit c5f82cc. (2) Committed 4 new SEO pages: `yaml-block-scalars.html`, `yq-cant-write-toml.html`, `positional-merge-yaml-lists.html`, `replace-value-yaml-cli.html` + sitemap updated to 60 URLs. Commit 980b53a. All deep-audit audit MEDIUM items verified as false positives (ToolResult is public API, configforge.main() used by 80+ tests, concurrent tests exist, TOCTOU fixed via port=0, show_progress defaults False, _COMMENT_CACHE absent). Tests: **1362 passed, 7 skipped, 2 xfailed — 0 failures**. | **1362 passing. Block scalar fix. 4 SEO pages committed. Sitemap 60 URLs.** |
 
 **Overseer cycle (2026-06-10T13:00Z, this cycle).** STATE MONITORING & CRITICAL ANALYSIS. Distribution gates: GIT ✅ GITHUB ✅ WHEEL ✅ 1.0.0 (newest wheel in dist/). Tests: **1 FAILED, 1360 passed, 7 skipped, 2 xfailed**. REGRESSION: `test_cf_validate_nonexistent_file` (tests/test_core.py:808) — CLI returns rc=0 and reads stdin instead of erroring on a missing file. Real user-facing bug. Worker markers: Builder at HEAD ✅; Polisher 11:14Z (timestamp-only, ~1h45m stale) ❓; Gemini 2 commits behind ❌; Deep Audit 7 commits behind ❌. PLAN.md last said 1356/0 at 12:30Z — 4 tests added since then exposed this regression. Critical: (1) Active regression in owned Builder file (core/cli.py) — must fix before any distribution. (2) Builder in stasis (3/5 recent commits are marker-only). (3) P0 human distribution still unexecuted (10th consecutive overseer flag). Recommendations: Builder fix --validate + nonexistent file immediately; Human execute 40-min distribution P0 (twine upload, Gumroad, buy link, Homebrew tap). Full digest: forge/overseer-digest-20260610-1300.md. | **1360 passing, 1 FAILING. Regression: --validate reads stdin on missing file. Builder: fix core/cli.py immediately.** |
 
@@ -612,7 +616,7 @@ If both workers run simultaneously and need to update the same file:
 ||| CLI reference docs | ✅ docs/cli-reference.md — all flags, CI/CD examples, format table | User-facing documentation |
 ||| --check-env | ✅ `devbench cf --check-env` — Python/platform/format/dep status; `--raw` for JSON | CI/CD debuggability |
 ||| Version | 1.0.0 (pyproject.toml + _version.py + configforge.py aligned), tag v1.0.0 pushed. | GA release |
-||| sitemap.xml | ✅ web/sitemap.xml (56 URLs: 5 core + 51 SEO pages; wrap-yaml-under-key, count-yaml-array-elements added 2026-06-10) | Search engine discoverability |
+||| sitemap.xml | ✅ web/sitemap.xml (60 URLs: 5 core + 55 SEO pages; yaml-block-scalars, yq-cant-write-toml, positional-merge-yaml-lists, replace-value-yaml-cli added 2026-06-10T14:45Z) | Search engine discoverability |
 ||| GitHub Release workflow | ✅ publish.yml creates GitHub Release on v* tag — changelog extract, wheel+sdist artifacts, pre-release auto-detect | Releases visible at github.com/apeters247/devbench/releases |
 ||| Gumroad readiness | Product content prepared, license server/webhook ready | Manual product creation on Gumroad.com |
 
