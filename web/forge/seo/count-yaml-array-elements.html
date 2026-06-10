@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Count YAML/JSON Array Elements from the Command Line | devbench cf --count</title>
+  <meta name="description" content="Count array elements, dict keys, or nested list items in any YAML, JSON, or TOML file from the command line. devbench cf --count PATH outputs a plain integer — perfect for shell scripts and CI/CD assertions. pip install devbench.">
+  <meta property="og:title" content="Count YAML / JSON Array Elements — devbench cf --count">
+  <meta property="og:description" content="devbench cf list.yaml --count items — outputs a plain integer count of array elements or object keys. Works cross-format: YAML, JSON, TOML, and 8 more. Perfect for CI/CD scripts.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/count-yaml-array-elements.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Count YAML Array Elements — CLI One-Liner">
+  <meta name="twitter:description" content="Count list items or object keys in any config file from the terminal. Works with YAML, JSON, TOML, CSV, XML. Ideal for shell scripts and CI checks.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "11-format config file converter and 9 developer tools. Count YAML/JSON array elements and dict keys with --count. Works offline.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>Count YAML / JSON Array Elements from the Command Line</h1>
+<br />
+<p>Shell scripts that process config files often need a simple integer: how many containers are in this deployment? How many environment variables does the service define? How many services are declared? <strong>devbench cf --count</strong> outputs just that integer — no <code>jq</code> pipelines, no <code>python -c</code>, no <code>grep | wc -l</code>.</p>
+<br />
+<pre><code class="language-bash">devbench cf deployment.yaml --count spec.template.spec.containers
+# → 2
+
+devbench cf config.yaml --count .
+# → 5   (number of top-level keys)
+</code></pre>
+<br />
+
+<h2>Count Array Elements</h2>
+<br />
+<pre><code class="language-yaml"># services.yaml
+services:
+  - name: api
+    port: 8080
+  - name: worker
+    port: 9000
+  - name: scheduler
+    port: 9001
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf services.yaml --count services
+# → 3
+</code></pre>
+<br />
+
+<h2>Count Object Keys</h2>
+<br />
+<p>Use <code>.</code> (dot) to count top-level keys, or any dot-path to count keys in a nested object:</p>
+<br />
+<pre><code class="language-yaml"># config.yaml
+database:
+  host: localhost
+  port: 5432
+  name: mydb
+  user: admin
+  pool_size: 10
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf config.yaml --count database
+# → 5
+
+devbench cf config.yaml --count .
+# → 1   (one top-level key: "database")
+</code></pre>
+<br />
+
+<h2>Shell Script Integration</h2>
+<br />
+<p>Because <code>--count</code> outputs a plain integer, you can use it directly in arithmetic expressions and conditionals:</p>
+<br />
+<pre><code class="language-bash">#!/bin/bash
+# Fail if fewer than 2 containers are defined
+n=$(devbench cf deployment.yaml --count spec.template.spec.containers)
+if [ "$n" -lt 2 ]; then
+  echo "ERROR: expected at least 2 containers, found $n" &gt;&amp;2
+  exit 1
+fi
+echo "OK: $n containers"
+</code></pre>
+<br />
+<pre><code class="language-bash"># Count how many environment variables a Kubernetes pod declares
+env_count=$(devbench cf pod.yaml --count spec.containers.0.env)
+echo "Pod declares $env_count environment variables"
+</code></pre>
+<br />
+
+<h2>CI/CD: Assert Minimum Count</h2>
+<br />
+<pre><code class="language-yaml"># .github/workflows/validate.yml
+- name: Validate service count
+  run: |
+    pip install devbench
+    n=$(devbench cf services.yaml --count services)
+    [ "$n" -ge 1 ] || (echo "No services defined!" &amp;&amp; exit 1)
+
+- name: Validate replica count
+  run: |
+    replicas=$(devbench cf deployment.yaml --count spec.template.spec.containers)
+    echo "Deployment has $replicas container(s)"
+</code></pre>
+<br />
+
+<h2>JSON Output for Structured Scripts</h2>
+<br />
+<p>Add <code>--raw</code> to get a JSON object with <code>path</code>, <code>count</code>, and <code>type</code> fields:</p>
+<br />
+<pre><code class="language-bash">devbench cf services.yaml --count services --raw
+</code></pre>
+<br />
+<pre><code class="language-json">{"path": "services", "count": 3, "type": "array"}
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf config.yaml --count database --raw
+</code></pre>
+<br />
+<pre><code class="language-json">{"path": "database", "count": 5, "type": "object"}
+</code></pre>
+<br />
+
+<h2>Works With All 11 Formats</h2>
+<br />
+<p><code>--count</code> works on any format devbench can parse:</p>
+<br />
+<pre><code class="language-bash"># Count items in a JSON array
+devbench cf package.json --count dependencies
+
+# Count TOML array of strings
+devbench cf Cargo.toml --count dependencies
+
+# Count CSV rows
+devbench cf data.csv --count data
+
+# Count XML child elements
+devbench cf pom.xml --count dependencies
+</code></pre>
+<br />
+
+<h2>Compared to jq / yq</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>jq</th><th>yq</th><th>devbench</th></tr>
+</thead>
+<tbody>
+<tr><td>Count array length</td><td><code>jq '.items | length' f.json</code></td><td><code>yq '.items | length' f.yaml</code></td><td><code>devbench cf f.yaml --count items</code></td></tr>
+<tr><td>Count root keys</td><td><code>jq 'keys | length' f.json</code></td><td><code>yq '. | length' f.yaml</code></td><td><code>devbench cf f.yaml --count .</code></td></tr>
+<tr><td>Count nested array</td><td><code>jq '.a.b.c | length' f.json</code></td><td><code>yq '.a.b.c | length' f.yaml</code></td><td><code>devbench cf f.yaml --count a.b.c</code></td></tr>
+<tr><td>Count from TOML</td><td>Not supported</td><td>Not supported</td><td><code>devbench cf f.toml --count deps</code></td></tr>
+<tr><td>Plain integer output</td><td>Yes</td><td>Yes</td><td>Yes (default)</td></tr>
+<tr><td>Machine-readable JSON</td><td>Yes</td><td>Yes</td><td><code>--raw</code></td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Install</h2>
+<br />
+<pre><code class="language-bash">pip install devbench
+devbench cf --help
+</code></pre>
+<br />
+<p>Works on Python 3.10–3.13. Fully offline — no telemetry, no external API calls. Supports 11 formats: JSON, YAML, TOML, XML, CSV, INI, .env, HCL, Java .properties, Apple plist, JSONC.</p>
+<br />
+
+<h2>Quick Reference</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>Command</th></tr>
+</thead>
+<tbody>
+<tr><td>Count array elements</td><td><code>devbench cf list.yaml --count items</code></td></tr>
+<tr><td>Count root-level keys</td><td><code>devbench cf config.yaml --count .</code></td></tr>
+<tr><td>Count nested object keys</td><td><code>devbench cf config.yaml --count database</code></td></tr>
+<tr><td>Count in JSON file</td><td><code>devbench cf package.json --count dependencies</code></td></tr>
+<tr><td>JSON output</td><td><code>devbench cf list.yaml --count items --raw</code></td></tr>
+<tr><td>Use in shell condition</td><td><code>[ $(devbench cf f.yaml --count items) -ge 1 ]</code></td></tr>
+</tbody>
+</table>
+<br />
+
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 NaxiAI. <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+    </div>
+  </footer>
+</body>
+</html>

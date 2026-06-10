@@ -2617,3 +2617,84 @@ def test_main_each_not_a_list_error(tmp_path, capsys):
     rc = main([str(src), "--each", "name"])
     assert rc == 1
     assert "error" in capsys.readouterr().err.lower()
+
+
+# ── --wrap-in tests ──────────────────────────────────────────────────────────
+
+def test_wrap_in_simple_key(tmp_path, capsys):
+    """--wrap-in wraps the entire config under a single key."""
+    from core.cli import main as cli_main
+    src = tmp_path / "config.yaml"
+    src.write_text("host: localhost\nport: 5432\n")
+    rc = cli_main(["cf", str(src), "--wrap-in", "database", "--to", "json"])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"database": {"host": "localhost", "port": 5432}}
+
+
+def test_wrap_in_dotted_key(tmp_path, capsys):
+    """--wrap-in creates nested dicts for dotted paths."""
+    from core.cli import main as cli_main
+    src = tmp_path / "vals.yaml"
+    src.write_text("replicas: 3\nimage: nginx\n")
+    rc = cli_main(["cf", str(src), "--wrap-in", "spec.template.spec", "--to", "json"])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"spec": {"template": {"spec": {"replicas": 3, "image": "nginx"}}}}
+
+
+def test_wrap_in_yaml_output(tmp_path, capsys):
+    """--wrap-in outputs YAML by default when input is YAML."""
+    from core.cli import main as cli_main
+    src = tmp_path / "config.yaml"
+    src.write_text("key: value\n")
+    rc = cli_main(["cf", str(src), "--wrap-in", "data"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "data:" in out
+    assert "key: value" in out
+
+
+def test_wrap_in_json_input_yaml_output(tmp_path, capsys):
+    """--wrap-in accepts JSON input and emits YAML output."""
+    from core.cli import main as cli_main
+    src = tmp_path / "config.json"
+    src.write_text('{"name": "app", "version": "1.0"}')
+    rc = cli_main(["cf", str(src), "--wrap-in", "metadata", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "metadata:" in out
+    assert "name: app" in out
+
+
+def test_wrap_in_configforge_main(tmp_path, capsys):
+    """configforge standalone --wrap-in produces same result as cli --wrap-in."""
+    from core.configforge import main
+    src = tmp_path / "config.yaml"
+    src.write_text("host: db\nport: 5432\n")
+    rc = main([str(src), "--wrap-in", "database", "--to", "json"])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"database": {"host": "db", "port": 5432}}
+
+
+def test_wrap_in_list_input(tmp_path, capsys):
+    """--wrap-in handles list-typed configs."""
+    from core.cli import main as cli_main
+    src = tmp_path / "items.yaml"
+    src.write_text("- a\n- b\n- c\n")
+    rc = cli_main(["cf", str(src), "--wrap-in", "items", "--to", "json"])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"items": ["a", "b", "c"]}
+
+
+def test_wrap_in_stdin(capsys, monkeypatch):
+    """--wrap-in reads from stdin when no file provided."""
+    import io
+    from core.cli import main as cli_main
+    monkeypatch.setattr("sys.stdin", io.StringIO("key: value\n"))
+    rc = cli_main(["cf", "--wrap-in", "data", "--to", "json"])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"data": {"key": "value"}}

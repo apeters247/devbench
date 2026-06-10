@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Wrap YAML (or JSON/TOML) Under a Key from the Command Line | devbench cf --wrap-in</title>
+  <meta name="description" content="Nest an entire YAML, JSON, or TOML config under a dotted key path from the command line. devbench cf --wrap-in spec.template.spec — perfect for Kubernetes ConfigMaps, Helm values wrapping, and Terraform module nesting. pip install devbench.">
+  <meta property="og:title" content="Wrap YAML Under a Key — devbench cf --wrap-in">
+  <meta property="og:description" content="devbench cf config.yaml --wrap-in spec.template.spec — wrap the entire parsed config under a nested key path. Kubernetes, Helm, and Terraform examples included.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/wrap-yaml-under-key.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Wrap YAML Under a Key — CLI One-Liner">
+  <meta name="twitter:description" content="Wrap any config file under a dotted key path from the command line. Works with YAML, JSON, TOML, XML. Great for Kubernetes, Helm, and Terraform.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "11-format config file converter and 9 developer tools. Wrap YAML/JSON/TOML configs under nested key paths with --wrap-in. Works offline.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>Wrap YAML Under a Key from the Command Line</h1>
+<br />
+<p>You have a flat <code>values.yaml</code> and need to nest the entire thing under <code>spec.template.spec</code>. Or you're generating a Kubernetes ConfigMap and need to wrap your app config under <code>data</code>. <strong>devbench cf --wrap-in</strong> does this in one command — no <code>jq</code> gymnastics, no Python script, no sed.</p>
+<br />
+<pre><code class="language-bash">devbench cf config.yaml --wrap-in data
+devbench cf values.yaml --wrap-in spec.template.spec --to json
+</code></pre>
+<br />
+
+<h2>Basic Wrapping</h2>
+<br />
+<p>Wrap an entire config under a single key:</p>
+<br />
+<pre><code class="language-yaml"># config.yaml
+host: localhost
+port: 5432
+name: mydb
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf config.yaml --wrap-in database</code></pre>
+<br />
+<pre><code class="language-yaml">database:
+  host: localhost
+  port: 5432
+  name: mydb
+</code></pre>
+<br />
+
+<h2>Nested Dotted Path</h2>
+<br />
+<p>Use dot-notation to create deeply nested output in one step. Each segment becomes an intermediate dict:</p>
+<br />
+<pre><code class="language-yaml"># values.yaml
+replicas: 3
+image: nginx:1.25
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf values.yaml --wrap-in spec.template.spec</code></pre>
+<br />
+<pre><code class="language-yaml">spec:
+  template:
+    spec:
+      replicas: 3
+      image: nginx:1.25
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+</code></pre>
+<br />
+
+<h2>Kubernetes ConfigMap Generation</h2>
+<br />
+<p>Generate a partial Kubernetes ConfigMap patch by wrapping your config under <code>data</code>:</p>
+<br />
+<pre><code class="language-bash"># Wrap app.yaml under data → ready for kubectl patch
+devbench cf app.yaml --wrap-in data --to json | kubectl patch configmap app-config --patch-file /dev/stdin
+</code></pre>
+<br />
+<pre><code class="language-bash"># Pipe into envsubst → wrap → apply in one shot
+envsubst &lt; config.template.yaml | devbench cf - --wrap-in data | kubectl apply -f -
+</code></pre>
+<br />
+
+<h2>Helm Values Nesting</h2>
+<br />
+<p>Helm charts often require values namespaced under a chart key. Instead of editing YAML manually:</p>
+<br />
+<pre><code class="language-bash"># Wrap a sub-chart's values under its chart name
+devbench cf backend-values.yaml --wrap-in backend
+
+# Combine with --merge to overlay the wrapped values
+devbench cf base-values.yaml --merge &lt;(devbench cf backend.yaml --wrap-in backend)
+</code></pre>
+<br />
+
+<h2>Cross-Format: JSON Input → YAML Output</h2>
+<br />
+<p><code>--wrap-in</code> works on any of devbench's 11 supported formats. Wrap a JSON file and emit YAML:</p>
+<br />
+<pre><code class="language-bash">devbench cf config.json --wrap-in metadata --to yaml</code></pre>
+<br />
+<pre><code class="language-json">// config.json
+{"name": "myapp", "version": "2.1.0"}
+</code></pre>
+<br />
+<pre><code class="language-yaml">metadata:
+  name: myapp
+  version: 2.1.0
+</code></pre>
+<br />
+
+<h2>Terraform Module Wrapping</h2>
+<br />
+<p>When building Terraform configs from templates, wrap your variable defaults under the module key:</p>
+<br />
+<pre><code class="language-bash"># module defaults → wrapped under the module name
+devbench cf defaults.yaml --wrap-in module.networking --to json &gt; networking.auto.tfvars.json
+</code></pre>
+<br />
+
+<h2>Composing with Other Flags</h2>
+<br />
+<pre><code class="language-bash"># Wrap, sort keys, and convert to TOML
+devbench cf config.yaml --wrap-in app --to toml --sort-keys
+
+# Wrap and then merge with another file
+devbench cf base.yaml --wrap-in config --merge overlay.yaml
+
+# Wrap multiple files in batch
+devbench cf --batch "*.yaml" --wrap-in config --to json --output-dir wrapped/
+</code></pre>
+<br />
+
+<h2>Compared to jq / yq</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>jq / yq</th><th>devbench</th></tr>
+</thead>
+<tbody>
+<tr><td>Wrap under single key</td><td><code>jq '{data: .}' config.json</code></td><td><code>devbench cf config.json --wrap-in data</code></td></tr>
+<tr><td>Wrap YAML (not just JSON)</td><td><code>yq '{data: .}' config.yaml</code></td><td><code>devbench cf config.yaml --wrap-in data</code></td></tr>
+<tr><td>Deep nested wrap</td><td><code>yq '{"spec": {"template": {"spec": .}}}' f.yaml</code></td><td><code>devbench cf f.yaml --wrap-in spec.template.spec</code></td></tr>
+<tr><td>Wrap + convert format</td><td>Two-step: yq then jq</td><td><code>devbench cf f.yaml --wrap-in data --to json</code></td></tr>
+<tr><td>Wrap from TOML input</td><td>Not supported</td><td><code>devbench cf config.toml --wrap-in data</code></td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Install</h2>
+<br />
+<pre><code class="language-bash">pip install devbench
+devbench cf config.yaml --wrap-in data --help
+</code></pre>
+<br />
+<p>Works on Python 3.10–3.13. Fully offline — no telemetry, no external API calls. Supports 11 formats: JSON, YAML, TOML, XML, CSV, INI, .env, HCL, Java .properties, Apple plist, JSONC.</p>
+<br />
+
+<h2>Quick Reference</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>Command</th></tr>
+</thead>
+<tbody>
+<tr><td>Wrap under single key</td><td><code>devbench cf config.yaml --wrap-in data</code></td></tr>
+<tr><td>Deep nested path</td><td><code>devbench cf config.yaml --wrap-in spec.template.spec</code></td></tr>
+<tr><td>Wrap + format convert</td><td><code>devbench cf config.yaml --wrap-in data --to json</code></td></tr>
+<tr><td>Wrap JSON input</td><td><code>devbench cf config.json --wrap-in metadata --to yaml</code></td></tr>
+<tr><td>Wrap + merge</td><td><code>devbench cf base.yaml --wrap-in config --merge overlay.yaml</code></td></tr>
+<tr><td>Wrap from stdin</td><td><code>cat config.yaml | devbench cf - --wrap-in data</code></td></tr>
+<tr><td>Wrap batch files</td><td><code>devbench cf --batch "*.yaml" --wrap-in app --output-dir out/</code></td></tr>
+</tbody>
+</table>
+<br />
+
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 NaxiAI. <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+    </div>
+  </footer>
+</body>
+</html>

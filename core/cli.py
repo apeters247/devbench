@@ -146,6 +146,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "template_file", None):
         return _run_cf_template(args)
 
+    # cf --wrap-in KEY  → wrap entire config under a dotted key path
+    if args.command == "cf" and getattr(args, "wrap_in", None):
+        return _run_cf_wrap_in(args)
+
     # cf --check-env  → show environment info (no stdin needed)
     if args.command == "cf" and getattr(args, "check_env", False):
         return _run_cf_check_env(args)
@@ -436,6 +440,12 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Works with --to json or when output is JSON. "
                                      "Combine with --raw/-r to get just the compact JSON string. "
                                      "Example: devbench cf config.yaml --to json --compact --raw | jq .")
+            tool_p.add_argument("--wrap-in", metavar="KEY", default=None, dest="wrap_in",
+                                help="Wrap the entire parsed config under a dotted key path. "
+                                     "Example: devbench cf config.yaml --wrap-in data → {data: {original...}}. "
+                                     "Nested paths create intermediate dicts: --wrap-in spec.template.spec. "
+                                     "Compose with --to to convert format while wrapping. "
+                                     "Example: devbench cf values.yaml --wrap-in spec.values --to json")
             tool_p.add_argument("--template", metavar="FILE", default=None, dest="template_file",
                                 help="Render a template file using config values as context. "
                                      "Use ${KEY} syntax (Python string.Template, always available) or "
@@ -2996,6 +3006,81 @@ def _run_cf_template(args) -> int:
     return EXIT_SUCCESS
 
 
+def _run_cf_wrap_in(args) -> int:
+    """Wrap the entire parsed config under a dotted key path.
+
+    Examples:
+        devbench cf config.yaml --wrap-in data
+        # → {data: {original_config...}}
+
+        devbench cf values.yaml --wrap-in spec.template.spec --to json
+        # → {"spec": {"template": {"spec": {original...}}}}
+
+    Useful for Kubernetes ConfigMap/patch generation, Helm value overrides,
+    and Terraform module wrapping where a sub-document must be nested.
+    """
+    from . import configforge as _cf
+
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    _ext_map = {".yaml": "yaml", ".yml": "yaml", ".json": "json", ".toml": "toml",
+                ".xml": "xml", ".csv": "csv", ".ini": "ini", ".env": "env",
+                ".hcl": "hcl", ".properties": "properties", ".plist": "plist",
+                ".jsonc": "jsonc", ".json5": "json5"}
+    from_fmt_arg = getattr(args, "from_fmt", "auto")
+    if from_fmt_arg == "auto" and file_path:
+        from_fmt_arg = _ext_map.get(file_path.suffix.lower(), "auto")
+    fmt = None if from_fmt_arg == "auto" else from_fmt_arg
+    try:
+        parsed = _cf.parse_text(content, fmt=fmt, **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+
+    # Build the nested wrapper from the dotted key path (innermost first)
+    key_path = args.wrap_in
+    parts = key_path.split(".")
+    wrapped = data
+    for part in reversed(parts):
+        if not part:
+            print(f"error: --wrap-in path has empty segment: {key_path!r}", file=sys.stderr)
+            return EXIT_ERROR
+        wrapped = {part: wrapped}
+
+    to_fmt = getattr(args, "to", None)  # --to arg uses dest="to"
+    if not to_fmt:
+        # Infer from input file extension or detected format
+        if file_path:
+            ext_map = {".yaml": "yaml", ".yml": "yaml", ".json": "json", ".toml": "toml",
+                       ".xml": "xml", ".csv": "csv", ".ini": "ini", ".env": "env",
+                       ".hcl": "hcl", ".properties": "properties", ".plist": "plist"}
+            to_fmt = ext_map.get(file_path.suffix.lower(), "yaml")
+        else:
+            detected = _cf.detect_format(content)
+            to_fmt = detected if detected != "unknown" else "yaml"
+
+    raw = getattr(args, "raw", False)
+    if raw:
+        import json
+        sys.stdout.write(json.dumps(wrapped) + "\n")
+        return EXIT_SUCCESS
+
+    try:
+        output_text = _cf.serialize(wrapped, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
 # ---------------------------------------------------------------------------
 # Shell completion
 # ---------------------------------------------------------------------------
@@ -3008,7 +3093,7 @@ _CF_FLAGS = (
     "--batch --stream --output-dir --sort-keys --sort-keys-reverse --indent "
     "--flatten-xml --no-comments --yaml12 --template-safe "
     "--null-handling --list-formats --check-env --schema --mask --mask-value --assert "
-    "--path-exists --shell-export --compact -c --template "
+    "--path-exists --shell-export --compact -c --template --wrap-in "
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
 )
@@ -3202,6 +3287,7 @@ _devbench() {{
                         '--compact[Compact/minified JSON output (no whitespace)]' \\
                         '-c[Compact/minified JSON output (no whitespace)]' \\
                         '--template=[Render template file using config as context]:template:_files' \\
+                        '--wrap-in=[Wrap entire config under a dotted key path]:key:' \\
                         '--serve[Launch the web UI]' \\
                         '--port=[Web UI port (default 8080)]:port:' \\
                         '--api[Launch JSON HTTP API]' \\
@@ -3324,6 +3410,7 @@ complete -c devbench -n __devbench_seen_cf -l shell-export -d 'Output as shell e
 complete -c devbench -n __devbench_seen_cf -l compact      -d 'Compact/minified JSON output (no whitespace)'
 complete -c devbench -n __devbench_seen_cf -s c            -d 'Compact/minified JSON output (no whitespace)'
 complete -c devbench -n __devbench_seen_cf -l template     -d 'Render template file using config as context'  -r -F
+complete -c devbench -n __devbench_seen_cf -l wrap-in      -d 'Wrap config under a dotted key path'           -r
 complete -c devbench -n __devbench_seen_cf -l serve        -d 'Launch the web UI'
 complete -c devbench -n __devbench_seen_cf -l port         -d 'Web UI port (default 8080)'  -r
 complete -c devbench -n __devbench_seen_cf -l api          -d 'Launch JSON HTTP API'

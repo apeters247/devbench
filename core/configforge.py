@@ -3185,6 +3185,10 @@ Compared to yq/jq:
                              "${key} and {{ key }} (Jinja2) syntax supported. "
                              "Dot-path keys available with dots replaced by underscores. "
                              "Example: configforge app.yaml --template deploy.tmpl > deploy.sh")
+    parser.add_argument("--wrap-in", metavar="KEY", default=None, dest="wrap_in",
+                        help="Wrap the entire parsed config under a dotted key path. "
+                             "Example: configforge config.yaml --wrap-in data → {data: {original...}}. "
+                             "Nested paths: --wrap-in spec.template.spec")
     args = parser.parse_args(argv)
 
     options = {
@@ -3595,6 +3599,30 @@ Compared to yq/jq:
             print(f"error: template substitution failed: {exc}", file=sys.stderr)
             return 1
         sys.stdout.write(rendered if rendered.endswith("\n") else rendered + "\n")
+        return 0
+
+    if getattr(args, "wrap_in", None):
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        parts = args.wrap_in.split(".")
+        wrapped = data
+        for part in reversed(parts):
+            if not part:
+                print(f"error: --wrap-in path has empty segment: {args.wrap_in!r}", file=sys.stderr)
+                return 1
+            wrapped = {part: wrapped}
+        to_fmt = args.to or (args.from_fmt if args.from_fmt != "auto" else None) or "yaml"
+        result = serialize(wrapped, to_fmt, **options)
+        if not result:
+            print("error: serialization failed", file=sys.stderr)
+            return 1
+        sys.stdout.write(result if result.endswith("\n") else result + "\n")
         return 0
 
     to_fmt = args.to
