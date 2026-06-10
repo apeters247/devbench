@@ -1077,6 +1077,32 @@ def test_cf_no_backup_without_flag(tmp_path):
     assert not bak.exists(), "no backup without --backup flag"
 
 
+def test_cf_in_place_atomic_no_tmp_file_left(tmp_path):
+    """In-place write uses temp+rename — no .devbench.tmp file should survive on success."""
+    f = tmp_path / "config.yaml"
+    f.write_text("version: 1\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--set", "version", "2", "--in-place"])
+    assert rc == 0
+    assert f.read_text() == "version: 2\n"
+    tmp_files = list(tmp_path.glob("*.devbench.tmp"))
+    assert tmp_files == [], f"stale temp files found: {tmp_files}"
+
+
+def test_cf_in_place_preserves_file_on_success(tmp_path):
+    """In-place write produces correct content and does not leave corrupted file."""
+    f = tmp_path / "config.yaml"
+    original = "host: db.prod\nport: 5432\npassword: secret\n"
+    f.write_text(original)
+    from core.cli import main
+    rc = main(["cf", str(f), "--set", "port", "5433", "--in-place"])
+    assert rc == 0
+    content = f.read_text()
+    assert "port: 5433" in content
+    assert "host: db.prod" in content
+    assert "password: secret" in content
+
+
 # ---------------------------------------------------------------------------
 # cf --pick: field projection
 # ---------------------------------------------------------------------------
@@ -4273,3 +4299,402 @@ def test_cf_unique_object_dedup(tmp_path, capsys):
     out = capsys.readouterr().out.strip()
     data = yaml.safe_load(out)
     assert len(data) == 2
+
+
+# ---------------------------------------------------------------------------
+# --block-scalars: force block scalar style for multiline YAML output
+# ---------------------------------------------------------------------------
+
+def test_block_scalars_converts_multiline_to_block_style(tmp_path, capsys):
+    """--block-scalars makes multiline strings use | block style (readable, not quoted)."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("script: 'apt-get install foo\n\n  apt-get install bar\n\n  '\n")
+    rc = main(["cf", str(f), "--to", "yaml", "--block-scalars"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "script: |" in out
+    assert "apt-get install foo" in out
+    assert "apt-get install bar" in out
+
+
+def test_block_scalars_preserves_singleline_strings(tmp_path, capsys):
+    """--block-scalars leaves single-line strings untouched."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\n")
+    rc = main(["cf", str(f), "--to", "yaml", "--block-scalars"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "host: localhost" in out
+    assert "port: 5432" in out
+
+
+def test_block_scalars_via_serialize_api():
+    """serialize() block_scalars option uses | style for multiline strings."""
+    from core.configforge import serialize
+    data = {"message": "hello\nworld\n", "note": "plain"}
+    out = serialize(data, "yaml", block_scalars=True)
+    assert "message: |" in out
+    assert "hello" in out
+    assert "world" in out
+    assert "note: plain" in out
+
+
+def test_block_scalars_without_flag_uses_quoted_style(tmp_path, capsys):
+    """Without --block-scalars, multiline strings use PyYAML's default quoted style."""
+    from core.configforge import serialize
+    data = {"script": "step1\nstep2\n"}
+    out = serialize(data, "yaml", block_scalars=False)
+    # PyYAML default uses single-quoted multiline (not block scalar)
+    assert "script: |" not in out
+    assert "step1" in out
+
+
+def test_block_scalars_trailing_spaces_use_block_style():
+    """--block-scalars strips per-line trailing spaces so PyYAML uses block style.
+
+    yq issue #439: PyYAML 6.x falls back to double-quoted style when any line
+    has trailing whitespace, making the output unreadable.  The fix normalises
+    trailing spaces before handing data to the YAML emitter.
+    """
+    from core.configforge import serialize
+    data = {"script": "apt-get install foo  \napt-get install bar  \n"}
+    out = serialize(data, "yaml", block_scalars=True)
+    assert "script: |" in out, f"expected block scalar style, got: {out!r}"
+    assert "apt-get install foo" in out
+    assert "apt-get install bar" in out
+    # Trailing spaces stripped from lines
+    assert "foo  " not in out
+    assert "bar  " not in out
+
+
+# ---------------------------------------------------------------------------
+# --has PATH: check whether a key path exists in the config
+# ---------------------------------------------------------------------------
+
+def test_cf_has_existing_path_exits_0(tmp_path, capsys):
+    """--has PATH exits 0 and prints 'true' when path exists."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("database:\n  host: localhost\n  port: 5432\n")
+    rc = main(["cf", str(f), "--has", "database.host"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "true"
+
+
+def test_cf_has_missing_path_exits_1(tmp_path, capsys):
+    """--has PATH exits 1 and prints 'false' when path does not exist."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("database:\n  host: localhost\n")
+    rc = main(["cf", str(f), "--has", "database.password"])
+    assert rc == 1
+    out = capsys.readouterr().out.strip()
+    assert out == "false"
+
+
+def test_cf_has_root_path_always_true(tmp_path, capsys):
+    """--has . exits 0 for any parseable config."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("key: value\n")
+    rc = main(["cf", str(f), "--has", "."])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "true"
+
+
+def test_cf_has_raw_output(tmp_path, capsys):
+    """--has --raw outputs JSON with path, exists, type fields."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("server:\n  port: 8080\n")
+    rc = main(["cf", str(f), "--has", "server.port", "--raw"])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out.strip())
+    assert result["path"] == "server.port"
+    assert result["exists"] is True
+    assert result["type"] == "integer"
+
+
+def test_cf_has_raw_missing_path(tmp_path, capsys):
+    """--has --raw for missing path outputs exists=false with no type field."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("key: value\n")
+    rc = main(["cf", str(f), "--has", "missing.key", "--raw"])
+    assert rc == 1
+    result = json.loads(capsys.readouterr().out.strip())
+    assert result["exists"] is False
+    assert "type" not in result
+
+
+def test_cf_has_nested_array_path(tmp_path, capsys):
+    """--has works for nested paths inside arrays using integer index."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("items:\n  - name: foo\n  - name: bar\n")
+    rc = main(["cf", str(f), "--has", "items.0.name"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "true"
+
+
+# ---------------------------------------------------------------------------
+# --hash-field: replace field values with their hash (yq issue #2283)
+# ---------------------------------------------------------------------------
+
+def test_hash_field_replaces_password_with_sha256(tmp_path, capsys):
+    """--hash-field hashes matching key values with sha256 by default."""
+    from core.cli import main
+    import yaml
+    f = tmp_path / "config.yaml"
+    f.write_text("database:\n  host: localhost\n  password: secret123\n")
+    rc = main(["cf", str(f), "--hash-field", "password"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    data = yaml.safe_load(out)
+    assert data["database"]["host"] == "localhost"
+    hashed = data["database"]["password"]
+    assert hashed.startswith("sha256:")
+    assert len(hashed) == len("sha256:") + 64
+
+
+def test_hash_field_pattern_matches_multiple_keys(tmp_path, capsys):
+    """--hash-field regex matches multiple keys (e.g. password|secret|token)."""
+    from core.cli import main
+    import yaml
+    f = tmp_path / "config.yaml"
+    f.write_text("app:\n  api_token: abc123\n  db_password: letmein\n  host: prod.example.com\n")
+    rc = main(["cf", str(f), "--hash-field", "token|password"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    data = yaml.safe_load(out)
+    assert data["app"]["host"] == "prod.example.com"
+    assert data["app"]["api_token"].startswith("sha256:")
+    assert data["app"]["db_password"].startswith("sha256:")
+
+
+def test_hash_field_algorithm_md5(tmp_path, capsys):
+    """--hash-algorithm md5 produces md5: prefixed 32-char digest."""
+    from core.cli import main
+    import yaml
+    f = tmp_path / "config.yaml"
+    f.write_text("secret: topsecret\n")
+    rc = main(["cf", str(f), "--hash-field", "secret", "--hash-algorithm", "md5"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    data = yaml.safe_load(out)
+    assert data["secret"].startswith("md5:")
+    assert len(data["secret"]) == len("md5:") + 32
+
+
+def test_hash_field_deterministic_output(tmp_path):
+    """Same value hashed twice produces identical output."""
+    from core.configforge import hash_field_values
+    data = {"password": "hunter2"}
+    result1 = hash_field_values(data, "password")
+    result2 = hash_field_values(data, "password")
+    assert result1["password"] == result2["password"]
+    assert result1["password"].startswith("sha256:")
+
+
+def test_hash_field_skips_nested_dicts(tmp_path, capsys):
+    """--hash-field does not hash dict values; only scalars are hashed."""
+    from core.cli import main
+    import yaml
+    f = tmp_path / "config.yaml"
+    f.write_text("credentials:\n  password: mypass\n  extra:\n    password: nested\n")
+    rc = main(["cf", str(f), "--hash-field", "password"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    data = yaml.safe_load(out)
+    assert data["credentials"]["password"].startswith("sha256:")
+    assert data["credentials"]["extra"]["password"].startswith("sha256:")
+
+
+def test_hash_field_raw_output(tmp_path, capsys):
+    """--hash-field --raw outputs JSON with algorithm, hashed_count, and output."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("api_key: secret\nhost: localhost\n")
+    rc = main(["cf", str(f), "--hash-field", "api_key", "--raw"])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["algorithm"] == "sha256"
+    assert result["hashed_count"] >= 1
+    assert "sha256:" in result["output"]
+
+
+def test_hash_field_invalid_algorithm(tmp_path, capsys):
+    """--hash-field with unknown algorithm exits with error."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("secret: value\n")
+    rc = main(["cf", str(f), "--hash-field", "secret", "--hash-algorithm", "md99"])
+    assert rc != 0
+
+
+def test_hash_field_api_direct():
+    """hash_field_values() API can be called directly from configforge."""
+    from core.configforge import hash_field_values
+    import hashlib
+    data = {"password": "hunter2", "host": "localhost"}
+    result = hash_field_values(data, "password", "sha256")
+    expected_digest = hashlib.sha256(b"hunter2").hexdigest()
+    assert result["password"] == f"sha256:{expected_digest}"
+    assert result["host"] == "localhost"
+
+
+# ---------------------------------------------------------------------------
+# --length: report length of a value at PATH
+# ---------------------------------------------------------------------------
+
+def test_length_array(tmp_path, capsys):
+    """--length on an array returns its item count."""
+    f = tmp_path / "c.yaml"
+    f.write_text("users:\n  - alice\n  - bob\n  - carol\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--length", "users"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "3"
+
+
+def test_length_string(tmp_path, capsys):
+    """--length on a string returns its character count."""
+    f = tmp_path / "c.json"
+    f.write_text('{"name": "hello"}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--length", "name"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "5"
+
+
+def test_length_dict(tmp_path, capsys):
+    """--length on a dict returns its key count."""
+    f = tmp_path / "c.yaml"
+    f.write_text("db:\n  host: localhost\n  port: 5432\n  name: mydb\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--length", "db"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "3"
+
+
+def test_length_null(tmp_path, capsys):
+    """--length on null returns 0."""
+    f = tmp_path / "c.json"
+    f.write_text('{"key": null}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--length", "key"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "0"
+
+
+def test_length_root(tmp_path, capsys):
+    """--length . on root dict returns its key count."""
+    f = tmp_path / "c.json"
+    f.write_text('{"a": 1, "b": 2, "c": 3}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--length", "."])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out == "3"
+
+
+def test_length_missing_path_exits_error(tmp_path, capsys):
+    """--length on a nonexistent path exits with error code 1."""
+    f = tmp_path / "c.yaml"
+    f.write_text("foo: bar\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--length", "missing"])
+    assert rc == 1
+    assert "not found" in capsys.readouterr().err
+
+
+def test_length_raw_output(tmp_path, capsys):
+    """--length --raw emits JSON with path, length, and type fields."""
+    f = tmp_path / "c.yaml"
+    f.write_text("tags:\n  - x\n  - y\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--length", "tags", "--raw"])
+    assert rc == 0
+    import json
+    data = json.loads(capsys.readouterr().out)
+    assert data["path"] == "tags"
+    assert data["length"] == 2
+    assert data["type"] == "array"
+
+
+# ---------------------------------------------------------------------------
+# --ini-quote-strings: preserve quotes on INI round-trip (yq issue #2456)
+# ---------------------------------------------------------------------------
+
+def test_ini_quote_strings_wraps_strings(tmp_path, capsys):
+    """--ini-quote-strings wraps string values in double quotes in INI output."""
+    import json
+    f = tmp_path / "c.ini"
+    f.write_text("[theme]\ncolor = Default\nfont = Monospace\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--to", "ini", "--ini-quote-strings"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    ini_out = json.loads(out)["output"]
+    assert '"Default"' in ini_out
+    assert '"Monospace"' in ini_out
+
+
+def test_ini_quote_strings_does_not_quote_booleans(tmp_path, capsys):
+    """--ini-quote-strings leaves booleans unquoted."""
+    f = tmp_path / "c.ini"
+    f.write_text("[flags]\nenabled = true\ndebug = false\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--to", "ini", "--ini-quote-strings"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert '"true"' not in out
+    assert '"false"' not in out
+    assert "true" in out
+    assert "false" in out
+
+
+def test_ini_quote_strings_does_not_quote_numbers(tmp_path, capsys):
+    """--ini-quote-strings leaves numeric values unquoted."""
+    f = tmp_path / "c.json"
+    f.write_text('{"section": {"port": 8080, "timeout": 30}}')
+    from core.cli import main
+    rc = main(["cf", str(f), "--to", "ini", "--ini-quote-strings"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert '"8080"' not in out
+    assert '"30"' not in out
+    assert "8080" in out
+    assert "30" in out
+
+
+def test_ini_quote_strings_roundtrip_preserves_spaces(tmp_path, capsys):
+    """--ini-quote-strings preserves value with spaces intact after round-trip."""
+    import json
+    f = tmp_path / "c.ini"
+    f.write_text('[editor]\ntheme = Solarized Dark\nfont = JetBrains Mono\n')
+    from core.cli import main
+    rc = main(["cf", str(f), "--to", "ini", "--ini-quote-strings"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    ini_out = json.loads(out)["output"]
+    assert '"Solarized Dark"' in ini_out
+    assert '"JetBrains Mono"' in ini_out
+
+
+def test_ini_quote_strings_escapes_embedded_quotes(tmp_path, capsys):
+    """--ini-quote-strings escapes double quotes embedded in values."""
+    from core.configforge import serialize
+    data = {"section": {"msg": 'say "hello"'}}
+    out = serialize(data, "ini", ini_quote_strings=True)
+    assert '\\"hello\\"' in out or '"say \\"hello\\""' in out
