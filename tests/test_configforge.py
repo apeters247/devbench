@@ -902,6 +902,33 @@ def test_toml_no_empty_intermediate_headers():
     assert tomllib.loads(out) == data
 
 
+def test_toml_empty_tables_preserved():
+    """Genuinely empty TOML tables must survive serialization (yq#2459).
+
+    yq silently drops empty tables mid-document. We must preserve [cache]-style
+    empty sections so TOML->JSON->TOML and YAML->TOML roundtrips are lossless.
+    """
+    from core.configforge import convert, serialize
+    # Serializer must emit [cache] even though its dict value is {}
+    data = {"server": {"host": "localhost"}, "cache": {}, "db": {"port": 5432}}
+    out = serialize(data, "toml")
+    assert "[cache]" in out, "empty [cache] table must appear in TOML output"
+    assert "host = \"localhost\"" in out
+    assert "port = 5432" in out
+    # Intermediate-only tables (have sub-tables) must still be suppressed
+    nested = {"tool": {"poetry": {"name": "pkg"}}}
+    nested_out = serialize(nested, "toml")
+    assert "[tool]\n" not in nested_out, "[tool] with only sub-tables must stay implicit"
+    # Full TOML->JSON->TOML roundtrip
+    toml_src = "[server]\nhost = \"localhost\"\n\n[cache]\n\n[db]\nport = 5432\n"
+    json_r = convert(toml_src, "json", "toml")
+    assert json_r["success"]
+    assert '"cache": {}' in json_r["output"]
+    toml_r = convert(json_r["output"], "toml", "json")
+    assert toml_r["success"]
+    assert "[cache]" in toml_r["output"]
+
+
 # -- --merge tests --
 # Addresses the r/devops complaint that yq has no ergonomic deep-merge for
 # Kubernetes YAML files with nested lists (containers, env vars, volumes).

@@ -2697,10 +2697,13 @@ def _to_toml(data, prefix="", root=False, null_handling="skip"):
                     raise ValueError(f"TOML cannot represent null value '{full_key}'")
             else:
                 scalar_lines.append(f"{_toml_key(k)} = {_toml_scalar(v)}")
-        # Only emit a [section] header when there are direct scalar values at this
-        # level — intermediate-only tables (like [tool] in pyproject.toml) are
-        # implicit in TOML and clutter the output unnecessarily.
-        if prefix and not root and scalar_lines:
+        # Emit a [section] header when:
+        #   • the table has direct scalar values (normal case), OR
+        #   • the table is genuinely empty {} and has no sub-tables (yq#2459:
+        #     empty TOML tables must round-trip, not be silently dropped).
+        # Intermediate-only tables like [tool] in pyproject.toml have no
+        # scalars but DO have deferred children — those stay implicit.
+        if prefix and not root and (scalar_lines or not deferred):
             quoted_prefix = ".".join(_toml_key(seg) for seg in prefix.split("."))
             lines.append(f"\n[{quoted_prefix}]")
         lines.extend(scalar_lines)
