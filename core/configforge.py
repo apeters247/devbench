@@ -646,25 +646,39 @@ def _quote_template_values(text: str) -> str:
     return "\n".join(result_lines)
 
 
+_NBSP_MARKER = "\u00A0"
+
+
 def _make_block_scalar_dumper():
     """Return a YAML Dumper that represents multiline strings as block scalars.
 
     PyYAML 6.x falls back to double-quoted style when a string contains
     trailing whitespace on any line, even when style='|' is requested — the
-    root cause of yq issue #439 ("multiline string formatting not preserved").
-    We strip per-line trailing spaces before handing the string to PyYAML so
-    block scalar style is always used for multiline strings.  Trailing spaces
-    in config-file strings are virtually never intentional, so this normalise-
-    then-block approach is safe and produces stable, readable output.
+    root cause of yq issues #439 and #1831.  For strings *without* trailing
+    whitespace we strip per-line trailing spaces (safe normalisation).  For
+    strings *with* intentional trailing whitespace we replace trailing spaces
+    per line with a Unicode non-breaking space marker before handing the
+    string to PyYAML, then reverse the substitution in the caller so the
+    trailing whitespace is faithfully preserved in the YAML block scalar
+    output (fixes yq#1831: "extra space causes multiline string rendered as
+    single line string").
     """
     class BlockScalarDumper(yaml.Dumper):
         pass
 
     def _str_representer(dumper, data):
         if "\n" in data:
-            # Strip trailing spaces per line so PyYAML doesn't fall back to
-            # double-quoted style (its workaround for trailing-space preservation).
             lines = data.split("\n")
+            has_trailing = any(line.rstrip(" \t") != line for line in lines)
+            if has_trailing:
+                # Encode trailing whitespace with NBSP marker so PyYAML
+                # doesn't fall back to double-quoted style.  The caller
+                # (serialize) reverses the substitution after dump().
+                encoded = "\n".join(
+                    line.rstrip(" \t") + _NBSP_MARKER * (len(line) - len(line.rstrip(" \t")))
+                    for line in lines
+                )
+                return dumper.represent_scalar("tag:yaml.org,2002:str", encoded, style="|")
             cleaned = "\n".join(line.rstrip(" \t") for line in lines)
             return dumper.represent_scalar("tag:yaml.org,2002:str", cleaned, style="|")
         return dumper.represent_scalar("tag:yaml.org,2002:str", data)
@@ -1474,6 +1488,16 @@ def detect_format(text: str) -> str:
             dialect = csvmod.Sniffer().sniff(non_empty[0][:4096], delimiters=",;\t|")
             if dialect and non_empty[0].count(dialect.delimiter) >= 1:
                 return "csv"
+        except Exception:
+            pass
+
+    # Bare YAML scalar fallback: single-token values like "42", "true", "null", "3.14",
+    # or single unquoted words. Multi-word strings are too ambiguous to classify as YAML.
+    stripped = text.strip()
+    if "\n" not in stripped and " " not in stripped and HAS_YAML:
+        try:
+            yaml.safe_load(stripped)
+            return "yaml"
         except Exception:
             pass
 
@@ -2430,8 +2454,12 @@ def serialize(data, fmt: str, **options) -> str:
                 dump_kwargs["width"] = yaml_width_opt
         # Handle multi-document YAML: list of dicts → --- separated docs
         if isinstance(data, list) and all(isinstance(d, dict) for d in data):
-            return yaml.dump_all(data, **dump_kwargs)
-        return yaml.dump(data, **dump_kwargs)
+            out = yaml.dump_all(data, **dump_kwargs)
+        else:
+            out = yaml.dump(data, **dump_kwargs)
+        if block_scalars:
+            out = out.replace(_NBSP_MARKER, " ")
+        return out
 
     elif fmt == "toml":
         if options.get("sort_keys", False):

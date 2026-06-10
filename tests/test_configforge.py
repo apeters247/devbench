@@ -275,11 +275,11 @@ def test_batch_convert_progress(tmp_path, capsys):
     """Batch convert with show_progress prints progress lines."""
     for i in range(2):
         (tmp_path / f"cfg{i}.json").write_text(f'{{"id": {i}}}')
-    results = batch_convert(str(tmp_path / "*.json"), "yaml", str(tmp_path / "yaml_out"))
+    results = batch_convert(str(tmp_path / "*.json"), "yaml", str(tmp_path / "yaml_out"), show_progress=True)
     captured = capsys.readouterr()
-    assert "[batch]" in captured.out
-    assert "[1/2]" in captured.out
-    assert "[2/2]" in captured.out
+    assert "[batch]" in captured.err
+    assert "[1/2]" in captured.err
+    assert "[2/2]" in captured.err
     assert len(results) == 2
     assert all(r["success"] for r in results)
 
@@ -1217,6 +1217,46 @@ def test_merge_at_with_merge_new_only(tmp_path, capsys):
     assert result["db"]["port"] == 5432
     # New key added
     assert result["db"]["timeout"] == 30
+
+
+def test_merge_dedupe_lists_removes_duplicates(tmp_path, capsys):
+    """--merge-dedupe-lists deduplicates after append, fixes yq issue #2564."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("tags:\n  - python\n  - yaml\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("tags:\n  - yaml\n  - toml\n")
+    rc = main([str(base), "--merge", str(overlay), "--list-merge", "append", "--merge-dedupe-lists"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["tags"] == ["python", "yaml", "toml"]
+
+
+def test_merge_dedupe_lists_without_flag_allows_duplicates(tmp_path, capsys):
+    """Without --merge-dedupe-lists, append produces duplicates (expected default)."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("tags:\n  - python\n  - yaml\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("tags:\n  - yaml\n  - toml\n")
+    rc = main([str(base), "--merge", str(overlay), "--list-merge", "append"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["tags"] == ["python", "yaml", "yaml", "toml"]
+
+
+def test_merge_dedupe_lists_self_merge(tmp_path, capsys):
+    """Merging a file with itself + dedupe produces the original list (yq #2564 scenario)."""
+    from core.configforge import main
+    f = tmp_path / "data.yaml"
+    f.write_text("items:\n  - a\n  - b\n  - c\n")
+    rc = main([str(f), "--merge", str(f), "--list-merge", "append", "--merge-dedupe-lists"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["items"] == ["a", "b", "c"]
 
 
 def test_toml_set_pyproject_version(tmp_path, capsys):
@@ -3135,3 +3175,95 @@ def test_select_regex_then_sort_by(tmp_path, capsys):
     assert rc == 0
     result = _json.loads(capsys.readouterr().out)
     assert [r["name"] for r in result] == ["web-01", "web-02", "web-03"]
+
+
+# --- yq GitHub issue #2592: TOML comments in arrays ---
+def test_toml_comments_in_arrays():
+    """Devbench parses TOML with inline comments inside arrays (yq#2592 fails this)."""
+    toml_src = (
+        "[section]\n"
+        "the_array = [\n"
+        "  # first item\n"
+        "  \"value1\",\n"
+        "  # second item\n"
+        "  \"value2\",\n"
+        "]\n"
+    )
+    r = convert(toml_src, "json", source_format="toml")
+    assert r["success"], r.get("error")
+    parsed = json.loads(r["output"])
+    parsed.pop("__cf_comments__", None)
+    assert parsed == {"section": {"the_array": ["value1", "value2"]}}
+
+
+# --- --explicit-start / --explicit-end / --yaml-width ---
+def test_yaml_explicit_start():
+    """--explicit-start emits '---' document-start marker (fixes kislyuk/yq#93)."""
+    r = convert('{"key": "value"}', "yaml", explicit_start=True)
+    assert r["success"]
+    assert r["output"].startswith("---")
+    assert "key: value" in r["output"]
+
+
+def test_yaml_explicit_end():
+    """--explicit-end emits '...' document-end marker."""
+    r = convert('{"key": "value"}', "yaml", explicit_end=True)
+    assert r["success"]
+    assert r["output"].rstrip().endswith("...")
+
+
+def test_yaml_explicit_start_and_end():
+    """--explicit-start --explicit-end emits both markers."""
+    r = convert('{"key": "value"}', "yaml", explicit_start=True, explicit_end=True)
+    assert r["success"]
+    assert r["output"].startswith("---")
+    assert r["output"].rstrip().endswith("...")
+
+
+def test_yaml_width_unlimited():
+    """--yaml-width 0 disables line wrapping; long strings stay on one line."""
+    long_val = "x" * 200
+    r = convert(json.dumps({"url": long_val}), "yaml", yaml_width=0)
+    assert r["success"]
+    lines = r["output"].splitlines()
+    url_line = next(l for l in lines if "url:" in l)
+    assert long_val in url_line
+
+
+def test_yaml_width_custom():
+    """--yaml-width N wraps scalar lines at N characters."""
+    long_val = "word " * 30  # 150 chars
+    r = convert(json.dumps({"text": long_val.strip()}), "yaml", yaml_width=40)
+    assert r["success"]
+    # At least one line should be short (wrapping occurred)
+    lines = [l for l in r["output"].splitlines() if l.strip()]
+    assert any(len(l) <= 45 for l in lines)
+
+
+BOM = "﻿"
+
+
+def test_bom_json_stripped():
+    """UTF-8 BOM at start of JSON is silently stripped (common in Windows/Excel exports)."""
+    result = parse_text(BOM + '{"host": "localhost", "port": 5432}', "json")
+    assert result["data"] == {"host": "localhost", "port": 5432}
+
+
+def test_bom_yaml_stripped():
+    """UTF-8 BOM in YAML doesn't corrupt the first key."""
+    result = parse_text(BOM + "host: localhost\nport: 5432", "yaml")
+    assert result["data"]["host"] == "localhost"
+    assert "port" in result["data"]
+
+
+def test_bom_toml_stripped():
+    """UTF-8 BOM in TOML is stripped before parsing."""
+    result = parse_text(BOM + '[db]\nhost = "localhost"', "toml")
+    assert result["data"]["db"]["host"] == "localhost"
+
+
+def test_bom_json_auto_detect():
+    """BOM-prefixed JSON is auto-detected and parsed correctly."""
+    result = parse_text(BOM + '{"env": "prod"}')
+    assert result["format"] == "json"
+    assert result["data"]["env"] == "prod"

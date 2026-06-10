@@ -5400,3 +5400,35 @@ def test_cf_dispatch_select_regex_with_each_and_to(tmp_path, capsys):
     out = capsys.readouterr().out.strip()
     result = _json.loads(out)
     assert sorted(result) == ["web-backend", "web-frontend"]
+
+
+# ── detect_format: bare YAML scalar fallback (MEDIUM-3) ──────────────────────
+
+def test_detect_format_bare_integer_scalar():
+    """A bare integer like '42' is valid YAML and should detect as yaml."""
+    from core.configforge import detect_format
+    assert detect_format("42") == "yaml"
+
+
+def test_detect_format_bare_string_scalar():
+    """A bare unquoted string is valid YAML and should detect as yaml."""
+    from core.configforge import detect_format
+    assert detect_format("hello") == "yaml"
+
+
+def test_detect_format_bare_boolean_scalar():
+    """'true' alone is a valid YAML scalar and should detect as yaml."""
+    from core.configforge import detect_format
+    assert detect_format("true") == "yaml"
+
+
+def test_detect_format_bare_null_scalar():
+    """'null' alone is a valid YAML scalar and should detect as yaml."""
+    from core.configforge import detect_format
+    assert detect_format("null") == "yaml"
+
+
+def test_detect_format_bare_float_scalar():
+    """'3.14' alone is a valid YAML scalar and should detect as yaml."""
+    from core.configforge import detect_format
+    assert detect_format("3.14") == "yaml"

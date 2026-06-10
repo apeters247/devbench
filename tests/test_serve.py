@@ -143,3 +143,33 @@ def test_demo_symlink_returns_403(server, tmp_path):
         assert e.code == 403
     finally:
         link.unlink(missing_ok=True)
+
+
+# -- concurrent requests --------------------------------------------------
+
+
+def test_concurrent_index_requests(server):
+    """10 simultaneous GET / requests verify thread safety of the demo server."""
+    import concurrent.futures
+
+    N = 10
+    with concurrent.futures.ThreadPoolExecutor(max_workers=N) as pool:
+        futs = [pool.submit(_get, server, "/") for _ in range(N)]
+        results = [f.result() for f in futs]
+    for status, body in results:
+        assert status == 200
+        assert "<!DOCTYPE html>" in body
+
+
+def test_concurrent_convert_requests(server):
+    """10 simultaneous convert POST requests verify thread safety of the demo server."""
+    import concurrent.futures
+
+    N = 10
+    payload = {"source": "key: value", "from_format": "yaml", "to_format": "json"}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=N) as pool:
+        futs = [pool.submit(_post_json, server, "/convert", payload) for _ in range(N)]
+        results = [f.result() for f in futs]
+    for status, data in results:
+        assert status == 200
+        assert data["success"] is True

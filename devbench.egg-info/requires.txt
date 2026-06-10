@@ -1,13 +1,19 @@
-pydantic>=2.0
 pyyaml>=6.0
-tiktoken>=0.7.0
 
 [all]
+devbench[pydantic]
 devbench[hcl]
+devbench[tiktoken]
 devbench[toml]
 
 [hcl]
 python-hcl2
+
+[pydantic]
+pydantic>=2.0
+
+[tiktoken]
+tiktoken>=0.7.0
 
 [toml]
 

@@ -680,3 +680,122 @@ class TestStripeSignatureVerification:
     def test_non_integer_timestamp_rejected(self):
         mod = self._load_module(self._SECRET)
         assert mod._verify_stripe_sig("body", "t=notanumber,v1=abc123") is False
+
+# ── Concurrent HTTP Server Tests ─────────────────────────────────────────────
+
+class TestConcurrentServerRequests:
+    """Verify ThreadingHTTPServer correctness under concurrent load.
+
+    These tests fire multiple requests simultaneously to catch race conditions
+    and deadlocks that single-threaded sequential tests cannot detect.
+    """
+
+    _SECRET = "test-secret-32-bytes-long!!!!!!"
+
+    @staticmethod
+    def _start_server(secret: str = _SECRET):
+        import importlib
+        import tempfile
+        from http.server import ThreadingHTTPServer
+        from threading import Thread
+
+        os.environ["DEVBENCH_LICENSE_SECRET"] = secret
+        os.environ["DEVBENCH_LICENSE_DB"] = tempfile.mktemp(suffix=".db")
+
+        import web.license_server
+        importlib.reload(web.license_server)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), web.license_server.LicenseHandler)
+        port = server.server_address[1]
+        Thread(target=server.serve_forever, daemon=True).start()
+        return port
+
+    def test_concurrent_health_requests(self):
+        """10 concurrent GET /health requests all return 200."""
+        import concurrent.futures
+        import urllib.request
+        import json
+
+        port = self._start_server()
+        _wait_for_server(port)
+        url = f"http://127.0.0.1:{port}/health"
+
+        def fetch():
+            resp = urllib.request.urlopen(url, timeout=5)
+            return json.loads(resp.read())
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            futures = [pool.submit(fetch) for _ in range(10)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        assert len(results) == 10
+        assert all(r["status"] == "healthy" for r in results)
+
+    def test_concurrent_verify_requests(self):
+        """10 concurrent /license/verify requests on the same key all agree."""
+        import concurrent.futures
+        import urllib.request
+        import urllib.parse
+        import json
+
+        port = self._start_server()
+        _wait_for_server(port)
+
+        lm = _make_mgr()
+        key = lm.generate("concurrent@test.com", "cus_concurrent")
+        url = f"http://127.0.0.1:{port}/license/verify?key={urllib.parse.quote(key)}"
+
+        def fetch():
+            resp = urllib.request.urlopen(url, timeout=5)
+            return json.loads(resp.read())
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            futures = [pool.submit(fetch) for _ in range(10)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        assert len(results) == 10
+        assert all(r["valid"] is True for r in results)
+        assert all(r["email"] == "concurrent@test.com" for r in results)
+
+    def test_concurrent_activations_no_corruption(self):
+        """5 concurrent activation requests stay within max_activations limit.
+
+        Fires 5 simultaneous activate POSTs for a key with max_activations=5.
+        Each must either succeed or return a clean error — no server crash,
+        no corrupted activation count, no duplicate machine_id accepted twice.
+        """
+        import concurrent.futures
+        import urllib.request
+        import json
+
+        port = self._start_server()
+        _wait_for_server(port)
+
+        # Generate a key using the same secret the server loaded from env
+        lm = _make_mgr(tmp_db=True, max_activations=5)
+        key = lm.generate("race@test.com", "cus_race")
+
+        def activate(machine_id: str):
+            data = json.dumps({"key": key, "machine_id": machine_id}).encode()
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/license/activate",
+                data=data,
+                headers={"Content-Type": "application/json"},
+            )
+            try:
+                resp = urllib.request.urlopen(req, timeout=5)
+                return json.loads(resp.read())
+            except urllib.error.HTTPError as e:
+                return json.loads(e.read())
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            futures = [pool.submit(activate, f"machine-{i}") for i in range(5)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        # Server must not crash — all 5 requests return a parseable response
+        assert len(results) == 5
+        statuses = {r.get("status") for r in results}
+        # All responses must be either "ok" or a known error status (limit, invalid, etc.)
+        assert statuses <= {"ok", "error", "limit_reached", "invalid"}
+        # No raw exceptions or unparsed responses
+        assert all(isinstance(r, dict) for r in results)

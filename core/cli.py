@@ -19,6 +19,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 import urllib.parse
@@ -341,6 +342,21 @@ def _build_parser() -> argparse.ArgumentParser:
                                 help="Force multiline strings to use YAML block scalar style (|) in output. "
                                      "Prevents yq-style corruption of strings with trailing spaces. "
                                      "Example: devbench cf config.yaml -t yaml --block-scalars")
+            tool_p.add_argument("--explicit-start", action="store_true", dest="explicit_start",
+                                help="Emit '---' document-start marker in YAML output. "
+                                     "Fixes kislyuk/yq issue #93: yq --yaml-output silently removes '---' from files "
+                                     "that originally had it, breaking multi-doc pipelines and Kubernetes manifests. "
+                                     "Example: devbench cf config.yaml -t yaml --explicit-start")
+            tool_p.add_argument("--explicit-end", action="store_true", dest="explicit_end",
+                                help="Emit '...' document-end marker in YAML output. "
+                                     "Pair with --explicit-start for fully-fenced YAML documents. "
+                                     "Example: devbench cf config.yaml -t yaml --explicit-start --explicit-end")
+            tool_p.add_argument("--yaml-width", type=int, default=None, dest="yaml_width", metavar="N",
+                                help="Max line width for YAML scalar wrapping (default: 80). "
+                                     "Use 0 to disable line wrapping entirely. "
+                                     "Fixes mikefarah/yq issues #452/#278: yq silently wraps long strings at 80 chars, "
+                                     "corrupting URLs, base64 blobs, and other long values. "
+                                     "Example: devbench cf config.yaml -t yaml --yaml-width 0")
             tool_p.add_argument("--sort-keys", action="store_true", help="Sort keys in output")
             tool_p.add_argument("--sort-keys-reverse", action="store_true", dest="sort_keys_reverse",
                                 help="Sort keys in reverse order (yq#2390 alternative to sort_keys(.) | reverse)")
@@ -387,6 +403,11 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--merge-new-only", action="store_true", dest="merge_new_only", default=False,
                                 help="With --merge: only add keys absent from the base file; never overwrite existing values. "
                                      "Useful for populating defaults without clobbering already-set config (yq issue #2201).")
+            tool_p.add_argument("--merge-dedupe-lists", action="store_true", dest="merge_dedupe_lists", default=False,
+                                help="With --merge --list-merge append: deduplicate list items after appending, preserving first occurrence. "
+                                     "Fixes yq issue #2564 where merging with *= or *+ produces duplicate mapping entries; "
+                                     "useful when the overlay shares items with the base or when merging a file with itself. "
+                                     "Example: devbench cf base.yaml --merge overlay.yaml --list-merge append --merge-dedupe-lists")
             tool_p.add_argument("--merge-at", metavar="PATH", dest="merge_at", default=None,
                                 help="With --merge: merge overlay into the nested path PATH instead of the document root. "
                                      "Use dot-notation (e.g. spec.template.spec) to target any level. "
@@ -556,6 +577,15 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Works with --to json or when output is JSON. "
                                      "Combine with --raw/-r to get just the compact JSON string. "
                                      "Example: devbench cf config.yaml --to json --compact --raw | jq .")
+            tool_p.add_argument("--colors", "-C", action="store_true", dest="colors",
+                                help="Colorize output with ANSI syntax highlighting (uses pygments when available). "
+                                     "Auto-enabled when stdout is a TTY and --raw is set. "
+                                     "Fixes kislyuk/yq#17 and dasel#136: lack of colorized output like jq. "
+                                     "Example: devbench cf config.yaml --to json --raw --colors | less -R")
+            tool_p.add_argument("--no-colors", "-M", action="store_true", dest="no_colors",
+                                help="Disable colorized output even when stdout is a TTY. "
+                                     "Useful when piping to tools that don't handle ANSI escape codes. "
+                                     "Example: devbench cf config.yaml --to yaml --raw --no-colors > plain.yaml")
             tool_p.add_argument("--wrap-in", metavar="KEY", default=None, dest="wrap_in",
                                 help="Wrap the entire parsed config under a dotted key path. "
                                      "Example: devbench cf config.yaml --wrap-in data → {data: {original...}}. "
@@ -697,6 +727,14 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 def _get_input(args: argparse.Namespace) -> str:
     """Get input text from argument or stdin. If args.text is a file path, read it."""
     text_arg = getattr(args, "text", None)
+    if text_arg == "-":
+        # Explicit stdin sentinel — always read from stdin
+        if not sys.stdin.isatty():
+            try:
+                return sys.stdin.read().strip()
+            except OSError:
+                pass
+        return ""
     if text_arg is not None:
         p = Path(text_arg)
         if p.is_file():
@@ -723,24 +761,56 @@ def _get_input(args: argparse.Namespace) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _colorize(text: str, fmt: str) -> str:
+    """Apply ANSI syntax highlighting using pygments. Returns text unchanged if unavailable."""
+    _pygments_lexer_map = {
+        "json": "json", "jsonc": "json", "json5": "json",
+        "yaml": "yaml", "toml": "toml", "xml": "xml",
+        "ini": "ini", "properties": "properties", "env": "bash",
+        "hcl": "hcl", "csv": "text",
+    }
+    lexer_name = _pygments_lexer_map.get(fmt, "text")
+    try:
+        from pygments import highlight
+        from pygments.formatters import Terminal256Formatter
+        from pygments.lexers import get_lexer_by_name
+        lexer = get_lexer_by_name(lexer_name)
+        colored = highlight(text, lexer, Terminal256Formatter(style="monokai"))
+        # pygments appends a trailing newline; strip one if original didn't end with \n\n
+        if not text.endswith("\n") and colored.endswith("\n"):
+            colored = colored[:-1]
+        return colored
+    except Exception:
+        return text
+
+
 def _emit_output(result_str: str, args: argparse.Namespace) -> None:
     """Emit tool output to stdout."""
     raw = getattr(args, "raw", False)
     pretty = getattr(args, "pretty", False)
     compact = getattr(args, "compact", False)
+    use_colors = getattr(args, "colors", False)
+    no_colors = getattr(args, "no_colors", False)
+    # Auto-enable color when stdout is a TTY and raw output is requested
+    if raw and not no_colors and sys.stdout.isatty():
+        use_colors = True
 
     if raw:
         # Try to extract just the output field from JSON wrapper
         try:
             parsed = json.loads(result_str)
             output_str = parsed.get("output", result_str)
+            _raw_fmt = parsed.get("metadata", {}).get("to") or getattr(args, "to", None) or "text"
         except (json.JSONDecodeError, TypeError):
             output_str = result_str
+            _raw_fmt = getattr(args, "to", None) or "text"
         if compact:
             try:
                 output_str = json.dumps(json.loads(output_str), separators=(",", ":"), ensure_ascii=False)
             except (json.JSONDecodeError, TypeError):
                 pass
+        if use_colors:
+            output_str = _colorize(output_str, _raw_fmt)
         print(output_str)
         return
 
@@ -765,7 +835,10 @@ def _emit_output(result_str: str, args: argparse.Namespace) -> None:
         except (json.JSONDecodeError, TypeError):
             pass
 
-    # Default: print as-is (already JSON-ish)
+    # Default: print as-is (already JSON-ish); colorize outer JSON envelope if requested
+    if use_colors and not no_colors:
+        print(_colorize(result_str, "json"))
+        return
     print(result_str)
 
 
@@ -923,6 +996,12 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
         options["template_safe"] = True
     if hasattr(args, "block_scalars") and args.block_scalars:
         options["block_scalars"] = True
+    if getattr(args, "explicit_start", False):
+        options["explicit_start"] = True
+    if getattr(args, "explicit_end", False):
+        options["explicit_end"] = True
+    if getattr(args, "yaml_width", None) is not None:
+        options["yaml_width"] = args.yaml_width
     if hasattr(args, "sort_keys") and args.sort_keys:
         options["sort_keys"] = True
     if hasattr(args, "sort_keys_reverse") and args.sort_keys_reverse:
@@ -1332,10 +1411,22 @@ def _get_env_info() -> dict:
         "yaml": "pyyaml", "toml": None, "xml": None, "csv": None,
         "ini": None, "hcl": "python-hcl2", "plist": None,
     }
-    formats_status: dict[str, bool] = {}
+    # Access level: "rw" = full read+write, "r" = read-only (write outputs stripped JSON)
+    _format_access: dict[str, str] = {
+        "json": "rw", "yaml": "rw", "toml": "rw", "xml": "rw",
+        "csv": "rw", "ini": "rw", "env": "rw", "properties": "rw",
+        "plist": "rw", "hcl": "rw",
+        "jsonc": "r",   # parses comments; writes as plain JSON (comments stripped)
+        "json5": "r",   # parses JSON5 extensions; writes as plain JSON
+    }
+    formats_status: dict[str, dict] = {}
     for fmt in _cf.SUPPORTED_FORMATS:
         dep = _format_deps.get(fmt)
-        formats_status[fmt] = (dep is None) or (optional_deps.get(dep) is not None)
+        available = (dep is None) or (optional_deps.get(dep) is not None)
+        formats_status[fmt] = {
+            "available": available,
+            "access": _format_access.get(fmt, "rw"),
+        }
 
     return {
         "version": _ver,
@@ -1364,7 +1455,7 @@ def _run_cf_check_env(args: argparse.Namespace) -> int:
         f"Python:   {info['python_version']} ({info['python_impl']}) — {info['platform']}",
         f"Platform: {info['arch']}",
         "",
-        f"Config Formats ({sum(info['formats'].values())}/{len(info['formats'])} available):",
+        f"Config Formats ({sum(1 for v in info['formats'].values() if v['available'])}/{len(info['formats'])} available):",
     ]
     _dep_labels: dict[str, str] = {
         "json": "stdlib", "jsonc": "stdlib", "env": "stdlib",
@@ -1372,13 +1463,15 @@ def _run_cf_check_env(args: argparse.Namespace) -> int:
         "csv": "stdlib csv", "ini": "stdlib configparser", "plist": "stdlib plistlib",
         "yaml": "PyYAML", "hcl": "python-hcl2",
     }
-    for fmt, available in info["formats"].items():
+    for fmt, finfo in info["formats"].items():
+        available = finfo["available"]
+        access = finfo.get("access", "rw")
         mark = "✓" if available else "✗"
         label = _dep_labels.get(fmt, "")
-        status = ""
+        status = f"  [{access}]"
         if not available:
             dep_name = {"yaml": "pyyaml", "hcl": "python-hcl2"}.get(fmt, "")
-            status = f"  [pip install {dep_name}]" if dep_name else ""
+            status += f"  [pip install {dep_name}]" if dep_name else ""
         lines.append(f"  {mark} {fmt:<12} {label}{status}")
 
     lines += [
@@ -1419,7 +1512,7 @@ _CF_FLAG_CATEGORIES = [
         "--get PATH", "--default VALUE", "--set PATH VALUE",
         "--append PATH VALUE", "--delete PATH", "--rename OLD NEW",
         "--merge FILE", "--list-merge {replace|append|merge}",
-        "--merge-new-only", "--merge-at PATH",
+        "--merge-new-only", "--merge-dedupe-lists", "--merge-at PATH",
         "--in-place / -i", "--backup [SUFFIX]",
     ]),
     ("List ops", [
@@ -1436,12 +1529,13 @@ _CF_FLAG_CATEGORIES = [
         "--wrap-in KEY", "--replace-value OLD NEW",
         "--mask PATTERN", "--mask-value TEXT",
         "--hash-field PATTERN", "--hash-algorithm ALGO",
-        "--compact / -c",
+        "--compact / -c", "--colors / -C", "--no-colors / -M",
     ]),
     ("Format tuning", [
         "--indent N", "--sort-keys", "--sort-keys-reverse",
         "--no-comments", "--yaml12", "--template-safe",
-        "--block-scalars", "--null-handling {skip|comment|empty|error}",
+        "--block-scalars", "--explicit-start", "--explicit-end",
+        "--yaml-width N", "--null-handling {skip|comment|empty|error}",
         "--ini-quote-strings", "--csv-delimiter CHAR", "--tsv",
         "--env-expand",
     ]),
@@ -1948,14 +2042,14 @@ def _run_cf_merge(args) -> int:
     overlay_data = overlay_parsed.get("data", overlay_parsed)
     list_mode = getattr(args, "list_merge", "replace")
     new_only = getattr(args, "merge_new_only", False)
+    dedupe_lists = getattr(args, "merge_dedupe_lists", False)
     merge_at = getattr(args, "merge_at", None)
     if merge_at:
         try:
             target = _cf._get_by_path(base_data, merge_at)
         except (KeyError, IndexError):
             target = {}
-        merged_target = _cf._deep_merge(target, overlay_data, list_mode=list_mode, new_only=new_only)
-        import copy
+        merged_target = _cf._deep_merge(target, overlay_data, list_mode=list_mode, new_only=new_only, dedupe_lists=dedupe_lists)
         merged = copy.deepcopy(base_data)
         try:
             _cf._set_by_path(merged, merge_at, merged_target)
@@ -1963,7 +2057,7 @@ def _run_cf_merge(args) -> int:
             print(f"error: --merge-at path invalid: {exc}", file=sys.stderr)
             return EXIT_ERROR
     else:
-        merged = _cf._deep_merge(base_data, overlay_data, list_mode=list_mode, new_only=new_only)
+        merged = _cf._deep_merge(base_data, overlay_data, list_mode=list_mode, new_only=new_only, dedupe_lists=dedupe_lists)
     to_fmt = getattr(args, "to", None) or detected_fmt
     if not to_fmt:
         print("error: cannot determine output format; use --to", file=sys.stderr)
@@ -2394,6 +2488,12 @@ def _run_cf_validate(args) -> int:
         return EXIT_SUCCESS if all(r["valid"] for r in results) else EXIT_ERROR
 
     # Single-file / stdin mode
+    text_arg = getattr(args, "text", None)
+    if text_arg is not None:
+        p = Path(text_arg)
+        if not p.is_file() and (p.suffix or p.parent != Path(".")):
+            print(f"error: file not found: {text_arg}", file=sys.stderr)
+            return EXIT_ERROR
     content, file_path = _cf_read_file_or_content(args)
     if content is None:
         return EXIT_ERROR
@@ -4229,9 +4329,9 @@ _CF_FLAGS = (
     "--flatten --unflatten --sep --env-expand "
     "--batch --stream --output-dir --sort-keys --sort-keys-reverse --indent "
     "--sort-by --sort-desc --unique --unique-by "
-    "--flatten-xml --no-comments --yaml12 --template-safe --block-scalars "
+    "--flatten-xml --no-comments --yaml12 --template-safe --block-scalars --explicit-start --explicit-end --yaml-width "
     "--null-handling --list-formats --check-env --schema --mask --mask-value --hash-field --hash-algorithm --assert "
-    "--path-exists --shell-export --bash-arrays --compact -c --template --wrap-in "
+    "--path-exists --shell-export --bash-arrays --compact -c --colors -C --no-colors -M --template --wrap-in "
     "--csv-delimiter --tsv --schema-gen --replace-value "
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --flags --help"
@@ -4390,6 +4490,7 @@ _devbench() {{
                         '--merge=[Merge overlay file]:file:_files' \\
                         '--list-merge=[List merge strategy]:mode:(replace append merge)' \\
                         '--merge-new-only[Merge: add missing keys only]' \\
+                        '--merge-dedupe-lists[Merge: deduplicate list items after append]' \\
                         '--merge-at=[Merge overlay at nested path]:path:' \\
                         '--diff=[Structural diff against file]:file:_files' \\
                         '--validate[Validate config is parseable]' \\
@@ -4419,6 +4520,9 @@ _devbench() {{
                         '--yaml12[YAML 1.2 mode: only true/false are booleans]' \\
                         '--template-safe[Quote Jinja/Helm/Ansible template expressions]' \\
                         '--block-scalars[Force YAML block scalar (|) style for multiline strings]' \\
+                        '--explicit-start[Emit --- document-start marker in YAML output]' \\
+                        '--explicit-end[Emit ... document-end marker in YAML output]' \\
+                        '--yaml-width[Max YAML scalar line width; 0 = no wrap]:width:' \\
                         '--null-handling=[Null handling strategy]:mode:(skip comment empty error)' \\
                         '--list-formats[List all supported formats]' \\
                         '--check-env[Show environment info (Python, formats, deps)]' \\
@@ -4438,6 +4542,10 @@ _devbench() {{
                         '--unique-by=[Deduplicate list of objects by a field]:field:' \\
                         '--compact[Compact/minified JSON output (no whitespace)]' \\
                         '-c[Compact/minified JSON output (no whitespace)]' \\
+                        '--colors[Colorize output with ANSI syntax highlighting]' \\
+                        '-C[Colorize output with ANSI syntax highlighting]' \\
+                        '--no-colors[Disable ANSI color output]' \\
+                        '-M[Disable ANSI color output]' \\
                         '--template=[Render template file using config as context]:template:_files' \\
                         '--wrap-in=[Wrap entire config under a dotted key path]:key:' \\
                         '--csv-delimiter=[Override CSV field delimiter (tab, pipe, semicolon)]:char:' \\
@@ -4514,6 +4622,7 @@ complete -c devbench -n __devbench_seen_cf -l rename  -d 'Rename key: OLD_PATH N
 complete -c devbench -n __devbench_seen_cf -l merge   -d 'Merge overlay file'        -r -F
 complete -c devbench -n __devbench_seen_cf -l list-merge  -d 'List merge strategy'    -r -f -a 'replace append merge'
 complete -c devbench -n __devbench_seen_cf -l merge-new-only -d 'Merge: add missing keys only'
+complete -c devbench -n __devbench_seen_cf -l merge-dedupe-lists -d 'Merge: deduplicate list items after append'
 complete -c devbench -n __devbench_seen_cf -l merge-at    -d 'Merge overlay at nested path'  -r
 complete -c devbench -n __devbench_seen_cf -l diff    -d 'Structural diff vs file'   -r -F
 
@@ -4556,8 +4665,11 @@ complete -c devbench -n __devbench_seen_cf -l flatten-xml   -d 'Flatten nested X
 complete -c devbench -n __devbench_seen_cf -l no-comments   -d 'Strip comments'
 complete -c devbench -n __devbench_seen_cf -l yaml12        -d 'YAML 1.2 (true/false only)'
 complete -c devbench -n __devbench_seen_cf -l template-safe -d 'Quote Jinja/Helm/Ansible templates'
-complete -c devbench -n __devbench_seen_cf -l block-scalars -d 'Force | block scalar style for multiline strings'
-complete -c devbench -n __devbench_seen_cf -l null-handling -d 'Null handling mode'   -r -f -a 'skip comment empty error'
+complete -c devbench -n __devbench_seen_cf -l block-scalars   -d 'Force | block scalar style for multiline strings'
+complete -c devbench -n __devbench_seen_cf -l explicit-start  -d 'Emit --- document-start marker in YAML output'
+complete -c devbench -n __devbench_seen_cf -l explicit-end    -d 'Emit ... document-end marker in YAML output'
+complete -c devbench -n __devbench_seen_cf -l yaml-width      -d 'Max YAML line width (0 = no wrap)' -r
+complete -c devbench -n __devbench_seen_cf -l null-handling   -d 'Null handling mode'   -r -f -a 'skip comment empty error'
 
 # cf: in-place edit
 complete -c devbench -n __devbench_seen_cf -l in-place -d 'Edit file in-place'
@@ -4576,6 +4688,10 @@ complete -c devbench -n __devbench_seen_cf -l assert       -d 'Assert PATH=VALUE
 complete -c devbench -n __devbench_seen_cf -l path-exists  -d 'Check if path exists in config (exit 0/1)'  -r
 complete -c devbench -n __devbench_seen_cf -l shell-export -d 'Output as shell export KEY=VALUE statements'
 complete -c devbench -n __devbench_seen_cf -l compact      -d 'Compact/minified JSON output (no whitespace)'
+complete -c devbench -n __devbench_seen_cf -l colors       -d 'Colorize output with ANSI syntax highlighting'
+complete -c devbench -n __devbench_seen_cf -s C            -d 'Colorize output with ANSI syntax highlighting'
+complete -c devbench -n __devbench_seen_cf -l no-colors    -d 'Disable ANSI color output'
+complete -c devbench -n __devbench_seen_cf -s M            -d 'Disable ANSI color output'
 complete -c devbench -n __devbench_seen_cf -s c            -d 'Compact/minified JSON output (no whitespace)'
 complete -c devbench -n __devbench_seen_cf -l template     -d 'Render template file using config as context'  -r -F
 complete -c devbench -n __devbench_seen_cf -l wrap-in      -d 'Wrap config under a dotted key path'           -r

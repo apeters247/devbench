@@ -1,150 +1,175 @@
 Metadata-Version: 2.4
 Name: devbench
-Version: 0.1.0
-Summary: Developer tools library — 9 utilities, clipboard auto-detection, and a CLI.
+Version: 1.0.0
+Summary: ConfigForge: 11-format config converter with comment preservation + 9 dev tools. yq alternative with TOML write support.
 Author-email: Andrew Peters <apeters247@gmail.com>
 License: MIT
-Project-URL: Homepage, https://github.com/apeters247/devbench
+Project-URL: Homepage, https://naxiai.com/tools/devbench/
 Project-URL: Repository, https://github.com/apeters247/devbench
-Keywords: developer-tools,cli,json,base64,jwt,configforge
+Project-URL: Documentation, https://naxiai.com/tools/devbench/
+Project-URL: Bug Tracker, https://github.com/apeters247/devbench/issues
+Keywords: yaml-to-toml,toml-converter,yaml-converter,json-converter,config-file-converter,configforge,yq-alternative,dasel-alternative,comment-preserving-yaml,yaml-comments,hcl-converter,plist-converter,toml-write,yaml-toml-json-xml-csv-ini-env-hcl-plist,developer-tools,cli,json,base64,jwt,token-counter,text-chunker
 Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
 Classifier: Environment :: Console
 Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: System Administrators
 Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: Software Development :: Build Tools
+Classifier: Topic :: Utilities
+Classifier: Topic :: Text Processing :: Markup
+Classifier: Topic :: System :: Systems Administration
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: pydantic>=2.0
 Requires-Dist: pyyaml>=6.0
-Requires-Dist: tiktoken>=0.7.0
+Provides-Extra: pydantic
+Requires-Dist: pydantic>=2.0; extra == "pydantic"
 Provides-Extra: hcl
 Requires-Dist: python-hcl2; extra == "hcl"
+Provides-Extra: tiktoken
+Requires-Dist: tiktoken>=0.7.0; extra == "tiktoken"
 Provides-Extra: toml
 Requires-Dist: tomli; python_version < "3.11" and extra == "toml"
 Provides-Extra: all
+Requires-Dist: devbench[pydantic]; extra == "all"
 Requires-Dist: devbench[hcl]; extra == "all"
+Requires-Dist: devbench[tiktoken]; extra == "all"
 Requires-Dist: devbench[toml]; extra == "all"
 
 # Devbench / ConfigForge
 
-> Nine essential developer tools + **ConfigForge** — a multi-format config file converter supporting **9 formats** (JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties). All offline, all private.
+> Nine essential developer tools + **ConfigForge** — a multi-format config file converter supporting **11 formats** (JSON, YAML, TOML, XML, CSV, INI, .env, HCL, .properties, plist, JSONC). All offline, all private. The yq/dasel alternative with TOML write support.
 
-## Features
-
-### ConfigForge (`devbench cf`)
-Convert config files between any of 9 formats — bidirectionally, offline, with comment preservation.
+## Install
 
 ```bash
-# Install
-pip install devbench-cf
+# pip (PyPI)
+pip install devbench
 
-# Convert JSON to YAML
-devbench cf convert config.json config.yaml
+# Homebrew (macOS/Linux)
+brew tap apeters247/devbench
+brew install devbench
 
-# Convert TOML to .env for container builds
-devbench cf convert pyproject.toml settings.env
-
-# Batch convert all JSON files to YAML
-devbench cf convert --batch "*.json" --to yaml
-
-# Detect format automatically
-devbench cf detect config.unknown
+# From source
+git clone https://github.com/apeters247/devbench && cd devbench && pip install -e .
 ```
-
-### Developer Tools (CLI + Detector)
-The `devbench` CLI includes 9 tools plus clipboard auto-detection:
-
-| Tool | Description |
-|------|-------------|
-| `json` | Format, validate, and minify JSON |
-| `base64` | Encode/decode base64 data |
-| `jwt` | Decode JWT tokens |
-| `hash` | Generate hashes (MD5, SHA) |
-| `url` | URL encode/decode with query string parsing |
-| `timestamp` | Convert Unix timestamps ↔ human dates |
-| `uuid` | Generate v4 UUIDs (single or batch) |
-| `diff` | Side-by-side text comparison |
-| `cf` | ConfigForge — multi-format config conversion |
-
-Clipboard auto-detection intelligently recognizes JSON, JWT, URLs, timestamps, base64, and config formats from any pasted text.
-
-### Supported Formats (ConfigForge)
-
-| Format | Read | Write | Comment Preservation |
-|--------|------|-------|---------------------|
-| JSON | ✅ | ✅ | N/A (no comments in JSON) |
-| YAML | ✅ | ✅ | ✅ Full round-trip |
-| TOML | ✅ | ✅ | ✅ Full round-trip |
-| XML | ✅ | ✅ | ⚠️ Structural comments |
-| CSV | ✅ | ✅ | N/A |
-| INI | ✅ | ✅ | ✅ Full round-trip |
-| .env | ✅ | ✅ | ✅ Full round-trip |
-| HCL | ✅ | ✅ | ⚠️ Limited (hcl2 dep) |
-| .properties | ✅ | ✅ | ✅ Full round-trip |
 
 ## Quick Start
 
 ```bash
-# Install from source
-git clone https://github.com/apeters247/devbench
-cd devbench
-pip install -e .
+# Convert YAML to JSON
+devbench cf config.yaml -t json
 
-# Or install the package directly
-pip install devbench-cf
+# Convert JSON to TOML (pipe)
+cat package.json | devbench cf -t toml
 
-# Try it
-devbench cf convert --help
-devbench detect '{"hello": "world"}'
+# In-place edit
+devbench cf config.yaml --set server.port 8080 --in-place
+
+# Get a value
+devbench cf config.yaml --get server.port
+
+# Dotted key names (e.g. Kubernetes annotations)
+devbench cf k8s.yaml --get 'ingressAnnotations.cert-manager\.io/cluster-issuer'
+
+# Batch convert
+devbench cf '*.yaml' -t json --batch --output-dir out/
+
+# Merge defaults without overwriting existing keys
+devbench cf prod.yaml --merge defaults.yaml --merge-new-only
+
+# YAML 1.2 strict booleans (prevent Norway problem)
+devbench cf config.yaml -t json --yaml12
+
+# Show 9 developer tools (token counter, base64, hash, UUID, diff, etc.)
+devbench tools
 ```
+
+## Features
+
+### ConfigForge (`devbench cf`)
+
+Convert config files between any of 11 formats — bidirectionally, offline, with comment preservation.
+
+**Why ConfigForge over yq/dasel?**
+
+| Feature | ConfigForge | yq | dasel |
+|---------|-------------|-----|-------|
+| TOML write | ✅ | ❌ | ❌ |
+| Comment preservation | ✅ Full | Partial | ❌ |
+| Formats | 11 | 7 | 8 |
+| Dotted key escape (`\.`) | ✅ | ❌ | ❌ |
+| Batch/streaming | ✅ | ❌ | ❌ |
+| YAML 1.2 strict booleans | ✅ | ❌ | ❌ |
+| plist support | ✅ | ❌ | ❌ |
+| `pip install` | ✅ | ❌ | ❌ |
+
+### Developer Tools (`devbench tools`)
+
+| Tool | Command | Description |
+|------|---------|-------------|
+| ConfigForge | `devbench cf` | 11-format config converter |
+| JSON | `devbench json` | Format, validate, minify JSON |
+| Base64 | `devbench base64` | Encode/decode |
+| Hash | `devbench hash` | MD5, SHA-1/256/512 |
+| URL | `devbench url` | URL encode/decode + query parsing |
+| Timestamp | `devbench timestamp` | Unix ↔ human date conversion |
+| UUID | `devbench uuid` | Generate v4 UUIDs (batch supported) |
+| Diff | `devbench diff` | Side-by-side text comparison |
+| JWT | `devbench jwt` | Decode JWT tokens |
+
+### Supported Formats
+
+| Format | Read | Write | Comment Preservation |
+|--------|------|-------|---------------------|
+| JSON | ✅ | ✅ | N/A |
+| JSONC | ✅ | ✅ | ✅ |
+| YAML | ✅ | ✅ | ✅ Full round-trip |
+| TOML | ✅ | ✅ | ✅ Full round-trip |
+| XML | ✅ | ✅ | ⚠️ Structural |
+| CSV | ✅ | ✅ | N/A |
+| INI | ✅ | ✅ | ✅ Full round-trip |
+| .env | ✅ | ✅ | ✅ Full round-trip |
+| HCL | ✅ | ✅ | ⚠️ Limited |
+| .properties | ✅ | ✅ | ✅ Full round-trip |
+| plist | ✅ | ✅ | N/A |
 
 ## Test Suite
 
 ```bash
-cd devbench
-pip install -e ".[test]"
-python -m pytest tests/ -q --tb=line
+python3 -m pytest tests/ -q --tb=line
 ```
 
-Current status: **574 tests passing, 7 skipped, 2 xfailed — 0 failures.**
+Current status: **1338 tests passing, 7 skipped, 2 xfailed — 0 failures.**
 
 ## Project Structure
 
 ```
 devbench/
-├── core/                   # Python backend
-│   ├── configforge.py      # ConfigForge engine (9-format converter)
-│   ├── detector.py         # Clipboard content auto-detector
-│   ├── tools.py            # All 9 developer tools
-│   ├── cli.py              # CLI entry point
+├── core/                   # Main package
+│   ├── configforge.py      # 11-format converter engine
+│   ├── cli.py              # CLI entry point (devbench command)
+│   ├── tools.py            # 9 developer utilities
+│   ├── detector.py         # Format auto-detection
 │   └── models.py           # Data models
-├── tests/                  # Pytest test suite
-├── web/                    # Landing page
-├── forge/                  # CI/CD, SEO, review artifacts
-│   ├── seo/                # SEO comparison pages
-│   └── external-review-*.md # Competitive research reports
-├── scripts/                # Build and deployment scripts
-├── demo/                   # Web demo assets
-├── pyproject.toml          # Build config
-├── PLAN.md                 # Development plan (auto-updated by CI)
-└── README.md               # This file
+├── tests/                  # pytest suite (1338 tests)
+├── web/                    # Landing page + license server
+├── homebrew-tap/           # Homebrew formula (brew tap apeters247/devbench)
+├── forge/                  # AI agent workspace + SEO pages
+└── pyproject.toml          # Build config
 ```
 
 ## Architecture
 
 ConfigForge uses a **line-mapped comment preservation model**: comments are extracted from source text via regex *before* parsing, stored as a linear sequence of line-attached annotations, and re-inserted *after* serialization. This avoids the node-attached comment model used by most YAML libraries, which repeatedly loses or misplaces comments during transformations.
 
-## Competitive Advantages
-
-- **9 formats** vs yq's 2 and jq's 1
-- **Comment preservation** across round-trips (yq #515: 151👍, yq #465: 113👍 — both unresolved for 6+ years)
-- **Offline** — zero external API calls, no telemetry, no data leaves the machine
-- **Batch mode** — native glob + recursive processing
-- **Open source** — MIT license on PyPI
-
 ## Links
 
+- **Homepage:** https://naxiai.com/tools/devbench/
+- **PyPI:** https://pypi.org/project/devbench/
 - **Source:** https://github.com/apeters247/devbench
-- **PyPI:** https://pypi.org/project/devbench-cf/
-- **Changelog:** CHANGELOG.md
-- **Landing page:** https://toxscreen.ai/tools/devbench/
+- **Homebrew tap:** `brew tap apeters247/devbench && brew install devbench`

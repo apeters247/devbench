@@ -188,3 +188,45 @@ def test_rate_limiter_cleanup_evicts_stale():
     limiter.allow("9.9.9.9", now=100.0)
     limiter.cleanup(now=200.0)  # well past window
     assert "9.9.9.9" not in limiter._hits
+
+
+# -- concurrent requests --------------------------------------------------
+
+
+def test_concurrent_convert_requests(server):
+    """10 simultaneous convert requests verify thread safety of the ThreadingHTTPServer."""
+    import concurrent.futures
+
+    N = 10
+    payload = {"source": "key: value", "from_format": "yaml", "to_format": "json"}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=N) as pool:
+        futs = [pool.submit(_post_json, server, "/api/v1/convert", payload) for _ in range(N)]
+        results = [f.result() for f in futs]
+    for status, _, data in results:
+        assert status == 200
+        assert data["success"] is True
+        assert '"key"' in data["output"]
+
+
+def test_concurrent_mixed_requests(server):
+    """Mix of GET and POST concurrent requests — verifies no shared-state corruption."""
+    import concurrent.futures
+
+    def do_get():
+        return _get(server, "/health")
+
+    def do_post():
+        return _post_json(server, "/api/v1/convert", {"source": "x: 1", "to_format": "json"})
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+        get_futs = [pool.submit(do_get) for _ in range(5)]
+        post_futs = [pool.submit(do_post) for _ in range(5)]
+        get_results = [f.result() for f in get_futs]
+        post_results = [f.result() for f in post_futs]
+
+    for status, _, data in get_results:
+        assert status == 200
+        assert data["status"] == "ok"
+    for status, _, data in post_results:
+        assert status == 200
+        assert data["success"] is True
