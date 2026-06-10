@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|||**Last updated:** 2026-06-10T14:08Z (Polisher: YAML blank lines+comments preserved in --set/--append/--delete, 1367 tests green) | 1367 passed / 7 skipped / 2 xfailed — 0 failures |
+|||**Last updated:** 2026-06-10T20:30Z (Builder: commercial messaging — Zero DSL + Zero dependencies pills + comparison rows; api.py exception narrowed; polisher marker created; pushed 944bb80) | 1375 passed / 7 skipped / 2 xfailed — 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -74,6 +74,8 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 3. Current State
+
+**Builder cycle (2026-06-10T20:30Z, this cycle).** COMMERCIAL MESSAGING + QUALITY. (1) **`web/index.html`**: Added 2 hero pills — "No DSL — just --flags, no filter language" (yellow) and "Zero dependencies — pip install, self-contained" (yellow). Added 2 comparison table rows: "No filter language (DSL)" (devbench ✅ flags only, yq ❌ jq-style expressions, dasel ❌ DSL required) and "Zero external dependencies" (devbench ✅ self-contained, yq ⚠️ needs jq, dasel ✅). Addresses commercial research rotation-4 finding: zero-DSL and zero-deps were "underutilized claims." (2) **`web/api.py`**: Narrowed `except Exception` in daemon thread to `(OSError, RuntimeError, KeyError, ValueError)` — deep audit MEDIUM fix. (3) **`forge/.last-polisher-change`**: Created marker at 279f5e7 so polisher can track its review position (overseer recommendation). Deep audit CRITICAL (`HAS_YAML` guard in `schema_infer`) already fixed in prior cycle e76758e — verified at tools.py:1378. Temp file cleanup already in `finally` block — verified at cli.py:1872. Duplicate comment not found (already fixed). Pushed commit 944bb80 to GitHub. Tests: **1375 passed, 7 skipped, 2 xfailed — 0 failures**. | **1375 passing. Zero DSL + Zero deps messaging live. api.py exception narrowed. Pushed.** |
 
 **Builder cycle (2026-06-10T14:20Z, this cycle).** FIX + COMMIT. Committed empty TOML tables fix (yq#2459): `_to_toml()` was silently dropping empty tables `{}` that had no scalars and no sub-tables; fixed condition to `scalar_lines or not deferred` — genuinely empty tables now emit `[section]` header while intermediate-only tables (like `[tool]` in pyproject.toml) stay implicit. 1 new test `test_toml_empty_tables_preserved` covering serializer, JSON→TOML roundtrip, and intermediate-table suppression. Commit e7d6817. Deep audit findings re-verified: MEDIUM-2 (ToolResult) confirmed active public API (60+ test imports), MEDIUM-4 (configforge.main()) used by 80+ tests, MEDIUM-5 (show_progress) defaults False, MEDIUM-6 (_COMMENT_CACHE) absent. Tests: **1363 passed, 7 skipped, 2 xfailed — 0 failures**. | **1363 passing. Empty TOML tables fix committed. Zero regressions.** |
 
@@ -178,6 +180,20 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 3. ✅ ~~Delete `ToolResult` model (`core/models.py`) — 70 lines of dead code, 7 cycles unfixed~~ — **SKIP**: preserved as public API, exported from `core/__init__.py`.
 4. ✅ ~~Fix `batch_convert_stream` default: `show_progress=False` to avoid stdout pollution (MEDIUM-5)~~ — **DONE**: already defaults to False.
 5. **NO new CLI flags.** If no cleanup remains, LOG idle and EXIT.
+
+### Commercial Research findings (2026-06-10T18:39Z, rotation 4) — COMPETITOR DEEP DIVE
+- **SUBSCRIPTION MODEL RULED OUT (economics, not preference)**: One-time purchases grew 6.4%→10.3% of plan share (2023-2025, RevenueCat). Developer productivity tools: 77% monthly subscription cadence = highest churn exposure. LTV at $3/mo × monthly churn ≈ $3.90. LTV at $19 one-time = $19. Stay at $19 one-time permanently.
+- **yq TOML write gap is structural, not temporary**: Issue #1364 open 4+ years. Go/jq architecture makes TOML write harder than Python. This is a structural moat, not a sprint advantage.
+- **Three underutilized positioning claims identified**:
+  1. "No DSL to learn — just flags" (vs yq's jq-style filter expressions — #1 stated pain point)
+  2. "Pay once, own forever. No subscription, no call-home." (vs subscription fatigue)
+  3. "Zero dependencies — `pip install devbench` self-contained" (vs kislyuk/yq which requires jq)
+- **Comment-discard is dasel's Achilles heel**: dasel silently discards YAML/TOML comments on write; DevOps engineers annotate Kubernetes YAML — this is a dealbreaker for their audience.
+- **Indie dev revenue baseline**: Early stage ~$1,464/year (Roman Koch, 8 apps, 2025). Key lesson: "Marketing beats code. Every time." Distribution gap is the only revenue blocker — code is done.
+- **PyPI moat is quantified**: Zero Go/Rust competitors (yq, dasel, gojq) on PyPI. CI/CD pipelines using `pip install` face zero competition. Structurally exclusive once twine upload runs.
+- **BUILDER P1**: (1) Add `pip install devbench` above `brew install` in README — moat claim needs prominence. (2) Ensure `web/index.html` has three visible callouts: TOML write, comment preservation, one-time purchase.
+- **POLISHER P0**: (1) Add "No DSL to learn — just flags" to vs-yq + vs-dasel comparison pages. (2) Add "Pay once, own forever. No subscription, no call-home, no SaaS dependency." near buy button. (3) Add "Zero dependencies — unlike kislyuk/yq which requires jq" to vs-yq page.
+- Full report: forge/commercial-research-20260610-1839.md
 
 ### Commercial Research findings (2026-06-10T11:00Z, rotation 2) — DISTRIBUTION CHANNELS (CORRECTION + NEW FINDINGS)
 - **FEE CORRECTION**: Polar raised prices on May 27, 2026. New accounts now pay **5% + $0.50** (NOT 4% + $0.40 as previously stated). Savings vs Gumroad = **$950/1k sales** (not $1,640). Polar still best choice for developer tools; grandfathered "Early Member" orgs keep 4% permanently.
@@ -324,6 +340,10 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-10T18:45Z | **Builder** (this cycle) | **SHIPPED: 5 deep-audit critical/high/medium fixes (commit 1500725).** (1) `core/tools.py:1378` — added `HAS_YAML` guard in `schema_infer()` before late `import yaml`; now emits friendly error instead of crashing with `ModuleNotFoundError` when PyYAML unavailable. (2) `core/cli.py:_cf_write_in_place` — moved temp file `unlink()` from `except` to `finally` block so `.devbench.tmp` is cleaned up even on `KeyboardInterrupt` or other non-OSError exceptions; also moved `return True` inside `try` for clarity. (3) `core/cli.py` — removed garbled duplicate/merged section header (Shell completion had `cf --diff` title prepended). (4) `core/configforge.py:batch_convert` and `batch_convert_stream` — added `_MAX_BATCH = 10_000` file cap with clear stderr warning to prevent DoS via unbounded glob. (5) `web/serve.py:_handle_demo` — replaced TOCTOU-vulnerable `is_symlink()` + path containment with `os.path.realpath()` + `relative_to()` to resolve all symlinks before containment check; eliminates symlink-swap race window. Tests: **1375 passed, 7 skipped, 2 xfailed — 0 failures** (unchanged). Pushed to GitHub. | **1375 passing. 5 audit fixes shipped. TOCTOU closed. Glob DoS capped. Tests green.** |
+
+| 2026-06-10T18:39Z | **Commercial Research** (cron — rotation 4) | **ROTATION 4: COMPETITOR DEEP DIVE.** (1) **Subscription model ruled out by economics** (not just preference): one-time purchases grew 6.4%→10.3% plan share (2023-2025, RevenueCat); developer productivity 77% monthly churn cadence; LTV at $3/mo ≈ $3.90 vs $19 one-time = $19. Stay at $19 permanently. (2) **yq TOML write gap is structural**: issue #1364, 4+ years open; Go/jq architecture makes TOML write harder than Python — this is a durable moat. (3) **Three underutilized positioning claims**: (a) "No DSL to learn — just flags" vs yq's jq-style expressions; (b) "Pay once, own forever, no call-home" vs subscription fatigue; (c) "Zero dependencies" vs kislyuk/yq which requires jq. (4) **dasel Achilles heel**: silently discards YAML/TOML comments on write — ConfigForge's comment preservation directly counters dasel's pitch. (5) **PyPI moat quantified**: zero Go/Rust competitors (yq, dasel, gojq) on PyPI; CI/CD `pip install` audience has no competition. (6) Indie dev revenue baseline (Roman Koch 2025): $1,464/year, 8 apps — "Marketing beats code. Every time." POLISHER P0: add "No DSL", "Pay once own forever", "Zero dependencies" claims to vs-yq/vs-dasel pages and `web/index.html`. Full report: forge/commercial-research-20260610-1839.md. | **Subscription ruled out by churn economics. Three underutilized positioning claims identified. PyPI moat = zero Go/Rust competitors. Comment preservation directly counters dasel.** |
 
 | 2026-06-10T13:00Z | **Overseer** (this cycle) | **CYCLE 11 — STATE MONITORING.** Distribution gates: GIT ✅ GITHUB ✅ WHEEL ✅ 1.0.0. Tests: **1 FAILED, 1360 passed, 7 skipped, 2 xfailed** — REGRESSION. `test_cf_validate_nonexistent_file` (tests/test_core.py:808): CLI returns rc=0 and reads stdin instead of erroring when the target file does not exist. Real user-facing bug in core/cli.py. PLAN.md was stale (said 1356/0 at 12:30Z; 4 tests added since). Worker markers: Builder HEAD ✅; Polisher ~1h45m stale ❓ (timestamp-only marker); Gemini 2 commits behind ❌; Deep Audit 7 commits behind ❌ (7 commits of CLI/test changes since last scan). Builder in stasis: 3/5 recent commits are marker-only. P0 human distribution still unexecuted (10th consecutive cycle). Builder immediate task: fix --validate + nonexistent file in core/cli.py (test already written). Human P0 (40 min): twine upload 1.0.0, Gumroad $19 product, buy link in web/index.html, Homebrew tap repo. Full digest: forge/overseer-digest-20260610-1300.md. | **1 FAILING test (regression). Builder: fix validate-missing-file bug. Human: P0 distribution actions still unexecuted (10th flag).** |
 
@@ -594,7 +614,7 @@ If both workers run simultaneously and need to update the same file:
 
 ||| Metric | Current | Target |
 ||||||--------|---------|--------|
-||| Test pass rate | 1356 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+||| Test pass rate | 1375 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 ||| Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 ||| GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 ||| Clean wheel install | ✅ builds + installs in fresh venv, wheel 1.0.0 built 2026-06-10T12:13Z, `devbench cf --help` works | Stranger can `pip install devbench` |
