@@ -2074,7 +2074,7 @@ def test_check_env_formats_all_available(capsys):
     main(["cf", "--check-env", "--raw"])
     data = json.loads(capsys.readouterr().out)
     # All formats should be available in this environment (all deps installed)
-    unavailable = [f for f, ok in data["formats"].items() if not ok]
+    unavailable = [f for f, finfo in data["formats"].items() if not finfo["available"]]
     assert unavailable == [], f"Formats unavailable: {unavailable}"
 
 
@@ -3601,6 +3601,44 @@ def test_cf_get_default_completion_includes_flag(capsys):
     assert "--default" in capsys.readouterr().out
 
 
+# ── dotted-key escape: fixes yq#2247 (cert-manager.io/cluster-issuer) ─────────
+
+def test_cf_get_dotted_key_escaped(tmp_path, capsys):
+    """--get with \\. escape retrieves a key whose name contains a literal dot."""
+    from core.cli import main
+    f = tmp_path / "helm.yaml"
+    f.write_text("globals:\n  ingressAnnotations:\n    cert-manager.io/cluster-issuer: letsencrypt\n")
+    rc = main(["cf", str(f), "--get", r"globals.ingressAnnotations.cert-manager\.io/cluster-issuer"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "letsencrypt"
+
+
+def test_cf_set_dotted_key_escaped(tmp_path, capsys):
+    """--set with \\. escape writes a key whose name contains a literal dot."""
+    from core.cli import main
+    import yaml
+    f = tmp_path / "helm.yaml"
+    f.write_text("globals:\n  ingressAnnotations: {}\n")
+    rc = main(["cf", str(f), "--set", r"globals.ingressAnnotations.cert-manager\.io/cluster-issuer", "letsencrypt-prod", "--in-place"])
+    assert rc == 0
+    data = yaml.safe_load(f.read_text())
+    assert data["globals"]["ingressAnnotations"]["cert-manager.io/cluster-issuer"] == "letsencrypt-prod"
+
+
+def test_cf_dotted_key_not_split_into_nested(tmp_path, capsys):
+    """Escaped dot does NOT create nested keys (yq#2247 exact failure mode)."""
+    from core.cli import main
+    import yaml
+    f = tmp_path / "helm.yaml"
+    f.write_text("globals:\n  ingressAnnotations: {}\n")
+    rc = main(["cf", str(f), "--set", r"globals.ingressAnnotations.cert-manager\.io/cluster-issuer", "letsencrypt", "--in-place"])
+    assert rc == 0
+    data = yaml.safe_load(f.read_text())
+    annotations = data["globals"]["ingressAnnotations"]
+    assert "cert-manager.io/cluster-issuer" in annotations
+    assert "cert-manager" not in annotations, "dot was treated as path separator (yq#2247 regression)"
+
+
 # ── --select: filter list items by field=value condition ──────────────────────
 
 def test_cf_select_basic_list(tmp_path, capsys):
@@ -4525,21 +4563,70 @@ def test_block_scalars_without_flag_uses_quoted_style(tmp_path, capsys):
 
 
 def test_block_scalars_trailing_spaces_use_block_style():
-    """--block-scalars strips per-line trailing spaces so PyYAML uses block style.
+    """--block-scalars forces block scalar style even when lines have trailing spaces.
 
     yq issue #439: PyYAML 6.x falls back to double-quoted style when any line
-    has trailing whitespace, making the output unreadable.  The fix normalises
-    trailing spaces before handing data to the YAML emitter.
+    has trailing whitespace.  The fix encodes trailing spaces as NBSP markers
+    before the PyYAML emitter runs, then restores them after (yq#1831: preserve
+    trailing whitespace faithfully while still using block style).
     """
     from core.configforge import serialize
     data = {"script": "apt-get install foo  \napt-get install bar  \n"}
     out = serialize(data, "yaml", block_scalars=True)
+    # Block scalar style is used despite trailing whitespace
     assert "script: |" in out, f"expected block scalar style, got: {out!r}"
-    assert "apt-get install foo" in out
-    assert "apt-get install bar" in out
-    # Trailing spaces stripped from lines
-    assert "foo  " not in out
-    assert "bar  " not in out
+    # Content is present and trailing spaces are preserved
+    assert "apt-get install foo  " in out
+    assert "apt-get install bar  " in out
+
+
+# ---------------------------------------------------------------------------
+# --yaml-width N: control YAML scalar line-wrap width
+# ---------------------------------------------------------------------------
+
+def test_yaml_width_zero_prevents_line_wrapping():
+    """--yaml-width 0 disables line wrapping: long values stay on one line."""
+    from core.configforge import serialize
+    long_url = "https://example.com/" + "a" * 200
+    data = {"url": long_url}
+    out = serialize(data, "yaml", yaml_width=0)
+    # The URL must not be split across multiple lines
+    assert long_url in out, f"URL was line-wrapped unexpectedly:\n{out}"
+
+
+def test_yaml_width_default_wraps_long_scalars():
+    """Default width (80) causes long strings to be wrapped."""
+    from core.configforge import serialize
+    long_value = "x" * 200
+    data = {"val": long_value}
+    out_default = serialize(data, "yaml")
+    out_nowrap = serialize(data, "yaml", yaml_width=0)
+    # With no-wrap the value is on one line; default may wrap
+    assert long_value in out_nowrap
+    # Default output is shorter per-line (string will be split)
+    assert len(out_default.splitlines()) >= len(out_nowrap.splitlines())
+
+
+def test_yaml_width_via_cli(tmp_path, capsys):
+    """--yaml-width 0 via CLI keeps long URLs on one line (yq issue #452 fix)."""
+    from core.cli import main
+    long_url = "https://registry.example.com/" + "path/" * 30 + "image:latest"
+    f = tmp_path / "config.yaml"
+    f.write_text(f"image: {long_url}\n")
+    rc = main(["cf", str(f), "--to", "yaml", "--yaml-width", "0"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert long_url in out, f"URL was split by YAML line wrapping:\n{out}"
+
+
+def test_yaml_width_custom_value(tmp_path, capsys):
+    """--yaml-width N sets an explicit max column width."""
+    from core.cli import main
+    long_val = "word " * 30
+    f = tmp_path / "config.yaml"
+    f.write_text(f"desc: {long_val.strip()}\n")
+    rc = main(["cf", str(f), "--to", "yaml", "--yaml-width", "120"])
+    assert rc == 0
 
 
 # ---------------------------------------------------------------------------
