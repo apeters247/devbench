@@ -64,6 +64,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "batch":
         return _run_batch(args)
 
+    # cf --flags  → print grouped flag reference (no input needed)
+    if args.command == "cf" and getattr(args, "flags_ref", False):
+        return _run_cf_flags()
+
     # cf --serve  → launch the local web UI (handle before reading stdin)
     if args.command == "cf" and getattr(args, "serve", False):
         return _run_cf_serve(getattr(args, "port", 8080), getattr(args, "host", "127.0.0.1"))
@@ -583,6 +587,10 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "FIELD is a dot-notation path. Items without FIELD are always kept. "
                                      "Example: devbench cf pods.yaml --unique-by metadata.name "
                                      "         devbench cf services.yaml --get spec.ports --unique-by port")
+            tool_p.add_argument("--flags", action="store_true", default=False, dest="flags_ref",
+                                help="Print all flags grouped by category (quick reference). "
+                                     "Use devbench cf --help for full documentation. "
+                                     "Example: devbench cf --flags")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -1367,6 +1375,74 @@ def _run_cf_check_env(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# cf --flags: grouped quick-reference
+# ---------------------------------------------------------------------------
+
+_CF_FLAG_CATEGORIES = [
+    ("Convert", [
+        "--to FMT", "--from FMT", "--list-formats",
+    ]),
+    ("CRUD ops", [
+        "--get PATH", "--default VALUE", "--set PATH VALUE",
+        "--append PATH VALUE", "--delete PATH", "--rename OLD NEW",
+        "--merge FILE", "--list-merge {replace|append|merge}",
+        "--in-place / -i", "--backup [SUFFIX]",
+    ]),
+    ("List ops", [
+        "--select FIELD=VALUE | FIELD!=VALUE | FIELD=/regex/ | FIELD~VALUE | FIELD!~VALUE",
+        "--each KEY", "--sort-by FIELD", "--sort-desc",
+        "--unique", "--unique-by FIELD", "--join DELIM", "--count PATH",
+    ]),
+    ("Field inspection", [
+        "--length PATH", "--type PATH", "--has PATH",
+        "--path-exists PATH", "--pick PATH [PATH …]",
+    ]),
+    ("Structural", [
+        "--flatten", "--unflatten", "--sep SEP",
+        "--wrap-in KEY", "--replace-value OLD NEW",
+        "--mask PATTERN", "--mask-value TEXT",
+        "--hash-field PATTERN", "--hash-algorithm ALGO",
+        "--compact / -c",
+    ]),
+    ("Format tuning", [
+        "--indent N", "--sort-keys", "--sort-keys-reverse",
+        "--no-comments", "--yaml12", "--template-safe",
+        "--block-scalars", "--null-handling {skip|comment|empty|error}",
+        "--ini-quote-strings", "--csv-delimiter CHAR", "--tsv",
+        "--env-expand",
+    ]),
+    ("Files / batch", [
+        "--batch", "--stream", "--output-dir DIR",
+        "--recursive / -R", "--validate", "--grep PATTERN",
+        "--grep-case-sensitive",
+    ]),
+    ("Analysis", [
+        "--diff FILE", "--assert PATH=VALUE", "--schema FILE",
+        "--schema-gen", "--keys", "--check-env",
+    ]),
+    ("Template / export", [
+        "--template FILE", "--shell-export", "--bash-arrays",
+    ]),
+    ("Server", [
+        "--serve", "--port N", "--api", "--api-port N", "--host ADDR",
+    ]),
+]
+
+
+def _run_cf_flags() -> int:
+    """Print all cf flags grouped by category."""
+    lines = ["devbench cf — flags by category", ""]
+    for category, flags in _CF_FLAG_CATEGORIES:
+        lines.append(f"  {category}:")
+        for flag in flags:
+            lines.append(f"    {flag}")
+        lines.append("")
+    lines.append("Full docs: devbench cf --help")
+    print("\n".join(lines))
+    return EXIT_SUCCESS
+
+
 # Batch
 # ---------------------------------------------------------------------------
 
@@ -4014,7 +4090,7 @@ _CF_FLAGS = (
     "--path-exists --shell-export --bash-arrays --compact -c --template --wrap-in "
     "--csv-delimiter --tsv --schema-gen --replace-value "
     "--serve --port --host --api --api-port "
-    "--raw -r --pretty -p --help"
+    "--raw -r --pretty -p --flags --help"
 )
 _CF_FORMATS = "json jsonc json5 yaml toml xml csv ini env hcl properties plist"
 _SUBCOMMANDS = (
