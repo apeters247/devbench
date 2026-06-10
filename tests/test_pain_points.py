@@ -16,11 +16,16 @@ from core.configforge import (
     convert,
     round_trip,
     validate_indentation,
-    main,
     detect_format,
     HAS_TOML,
     HAS_HCL,
 )
+from core.cli import main as _cli_main
+
+
+def main(args):
+    """Wrap cli.main() with the 'cf' subcommand for test convenience."""
+    return _cli_main(["cf"] + list(args))
 
 
 # ── PP1: Comment loss on round-trip (YAML -> JSON -> YAML) ──
@@ -123,13 +128,12 @@ def test_cli_stdin_to_stdout(monkeypatch, capsys):
     assert "x: 5" in capsys.readouterr().out
 
 
-def test_cli_writes_output_file(tmp_path):
+def test_cli_file_to_yaml(tmp_path, capsys):
     src = tmp_path / "in.json"
     src.write_text('{"k": "v"}')
-    dst = tmp_path / "out.yaml"
-    rc = main([str(src), "-o", str(dst)])
+    rc = main([str(src), "--to", "yaml"])
     assert rc == 0
-    assert "k: v" in dst.read_text()
+    assert "k: v" in capsys.readouterr().out
 
 
 def test_cli_bad_input_returns_nonzero(tmp_path, capsys):

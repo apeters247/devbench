@@ -1096,6 +1096,65 @@ def test_merge_deep_nested_dict(tmp_path, capsys):
     assert result["app"]["db"]["pool_size"] == 10
 
 
+def test_merge_new_only_does_not_overwrite_existing(tmp_path, capsys):
+    """--merge --merge-new-only only adds missing keys; existing values are preserved.
+
+    Addresses yq issue #2201: users want to populate default config without
+    clobbering already-set values. With plain --merge, overlay always wins for
+    leaf scalars. With --merge-new-only the base always wins.
+    """
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("host: localhost\nport: 5432\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("host: db.prod\nport: 9999\ntimeout: 30\n")
+    rc = main([str(base), "--merge", str(overlay), "--merge-new-only"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    # Existing values must NOT be overwritten
+    assert result["host"] == "localhost"
+    assert result["port"] == 5432
+    # New key from overlay IS added
+    assert result["timeout"] == 30
+
+
+def test_merge_new_only_adds_nested_missing_keys(tmp_path, capsys):
+    """--merge-new-only adds nested keys that are absent from base."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("app:\n  host: localhost\n  port: 8080\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("app:\n  host: prod.example.com\n  debug: false\nlogging:\n  level: info\n")
+    rc = main([str(base), "--merge", str(overlay), "--merge-new-only"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    # Existing nested value preserved
+    assert result["app"]["host"] == "localhost"
+    assert result["app"]["port"] == 8080
+    # New nested key added
+    assert result["app"]["debug"] is False
+    # Entirely new top-level section added
+    assert result["logging"]["level"] == "info"
+
+
+def test_merge_new_only_json(tmp_path, capsys):
+    """--merge-new-only works for JSON files too."""
+    from core.configforge import main
+    base = tmp_path / "base.json"
+    base.write_text('{"name": "myapp", "version": "1.0"}')
+    overlay = tmp_path / "overlay.json"
+    overlay.write_text('{"name": "overridden", "description": "a tool"}')
+    rc = main([str(base), "--merge", str(overlay), "--merge-new-only"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["name"] == "myapp"
+    assert result["version"] == "1.0"
+    assert result["description"] == "a tool"
+
+
 def test_toml_set_pyproject_version(tmp_path, capsys):
     """--set on a pyproject.toml-style file updates the version and preserves structure.
 

@@ -384,6 +384,9 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--list-merge", metavar="MODE", dest="list_merge", default="replace",
                                 choices=["replace", "append", "merge"],
                                 help="How to merge lists when using --merge: replace (default) overwrites; append extends; merge deep-merges corresponding items by position.")
+            tool_p.add_argument("--merge-new-only", action="store_true", dest="merge_new_only", default=False,
+                                help="With --merge: only add keys absent from the base file; never overwrite existing values. "
+                                     "Useful for populating defaults without clobbering already-set config (yq issue #2201).")
             tool_p.add_argument("--diff", metavar="FILE", default=None,
                                 help="Structural diff: compare the base input against FILE across any format. "
                                      "Exit 0 = identical, exit 1 = differences. "
@@ -1938,7 +1941,8 @@ def _run_cf_merge(args) -> int:
         return EXIT_ERROR
     overlay_data = overlay_parsed.get("data", overlay_parsed)
     list_mode = getattr(args, "list_merge", "replace")
-    merged = _cf._deep_merge(base_data, overlay_data, list_mode=list_mode)
+    new_only = getattr(args, "merge_new_only", False)
+    merged = _cf._deep_merge(base_data, overlay_data, list_mode=list_mode, new_only=new_only)
     to_fmt = getattr(args, "to", None) or detected_fmt
     if not to_fmt:
         print("error: cannot determine output format; use --to", file=sys.stderr)

@@ -2098,7 +2098,7 @@ def _coerce_set_value(s: str):
         return s
 
 
-def _deep_merge(base, overlay, list_mode: str = "replace"):
+def _deep_merge(base, overlay, list_mode: str = "replace", new_only: bool = False):
     """Recursively merge overlay onto base.
 
     Addresses the r/devops complaint that yq has no ergonomic way to merge
@@ -2108,12 +2108,20 @@ def _deep_merge(base, overlay, list_mode: str = "replace"):
     list_mode="replace": overlay list replaces base list (default, safe for most configs).
     list_mode="append":  overlay list is appended to base list (useful for k8s env vars,
                          volumes, containers).
+    new_only=True: only add keys absent from base; never overwrite existing values.
+                   Addresses yq issue #2201 where users want to populate defaults
+                   without clobbering already-set values.
     """
     if isinstance(base, dict) and isinstance(overlay, dict):
         result = dict(base)
         for key, val in overlay.items():
             if key in result:
-                result[key] = _deep_merge(result[key], val, list_mode)
+                if not new_only:
+                    result[key] = _deep_merge(result[key], val, list_mode, new_only)
+                elif isinstance(result[key], dict) and isinstance(val, dict):
+                    # new_only=True but both sides are dicts: recurse to add missing sub-keys
+                    result[key] = _deep_merge(result[key], val, list_mode, new_only)
+                # else: new_only=True, leaf scalar/list — base value wins, skip
             else:
                 result[key] = val
         return result
@@ -2127,11 +2135,14 @@ def _deep_merge(base, overlay, list_mode: str = "replace"):
             result = list(base)
             for i, item in enumerate(overlay):
                 if i < len(result):
-                    result[i] = _deep_merge(result[i], item, list_mode)
+                    result[i] = _deep_merge(result[i], item, list_mode, new_only)
                 else:
                     result.append(item)
             return result
         return list(overlay)
+    # Scalar: if new_only, base wins (overlay cannot replace an existing value)
+    if new_only:
+        return base
     return overlay
 
 
@@ -2292,6 +2303,10 @@ def _ini_format_value_quoted(v) -> str:
     if isinstance(v, (int, float)):
         return str(v)
     s = str(v)
+    # configparser preserves surrounding double-quotes as literal characters;
+    # strip one layer so round-trips stay clean (avoids "\"Default\"" output).
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        s = s[1:-1]
     escaped = s.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
@@ -3159,933 +3174,139 @@ _telemetry_disabled = (
 )
 
 
-try:
-    from core._version import __version__ as _Version
-except ImportError:
-    try:
-        from _version import __version__ as _Version
-    except ImportError:
-        _Version = "1.0.0"
 
+def main(argv=None):
+    """Backward-compat entry point for the legacy ``configforge`` CLI.
 
-# ── Unified offline CLI ──
-def main(argv=None) -> int:
-    """Single unified CLI for all conversions — file, stdin/stdout, or batch glob.
+    Handles stdin passthrough and legacy shorthands (-t, -o), then delegates
+    to cli.main() with --raw for plain-text output.
+    """
+    import io as _io
+    import json as _json
+    import sys as _sys
 
-    Addresses the "no unified CLI tool" and "no offline converter" complaints:
-    one entry point, zero network calls, all nine formats."""
-    import argparse
+    from core.cli import main as _cli_main
 
-    ext_map = {".json": "json", ".jsonc": "jsonc", ".yaml": "yaml", ".yml": "yaml",
-               ".toml": "toml", ".xml": "xml", ".csv": "csv", ".ini": "ini",
-               ".env": "env", ".hcl": "hcl", ".properties": "properties",
-               ".plist": "plist"}
+    args = list(argv or [])
 
-    parser = argparse.ArgumentParser(
-        prog="configforge",
-        description="Offline multi-format config converter "
-                    "(JSON/JSONC/YAML/TOML/XML/CSV/INI/.env/HCL/.properties). "
-                    "No network, no telemetry. "
-                    "Set DEVBENCH_NO_TELEMETRY=1 (or legacy DEVEBENCH_NO_TELEMETRY) for explicit assurance.",
-        epilog="""Examples:
-  # Convert Kubernetes YAML to JSON
-  configforge deployment.yaml -t json
-  # Convert Docker Compose to TOML (pipe)
-  cat docker-compose.yml | configforge -t toml
-  # Convert Spring Boot .properties to YAML
-  configforge application.properties -t yaml
-  # Batch convert all INI files in a directory to TOML
-  configforge 'configs/*.ini' -t toml --batch --output-dir out/
-  # Convert .env to JSON for a monitoring dashboard
-  configforge production.env -t json
-  # Download demo: curl -s https://naxiai.com/tools/devbench/demo/
-
-Compared to yq/jq:
-  * Unified tool: one CLI for EVERY format (not just YAML↔JSON)
-  * Offline: no network calls, paste production configs safely
-  * Typed: INI booleans become real booleans, dates become TOML datetimes
-  * Batch: glob-based conversion of 1000s of files in one command
-  * Comments: preserved through YAML↔INI round-trips
-  * No data leaves your machine (unlike online converters)
-""",
+    # ── Stdin passthrough: no args, no file → detect format and pass through ──
+    _is_stdin_passthrough = (
+        not args
+        or (not any(a.startswith("-") for a in args) and len(args) == 1
+            and not _sys.stdin.isatty() if hasattr(_sys.stdin, "isatty") else False)
     )
-    parser.add_argument("--version", "-V", action="version",
-                        version=f"configforge {_Version}")
-    parser.add_argument("input", nargs="?",
-                        help="Input file (or glob with --batch). Reads stdin if omitted.")
-    parser.add_argument("-t", "--to", help="Target format.")
-    parser.add_argument("-f", "--from", dest="from_fmt", default="auto",
-                        help="Source format (default: auto-detect).")
-    parser.add_argument("-o", "--output", help="Output file (default: stdout).")
-    parser.add_argument("--batch", action="store_true",
-                        help="Treat input as a glob and convert every match.")
-    parser.add_argument("--recursive", "-R", action="store_true",
-                        help="For --batch: recursively match files in subdirectories. "
-                             "Use with ** glob patterns, e.g. '**/*.yaml'.")
-    parser.add_argument("--output-dir", help="Output directory for --batch mode.")
-    parser.add_argument("--keys", action="store_true",
-                        help="List all top-level keys from the input config. "
-                             "Add --recursive to list every nested key in dot-notation.")
-    parser.add_argument("--raw-keys", action="store_true", dest="raw_keys",
-                        help="With --keys: output each key on its own line with no formatting "
-                             "(default behaviour — flag exists for explicitness).")
-    parser.add_argument("--indent", type=int, default=2,
-                        help="Indentation width for YAML/JSON output.")
-    parser.add_argument("--flatten-xml", action="store_true",
-                        help="Flatten nested XML into dotted keys.")
-    parser.add_argument("--no-comments", action="store_true",
-                        help="Do not preserve comments.")
-    parser.add_argument("--yaml12", action="store_true",
-                        help="Use YAML 1.2 boolean rules: only true/false are booleans. "
-                             "Treats yes/no/on/off as plain strings (prevents the Norway problem).")
-    parser.add_argument("--template-safe", action="store_true", dest="template_safe",
-                        help="Pre-quote Jinja/Helm/Ansible {{ var }} template values in YAML "
-                             "before parsing. Use for Helm charts, Ansible playbooks, or any "
-                             "YAML with unquoted {{ ... }} expressions. Auto-retry is the "
-                             "default; this flag forces quoting on the first pass.")
-    parser.add_argument("--block-scalars", action="store_true", dest="block_scalars",
-                        help="Force YAML output to use block scalar style (|) for multiline strings. "
-                             "Prevents yq-style corruption of strings with trailing whitespace.")
-    parser.add_argument("--sort-keys", action="store_true", help="Sort keys in output.")
-    parser.add_argument("--sort-keys-reverse", action="store_true", dest="sort_keys_reverse",
-                        help="Sort keys in reverse alphabetical order.")
-    parser.add_argument("--compact", "-c", action="store_true",
-                        help="Output compact/minified JSON (no whitespace). Only affects JSON output.")
-    parser.add_argument("--no-infer-dates", action="store_true",
-                        help="Keep ISO-8601 date strings as strings (TOML).")
-    parser.add_argument("--null", dest="null_handling", default="skip",
-                        choices=["skip", "comment", "empty", "error"],
-                        help="How to represent null values in TOML.")
-    parser.add_argument("--get", metavar="PATH",
-                        help="Extract a single value by dot-notation path "
-                             "(e.g. server.port, items.0.name). "
-                             "--to is not required when --get is used.")
-    parser.add_argument("--raw", "-r", action="store_true",
-                        help="Raw string output for --get: print the string value without "
-                             "YAML quoting. By default --get emits a YAML-safe scalar "
-                             "(quoted if needed for round-trip safety, like jq -r).")
-    parser.add_argument("--default", metavar="VALUE", default=None, dest="get_default",
-                        help="Fallback value when --get path is missing. "
-                             "Prints VALUE and exits 0 instead of an error. "
-                             "Example: configforge config.yaml --get timeout --default 30")
-    parser.add_argument("--set", metavar=("PATH", "VALUE"), nargs=2,
-                        help="Set a value by dot-notation path and write the result. "
-                             "VALUE is parsed as JSON (booleans, numbers, null, "
-                             "arrays, objects); strings need no quoting. "
-                             "Output format defaults to the input format. "
-                             "Use --in-place to overwrite the source file.")
-    parser.add_argument("--append", metavar=("PATH", "VALUE"), nargs=2,
-                        help="Append VALUE to the list at PATH. Creates the list if the key "
-                             "is absent. VALUE is parsed as JSON; strings need no quoting. "
-                             "Output format defaults to the input format. "
-                             "Use --in-place to overwrite the source file.")
-    parser.add_argument("--in-place", "-i", action="store_true", dest="in_place",
-                        help="Write --set/--append/--delete output back to the input file (requires "
-                             "a file argument, not stdin).")
-    parser.add_argument("--delete", metavar="PATH",
-                        help="Delete a key by dot-notation path and write the result. "
-                             "Output format defaults to the input format. "
-                             "Use --in-place to overwrite the source file.")
-    parser.add_argument("--merge", metavar="OVERLAY",
-                        help="Deep-merge OVERLAY file onto the base input and emit the result. "
-                             "Dict keys from OVERLAY override base; list behaviour is "
-                             "controlled by --list-merge. Output format defaults to the "
-                             "base input format.  Use --in-place to overwrite the base file.")
-    parser.add_argument("--list-merge", metavar="MODE", dest="list_merge",
-                        default="replace", choices=["replace", "append", "merge"],
-                        help="How to merge lists when using --merge: "
-                             "'replace' (default) replaces the base list with the overlay list; "
-                             "'append' appends the overlay list to the base list; "
-                             "'merge' deep-merges corresponding items by position "
-                             "(useful for Kubernetes containers with partial overrides).")
-    parser.add_argument("--each", metavar="KEY", default=None, dest="each_key",
-                        help="Extract KEY from each element of a list and output the resulting list. "
-                             "Equivalent to jq '[.[] | .key]' or yq '.[].key'. "
-                             "KEY uses dot-notation (e.g. metadata.name, spec.ports.0.port). "
-                             "Items missing the key are omitted. "
-                             "Combine with --get to navigate to the list first, "
-                             "or with --select to filter before extracting. "
-                             "Exit 0=ok, 1=input is not a list. "
-                             "Example: configforge deploy.yaml --get spec.containers --each name  "
-                             "         configforge pods.yaml --select status=Running --each metadata.name")
-    parser.add_argument("--select", metavar="FIELD=VALUE", default=None, dest="select_expr",
-                        help="Filter a list: keep items where FIELD equals VALUE. "
-                             "Use FIELD!=VALUE to negate. Exit 0=matches, 1=no matches. "
-                             "Combine with --get to navigate to a nested list first. "
-                             "Example: configforge pods.yaml --select status=Running")
-    parser.add_argument("--template", metavar="FILE", default=None, dest="template_file",
-                        help="Render a template file using config values as context. "
-                             "${key} and {{ key }} (Jinja2) syntax supported. "
-                             "Dot-path keys available with dots replaced by underscores. "
-                             "Example: configforge app.yaml --template deploy.tmpl > deploy.sh")
-    parser.add_argument("--wrap-in", metavar="KEY", default=None, dest="wrap_in",
-                        help="Wrap the entire parsed config under a dotted key path. "
-                             "Example: configforge config.yaml --wrap-in data → {data: {original...}}. "
-                             "Nested paths: --wrap-in spec.template.spec")
-    parser.add_argument("--csv-delimiter", metavar="CHAR", default=None, dest="csv_delimiter",
-                        help="Override CSV field delimiter (default: auto-detect). "
-                             "Use \\t for TSV, | for pipe-separated, ; for semicolon-separated.")
-    parser.add_argument("--tsv", action="store_true", default=False, dest="tsv",
-                        help="Treat input as tab-separated (TSV). Shorthand for --csv-delimiter TAB.")
-    parser.add_argument("--schema-gen", action="store_true", dest="schema_gen",
-                        help="Generate a JSON Schema Draft 7 document from the config structure.")
-    parser.add_argument("--replace-value", metavar=("OLD", "NEW"), nargs=2, dest="replace_value",
-                        help="Find and replace all matching leaf values across the config. "
-                             "OLD compared as string; NEW is JSON-coerced.")
-    parser.add_argument("--has", metavar="PATH", default=None, dest="has_path",
-                        help="Check if PATH exists in the config (exit 0=found, 1=missing). "
-                             "Prints 'true'/'false'. Use --raw for JSON output.")
-    parser.add_argument("--length", metavar="PATH", default=None, dest="length_path",
-                        help="Print length of value at PATH (string: char count, "
-                             "list/object: item count, null: 0, scalar: 1).")
-    parser.add_argument("--hash-field", metavar="PATTERN", default=None, dest="hash_pattern",
-                        help="Hash all values whose key name matches this regex. "
-                             "Output: algorithm:hexdigest. "
-                             "Example: configforge prod.yaml --hash-field 'password|secret|token'")
-    parser.add_argument("--hash-algorithm", metavar="ALGO", default="sha256", dest="hash_algorithm",
-                        choices=["md5", "sha1", "sha256", "sha512", "blake2b"],
-                        help="Hash algorithm for --hash-field (default: sha256).")
-    parser.add_argument("--sort-by", metavar="FIELD", default=None, dest="sort_by",
-                        help="Sort a list of objects by a field value. "
-                             "Use --sort-desc for descending order.")
-    parser.add_argument("--sort-desc", action="store_true", default=False, dest="sort_desc",
-                        help="Reverse sort order for --sort-by (descending).")
-    parser.add_argument("--unique", action="store_true", default=False, dest="unique",
-                        help="Deduplicate list items. "
-                             "Use --unique-by FIELD to deduplicate object lists by a specific field.")
-    parser.add_argument("--unique-by", metavar="FIELD", default=None, dest="unique_by",
-                        help="Deduplicate a list of objects by a field value.")
-    args = parser.parse_args(argv)
 
-    _csv_delim = None
-    if getattr(args, "tsv", False):
-        _csv_delim = "\t"
-    elif getattr(args, "csv_delimiter", None):
-        d = args.csv_delimiter
-        _csv_delim = "\t" if d in ("\\t", "TAB", "tab") else d
+    # Translate old shorthands not recognized by the cf subparser
+    translated: list[str] = []
+    output_file: str | None = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "-t" and i + 1 < len(args):
+            translated.extend(["--to", args[i + 1]])
+            i += 2
+        elif a == "-o" and i + 1 < len(args):
+            output_file = args[i + 1]
+            i += 2
+        elif a.startswith("-o") and len(a) > 2:
+            output_file = a[2:]
+            i += 1
+        else:
+            translated.append(a)
+            i += 1
 
-    options = {
-        "indent": args.indent,
-        "flatten_xml": args.flatten_xml,
-        "preserve_comments": not args.no_comments,
-        "sort_keys": args.sort_keys,
-        "sort_keys_reverse": getattr(args, "sort_keys_reverse", False),
-        "infer_dates": not args.no_infer_dates,
-        "null_handling": args.null_handling,
-        "yaml12": args.yaml12,
-        "template_safe": args.template_safe,
-        "block_scalars": getattr(args, "block_scalars", False),
-    }
-    if _csv_delim:
-        options["csv_delimiter"] = _csv_delim
-    # Parse-only options passed to parse_text() in CRUD handlers.
-    parse_opts = {"yaml12": args.yaml12, "template_safe": args.template_safe}
-    if _csv_delim:
-        parse_opts["csv_delimiter"] = _csv_delim
+    # Handle -o (output file): detect format from extension if --to not given
+    if output_file:
+        _ext_map = {
+            "yaml": "yaml", "yml": "yaml", "json": "json", "toml": "toml",
+            "xml": "xml", "csv": "csv", "ini": "ini", "env": "env",
+            "plist": "plist", "hcl": "hcl", "properties": "properties",
+        }
+        ext = output_file.rsplit(".", 1)[-1].lower() if "." in output_file else ""
+        if ext in _ext_map and "--to" not in translated:
+            translated.extend(["--to", _ext_map[ext]])
 
-    if args.batch:
-        if not args.input:
-            print("error: --batch requires an input glob", file=sys.stderr)
+    # Detect stdin passthrough: no input file arg, reading from stdin
+    input_file = next((a for a in translated if not a.startswith("-")), None)
+    _reading_stdin = input_file is None
+
+    if _reading_stdin and not any(
+        a in translated for a in ("--serve", "--api", "--list-formats", "--flags-ref")
+    ):
+        text = _sys.stdin.read()
+        if not text.strip():
+            print("Error: no input provided", file=_sys.stderr)
             return 2
-        if not args.to:
-            print("error: --batch requires --to", file=sys.stderr)
+
+        # Determine formats
+        to_fmt_idx = next((i for i, a in enumerate(translated) if a == "--to"), None)
+        to_fmt = translated[to_fmt_idx + 1] if to_fmt_idx is not None else None
+
+        from_fmt_idx = next((i for i, a in enumerate(translated) if a == "--from"), None)
+        from_fmt = translated[from_fmt_idx + 1] if from_fmt_idx is not None else None
+
+        detected = detect_format(text) if not from_fmt else from_fmt
+        if not detected or detected == "unknown":
+            print("could not auto-detect format — try --from FORMAT or --to FORMAT", file=_sys.stderr)
             return 2
-        results = batch_convert(args.input, args.to, args.output_dir,
-                                recursive=args.recursive, **options)
-        return 0 if results and all(r.get("success") for r in results) else 1
 
-    if getattr(args, "has_path", None):
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        path = args.has_path
-        if path == ".":
-            exists = True
-        else:
-            try:
-                _get_by_path(data, path)
-                exists = True
-            except (KeyError, IndexError, TypeError):
-                exists = False
-        if getattr(args, "raw", False):
-            import json as _json
-            print(_json.dumps({"path": path, "exists": exists}))
-        else:
-            print("true" if exists else "false")
-        return 0 if exists else 1
+        # Build options for direct convert call (avoid going through cli envelope)
+        options: dict = {}
+        if "--sort-keys" in translated:
+            options["sort_keys"] = True
+        if "--sort-keys-reverse" in translated:
+            options["sort_keys_reverse"] = True
+        if "--yaml12" in translated:
+            options["yaml12"] = True
+        if "--template-safe" in translated:
+            options["template_safe"] = True
+        if "--block-scalars" in translated:
+            options["block_scalars"] = True
+        if "--no-comments" in translated:
+            options["preserve_comments"] = False
 
-    if getattr(args, "length_path", None):
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        path = args.length_path
-        if path == ".":
-            val = data
-        else:
-            try:
-                val = _get_by_path(data, path)
-            except (KeyError, IndexError, TypeError):
-                print(f"error: path not found: {path!r}", file=sys.stderr)
-                return 1
-        if val is None:
-            length = 0
-        elif isinstance(val, str):
-            length = len(val)
-        elif isinstance(val, (list, dict)):
-            length = len(val)
-        else:
-            length = 1
-        print(length)
-        return 0
+        final_fmt = to_fmt or detected
+        result = convert(text, final_fmt, detected, **options)
 
-    if getattr(args, "hash_pattern", None):
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        detected_fmt = parsed.get("format", "yaml")
-        try:
-            hashed = hash_field_values(data, args.hash_pattern,
-                                       getattr(args, "hash_algorithm", "sha256"))
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        out_fmt = args.to or detected_fmt
-        try:
-            output_text = serialize(hashed, out_fmt, **options)
-        except ValueError as exc:
-            print(f"error: could not serialize as {out_fmt}: {exc}", file=sys.stderr)
-            return 1
-        sys.stdout.write(output_text if output_text.endswith("\n") else output_text + "\n")
-        return 0
-
-    if getattr(args, "sort_by", None):
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        detected_fmt = parsed.get("format", "yaml")
-        if args.get:
-            try:
-                data = _get_by_path(data, args.get)
-            except (KeyError, IndexError) as exc:
-                default = getattr(args, "get_default", None)
-                if default is not None:
-                    sys.stdout.write(default + "\n")
-                    return 0
-                print(f"error: {exc}", file=sys.stderr)
-                return 1
-        if not isinstance(data, list):
-            print("error: --sort-by requires a list; input is not a list "
-                  "(use --get PATH to navigate to one)", file=sys.stderr)
-            return 1
-        field = args.sort_by
-        desc = getattr(args, "sort_desc", False)
-
-        def _sort_key(item):
-            try:
-                val = _get_by_path(item, field)
-            except (KeyError, IndexError, TypeError):
-                return (2, "")
-            if isinstance(val, bool):
-                return (1, int(val))
-            if isinstance(val, (int, float)):
-                return (0, val)
-            return (1, str(val))
-
-        sorted_data = sorted(data, key=_sort_key, reverse=desc)
-        to_fmt_sort = args.to or detected_fmt or "yaml"
-        compact = getattr(args, "compact", False)
-        if to_fmt_sort in ("yaml", "yml"):
-            import yaml as _yaml
-            output_text = _yaml.dump(sorted_data, default_flow_style=False,
-                                     allow_unicode=True, indent=args.indent)
-        elif to_fmt_sort in ("json", "jsonc"):
-            output_text = (json.dumps(sorted_data, separators=(",", ":"))
-                           if compact else json.dumps(sorted_data, indent=args.indent)) + "\n"
-        else:
-            try:
-                output_text = serialize(sorted_data, to_fmt_sort, **options)
-            except ValueError as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                return 1
-        sys.stdout.write(output_text if output_text.endswith("\n") else output_text + "\n")
-        return 0
-
-    if getattr(args, "unique", False) or getattr(args, "unique_by", None):
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        detected_fmt = parsed.get("format", "yaml")
-        if args.get:
-            try:
-                data = _get_by_path(data, args.get)
-            except (KeyError, IndexError) as exc:
-                default = getattr(args, "get_default", None)
-                if default is not None:
-                    sys.stdout.write(default + "\n")
-                    return 0
-                print(f"error: {exc}", file=sys.stderr)
-                return 1
-        if not isinstance(data, list):
-            print("error: --unique/--unique-by requires a list; input is not a list "
-                  "(use --get PATH to navigate to one)", file=sys.stderr)
-            return 1
-        unique_by_field = getattr(args, "unique_by", None)
-        if unique_by_field:
-            seen: set = set()
-            result_list = []
-            for item in data:
-                try:
-                    val = _get_by_path(item, unique_by_field)
-                    key = repr(val)
-                except (KeyError, IndexError, TypeError):
-                    key = None
-                if key is None or key not in seen:
-                    if key is not None:
-                        seen.add(key)
-                    result_list.append(item)
-        else:
-            seen_exact: set = set()
-            result_list = []
-            for item in data:
-                fingerprint = json.dumps(item, sort_keys=True, default=str)
-                if fingerprint not in seen_exact:
-                    seen_exact.add(fingerprint)
-                    result_list.append(item)
-        to_fmt_uniq = args.to or detected_fmt or "yaml"
-        compact = getattr(args, "compact", False)
-        if to_fmt_uniq in ("yaml", "yml"):
-            import yaml as _yaml
-            output_text = _yaml.dump(result_list, default_flow_style=False,
-                                     allow_unicode=True, indent=args.indent)
-        elif to_fmt_uniq in ("json", "jsonc"):
-            output_text = (json.dumps(result_list, separators=(",", ":"))
-                           if compact else json.dumps(result_list, indent=args.indent)) + "\n"
-        else:
-            try:
-                output_text = serialize(result_list, to_fmt_uniq, **options)
-            except ValueError as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                return 1
-        sys.stdout.write(output_text if output_text.endswith("\n") else output_text + "\n")
-        return 0
-
-    if args.keys:
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        for k in _list_keys(data, recursive=args.recursive):
-            print(k)
-        return 0
-
-    if args.each_key:
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        detected_fmt = parsed.get("format", "yaml")
-        if args.get:
-            try:
-                data = _get_by_path(data, args.get)
-            except (KeyError, IndexError) as exc:
-                default = getattr(args, "get_default", None)
-                if default is not None:
-                    sys.stdout.write(default + "\n")
-                    return 0
-                print(f"error: {exc}", file=sys.stderr)
-                return 1
-        # Apply --select filter before --each if both are present
-        if args.select_expr:
-            expr = args.select_expr
-            if "!=" in expr:
-                field_sel, raw_val = expr.split("!=", 1)
-                negate_sel = True
-            elif "=" in expr:
-                field_sel, raw_val = expr.split("=", 1)
-                negate_sel = False
-            else:
-                print(f"error: invalid --select expression {expr!r}; "
-                      "expected FIELD=VALUE or FIELD!=VALUE", file=sys.stderr)
-                return 1
-            coerced_sel = _coerce_set_value(raw_val)
-            def _sel_matches(item):
-                if not isinstance(item, dict):
-                    return False
-                try:
-                    return (_get_by_path(item, field_sel) == coerced_sel) != negate_sel
-                except (KeyError, IndexError, TypeError):
-                    return False
-            if isinstance(data, list):
-                data = [item for item in data if _sel_matches(item)]
-        if not isinstance(data, list):
-            print("error: --each requires a list; input is not a list "
-                  "(use --get PATH to navigate to one)", file=sys.stderr)
-            return 1
-        results = []
-        for item in data:
-            try:
-                val = _get_by_path(item, args.each_key)
-                results.append(val)
-            except (KeyError, IndexError, TypeError):
-                pass
-        to_fmt_each = args.to or detected_fmt
-        compact = getattr(args, "compact", False)
-        if to_fmt_each in ("yaml", "yml"):
-            import yaml as _yaml
-            output_text = _yaml.dump(results, default_flow_style=False,
-                                     allow_unicode=True, indent=args.indent)
-        elif to_fmt_each in ("json", "jsonc"):
-            output_text = (json.dumps(results, separators=(",", ":"))
-                           if compact else json.dumps(results, indent=args.indent)) + "\n"
-        else:
-            try:
-                output_text = serialize(results, to_fmt_each, **options)
-            except ValueError as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                return 1
-        if not output_text.endswith("\n"):
-            output_text += "\n"
-        sys.stdout.write(output_text)
-        return 0
-
-    if args.select_expr:
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        detected_fmt = parsed.get("format", "yaml")
-        if args.get:
-            try:
-                data = _get_by_path(data, args.get)
-            except (KeyError, IndexError) as exc:
-                default = getattr(args, "get_default", None)
-                if default is not None:
-                    sys.stdout.write(default + "\n")
-                    return 0
-                print(f"error: {exc}", file=sys.stderr)
-                return 1
-        if not isinstance(data, list):
-            print("error: --select requires a list; input is not a list "
-                  "(use --get PATH to navigate to one)", file=sys.stderr)
-            return 1
-        expr = args.select_expr
-        if "!=" in expr:
-            field, raw_val = expr.split("!=", 1)
-            negate = True
-        elif "=" in expr:
-            field, raw_val = expr.split("=", 1)
-            negate = False
-        else:
-            print(f"error: invalid --select expression {expr!r}; "
-                  "expected FIELD=VALUE or FIELD!=VALUE", file=sys.stderr)
-            return 1
-        coerced_val = _coerce_set_value(raw_val)
-        def _item_matches(item):
-            if not isinstance(item, dict):
-                return False
-            try:
-                item_val = _get_by_path(item, field)
-            except (KeyError, IndexError, TypeError):
-                return False
-            match = (item_val == coerced_val)
-            return (not match) if negate else match
-        filtered = [item for item in data if _item_matches(item)]
-        if not filtered:
-            return 1
-        to_fmt_sel = args.to or detected_fmt
-        indent = args.indent
-        compact = getattr(args, "compact", False)
-        if to_fmt_sel in ("yaml", "yml"):
-            import yaml as _yaml
-            output_text = _yaml.dump(filtered, default_flow_style=False,
-                                     allow_unicode=True, indent=indent)
-        elif to_fmt_sel in ("json", "jsonc"):
-            output_text = (json.dumps(filtered, separators=(",", ":"))
-                           if compact else json.dumps(filtered, indent=indent)) + "\n"
-        else:
-            try:
-                output_text = serialize(filtered, to_fmt_sel, **options)
-            except ValueError as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                return 1
-        if not output_text.endswith("\n"):
-            output_text += "\n"
-        sys.stdout.write(output_text)
-        return 0
-
-    if args.get:
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        try:
-            val = _get_by_path(data, args.get)
-        except (KeyError, IndexError) as exc:
-            default = getattr(args, "get_default", None)
-            if default is not None:
-                sys.stdout.write(default + "\n")
-                return 0
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        sys.stdout.write(_format_get_output(val, raw=getattr(args, "raw", False)) + "\n")
-        return 0
-
-    if args.set:
-        path, raw_value = args.set
-        value = _coerce_set_value(raw_value)
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        from_fmt_set = args.from_fmt if args.from_fmt != "auto" else None
-        try:
-            parsed = parse_text(text, fmt=from_fmt_set, **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        detected_fmt = parsed.get("format")
-        data = parsed.get("data", parsed)
-        try:
-            _set_by_path(data, path, value)
-        except KeyError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        to_fmt_set = args.to or detected_fmt
-        if not to_fmt_set:
-            print("error: cannot determine output format; use --to", file=sys.stderr)
+        if not result["success"]:
+            print(f"Error: {result['error']}", file=_sys.stderr)
             return 2
-        try:
-            output_text = serialize(data, to_fmt_set, **options)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        if not output_text.endswith("\n"):
-            output_text += "\n"
-        if args.in_place:
-            if not args.input:
-                print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
-                return 2
-            Path(args.input).write_text(output_text, encoding="utf-8")
-        else:
-            sys.stdout.write(output_text)
-        return 0
 
-    if args.append:
-        path_app, raw_val_app = args.append
-        value_app = _coerce_set_value(raw_val_app)
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        from_fmt_app = args.from_fmt if args.from_fmt != "auto" else None
-        try:
-            parsed = parse_text(text, fmt=from_fmt_app, **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        detected_fmt = parsed.get("format")
-        data = parsed.get("data", parsed)
-        try:
-            _append_to_path(data, path_app, value_app)
-        except KeyError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        to_fmt_app = args.to or detected_fmt
-        if not to_fmt_app:
-            print("error: cannot determine output format; use --to", file=sys.stderr)
-            return 2
-        try:
-            output_text = serialize(data, to_fmt_app, **options)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        if not output_text.endswith("\n"):
-            output_text += "\n"
-        if args.in_place:
-            if not args.input:
-                print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
-                return 2
-            Path(args.input).write_text(output_text, encoding="utf-8")
-        else:
-            sys.stdout.write(output_text)
-        return 0
-
-    if args.delete:
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        from_fmt_del = args.from_fmt if args.from_fmt != "auto" else None
-        try:
-            parsed = parse_text(text, fmt=from_fmt_del, **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        detected_fmt = parsed.get("format")
-        data = parsed.get("data", parsed)
-        try:
-            _delete_by_path(data, args.delete)
-        except KeyError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        to_fmt_del = args.to or detected_fmt
-        if not to_fmt_del:
-            print("error: cannot determine output format; use --to", file=sys.stderr)
-            return 2
-        try:
-            output_text = serialize(data, to_fmt_del, **options)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        if not output_text.endswith("\n"):
-            output_text += "\n"
-        if args.in_place:
-            if not args.input:
-                print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
-                return 2
-            Path(args.input).write_text(output_text, encoding="utf-8")
-        else:
-            sys.stdout.write(output_text)
-        return 0
-
-    if args.merge:
-        try:
-            base_text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        except OSError as e:
-            print(f"error: cannot read base file: {e}", file=sys.stderr)
-            return 1
-        from_fmt_merge = args.from_fmt if args.from_fmt != "auto" else None
-        try:
-            base_parsed = parse_text(base_text, fmt=from_fmt_merge, **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        detected_fmt = base_parsed.get("format")
-        base_data = base_parsed.get("data", base_parsed)
-        try:
-            overlay_text = Path(args.merge).read_text(encoding="utf-8")
-        except OSError as e:
-            print(f"error: cannot read overlay file: {e}", file=sys.stderr)
-            return 1
-        try:
-            overlay_parsed = parse_text(overlay_text, **parse_opts)
-        except ValueError as exc:
-            print(f"error reading overlay: {exc}", file=sys.stderr)
-            return 1
-        overlay_data = overlay_parsed.get("data", overlay_parsed)
-        merged = _deep_merge(base_data, overlay_data, list_mode=args.list_merge)
-        to_fmt_merge = args.to or detected_fmt
-        if not to_fmt_merge:
-            print("error: cannot determine output format; use --to", file=sys.stderr)
-            return 2
-        try:
-            output_text = serialize(merged, to_fmt_merge, **options)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        if not output_text.endswith("\n"):
-            output_text += "\n"
-        if args.in_place:
-            if not args.input:
-                print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
-                return 2
-            Path(args.input).write_text(output_text, encoding="utf-8")
-        else:
-            sys.stdout.write(output_text)
-        return 0
-
-    if args.template_file:
-        import re
-        import string as _string
-        try:
-            template_text = Path(args.template_file).read_text(encoding="utf-8")
-        except FileNotFoundError:
-            print(f"error: template file not found: {args.template_file}", file=sys.stderr)
-            return 1
-        except OSError as exc:
-            print(f"error: cannot read template file: {exc}", file=sys.stderr)
-            return 1
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        flat = _flatten_dict(data, sep=".") if isinstance(data, dict) else {}
-        def _to_str(v) -> str:
-            if isinstance(v, bool):
-                return "true" if v else "false"
-            return str(v)
-        context: dict = {}
-        for k, v in flat.items():
-            str_val = _to_str(v)
-            lower_key = re.sub(r"[^a-z0-9]", "_", k.lower())
-            upper_key = re.sub(r"[^A-Z0-9]", "_", k.upper())
-            context[lower_key] = str_val
-            context[upper_key] = str_val
-        use_jinja2 = "{{" in template_text or "{%" in template_text
-        if use_jinja2:
-            try:
-                import jinja2
-                env = jinja2.Environment(undefined=jinja2.Undefined, keep_trailing_newline=True)
-                tmpl = env.from_string(template_text)
-                rendered = tmpl.render(config=data, **context)
-                sys.stdout.write(rendered if rendered.endswith("\n") else rendered + "\n")
-                return 0
-            except ImportError:
-                pass  # fall through to string.Template
-            except Exception as exc:
-                print(f"error: Jinja2 template rendering failed: {exc}", file=sys.stderr)
-                return 1
-        try:
-            rendered = _string.Template(template_text).safe_substitute(context)
-        except (KeyError, ValueError) as exc:
-            print(f"error: template substitution failed: {exc}", file=sys.stderr)
-            return 1
-        sys.stdout.write(rendered if rendered.endswith("\n") else rendered + "\n")
-        return 0
-
-    if getattr(args, "wrap_in", None):
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        parts = args.wrap_in.split(".")
-        wrapped = data
-        for part in reversed(parts):
-            if not part:
-                print(f"error: --wrap-in path has empty segment: {args.wrap_in!r}", file=sys.stderr)
-                return 1
-            wrapped = {part: wrapped}
-        to_fmt = args.to or (args.from_fmt if args.from_fmt != "auto" else None) or "yaml"
-        result = serialize(wrapped, to_fmt, **options)
-        if not result:
-            print("error: serialization failed", file=sys.stderr)
-            return 1
-        sys.stdout.write(result if result.endswith("\n") else result + "\n")
-        return 0
-
-    if getattr(args, "schema_gen", False):
-        from core.cli import _infer_json_schema
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        schema = {"$schema": "http://json-schema.org/draft-07/schema#"}
-        schema.update(_infer_json_schema(data))
-        to_fmt = getattr(args, "to", None)
-        if to_fmt in ("yaml", "yml"):
-            import yaml as _yaml
-            out = _yaml.dump(schema, default_flow_style=False, allow_unicode=True)
-        else:
-            out = json.dumps(schema, indent=2) + "\n"
-        sys.stdout.write(out)
-        return 0
-
-    if getattr(args, "replace_value", None):
-        from core.cli import _replace_values_recursive, _count_value_matches
-        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        try:
-            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
-                                **parse_opts)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        data = parsed.get("data", parsed)
-        old_str, new_raw = args.replace_value
-        new_val = _coerce_set_value(new_raw)
-        match_count = _count_value_matches(data, old_str)
-        if match_count == 0:
-            print(f"no matches found for {old_str!r}", file=sys.stderr)
-            return 1
-        updated = _replace_values_recursive(data, old_str, new_val)
-        to_fmt = args.to or (args.from_fmt if args.from_fmt != "auto" else None) or "yaml"
-        result_text = serialize(updated, to_fmt, **options)
-        if not result_text:
-            print("error: serialization failed", file=sys.stderr)
-            return 1
-        sys.stdout.write(result_text if result_text.endswith("\n") else result_text + "\n")
-        return 0
-
-    to_fmt = args.to
-    if not to_fmt and args.output:
-        to_fmt = ext_map.get(Path(args.output).suffix.lower())
-
-    # jq-style passthrough: no --to → auto-detect format and pretty-print in place
-    if not to_fmt:
-        raw_text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
-        detected = detect_format(raw_text)
-        if detected == "unknown":
-            print("error: could not auto-detect format; use --to", file=sys.stderr)
-            return 2
-        to_fmt = detected
-        result = convert(raw_text, to_fmt, to_fmt, **options)
-        if result.get("success") and args.output:
-            Path(args.output).write_text(result["output"], encoding="utf-8")
-    elif args.input:
-        result = convert_file(args.input, args.output, to_fmt, **options)
-    else:
-        text = sys.stdin.read()
-        result = convert(text, to_fmt, args.from_fmt, **options)
-        if result.get("success") and args.output:
-            Path(args.output).write_text(result["output"], encoding="utf-8")
-
-    if not result.get("success"):
-        print(f"error: {result.get('error', 'conversion failed')}", file=sys.stderr)
-        return 1
-
-    if not args.output:
         out = result["output"]
-        if getattr(args, "compact", False) and to_fmt in ("json", "jsonc"):
+        if "--compact" in translated and final_fmt == "json":
             try:
-                out = json.dumps(json.loads(out), separators=(",", ":"), ensure_ascii=False)
-            except (json.JSONDecodeError, TypeError):
+                out = _json.dumps(_json.loads(out)) + "\n"
+            except Exception:
                 pass
-        sys.stdout.write(out if out.endswith("\n") else out + "\n")
+        if not out.endswith("\n"):
+            out += "\n"
+        _sys.stdout.write(out)
+        return 0
+
+    # ── File input path: delegate to cli.main() with --raw ──
+    buf = _io.StringIO()
+    err_buf = _io.StringIO()
+    from contextlib import redirect_stdout, redirect_stderr
+    with redirect_stdout(buf), redirect_stderr(err_buf):
+        rc = _cli_main(["cf", "--raw"] + translated)
+
+    err_text = err_buf.getvalue()
+    if err_text:
+        _sys.stderr.write(err_text)
+
+    if rc != 0:
+        return rc
+
+    out = buf.getvalue()
+
+    if output_file:
+        try:
+            with open(output_file, "w", encoding="utf-8") as fh:
+                fh.write(out)
+        except OSError as exc:
+            print(f"Error: Cannot write output: {exc}", file=_sys.stderr)
+            return 2
+        return 0
+
+    _sys.stdout.write(out)
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

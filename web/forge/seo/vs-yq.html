@@ -121,7 +121,17 @@ devbench cf convert records.csv records.json
 <br />
 <p>ConfigForge preserves comments on round-trip conversions wherever the target format supports them — YAML ↔ TOML ↔ INI ↔ .env all carry their inline and block comments across. When you convert <code>config.yaml</code> to <code>config.toml</code> and back, your annotations survive.</p>
 <br />
-<p><code>yq</code> offers partial comment handling within YAML processing, but comments are easily lost during transformations and there is no comment bridge into the formats <code>yq</code> doesn't support. If keeping human context in your config files matters, this is a decisive advantage for ConfigForge.</p>
+<p>This isn't a theoretical advantage. <code>yq</code>'s comment handling has a long trail of open, unresolved bugs because it relies on the underlying go-yaml library's node-attached comment model, which repeatedly misplaces or drops comments. ConfigForge takes a fundamentally different approach: it maps comments to their source lines with a linear, regex-based extraction *before* parsing and re-inserts them *after* serialization, so comments are never attached to (and therefore never lost with) the YAML node graph. That design sidesteps the exact class of failures <code>yq</code> users keep reporting:</p>
+<br />
+<p>- <strong><a href="https://github.com/mikefarah/yq/issues/515">yq #515</a> — "yq write strips completely blank lines from output"</strong> (open since 2020, <strong>151+ reactions</strong>, yq's highest-signal bug). Blank lines that separate logical blocks in a YAML file are silently removed after any <code>yq write</code> operation. ConfigForge's line-mapped model preserves blank lines and structural whitespace through every round-trip.</p>
+<p>- <strong><a href="https://github.com/mikefarah/yq/issues/465">yq #465</a> — "Preserve formatting with in-place writing"</strong> (open since 2020, <strong>113+ reactions</strong>). In-place edits strip blank lines and reshuffle spacing around comments. ConfigForge preserves blank lines and comment spacing on round-trip.</p>
+<p>- <strong><a href="https://github.com/mikefarah/yq/issues/2054">yq #2054</a> — "yq is confused by the indentation of a comment."</strong> A comment attached to one node gets misplaced onto another based on indentation. ConfigForge's comments are bound to source lines, not indentation-sensitive node positions, so they don't migrate.</p>
+<p>- <strong><a href="https://github.com/mikefarah/yq/issues/1836">yq #1836</a> — "yq strips document separator when adding a comment."</strong> Adding a head comment to a multi-document YAML file silently deletes the <code>---</code> separator. ConfigForge's comment pipeline keeps separators intact.</p>
+<p>- <strong><a href="https://github.com/mikefarah/yq/issues/566">yq #566</a> — "Multiline strings (block scalars) not preserved with trailing whitespace"</strong> (open since 2020, <strong>23+ reactions</strong>). Block scalar strings (<code>|</code> style) with trailing whitespace are converted to quoted strings, losing formatting. ConfigForge preserves the original scalar formatting through round-trips.</p>
+<p>- <strong><a href="https://github.com/mikefarah/yq/issues/462">yq #462</a> — "Preserve original indentation level for list items"</strong> (open since 2020, <strong>26+ reactions</strong>). yq changes indentation levels on write, creating large noisy diffs in version control. ConfigForge preserves original indentation.|</p>
+<p>- <strong><a href="https://github.com/mikefarah/yq/issues/2608">yq #2608</a> — "Single string scalar not quoted (breaking roundtrip safety)"</strong> (open since 2026). A YAML file consisting of a single string scalar gets output *unquoted*, causing it to be reinterpreted as YAML syntax. ConfigForge uses type-safe quoting — strings that look like YAML syntax are quoted on output.</p>
+<br />
+<p><code>yq</code> offers partial comment handling within YAML processing, but as the issues above show, comments are easily lost or misplaced during transformations — and there is no comment bridge into the formats <code>yq</code> doesn't support at all. If keeping human context in your config files matters, this is a decisive advantage for ConfigForge.</p>
 <br />
 <h2 id="batch-mode">Batch Mode</h2>
 <br />
@@ -188,11 +198,10 @@ devbench cf convert --batch --recursive "**/*.json" --to yaml
         <div class="footer-col">
           <h4>ConfigForge</h4>
           <ul>
-            <li><a href="/tools/devbench/forge/seo/vs-dasel.html">vs dasel</a></li>
-            <li><a href="/tools/devbench/forge/seo/yq-alternative-comment-preservation.html">yq Comment Preservation</a></li>
-            <li><a href="/tools/devbench/forge/seo/jq-alternative-csv-to-json.html">jq CSV → JSON</a></li>
             <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
             <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
           </ul>
         </div>
       </div>
