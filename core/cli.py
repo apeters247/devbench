@@ -21,6 +21,8 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import logging
+import socket
 import sys
 import urllib.parse
 import urllib.request
@@ -39,6 +41,10 @@ from ._version import __version__ as _VERSION
 
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
+
+DEFAULT_LICENSE_SERVER = "http://127.0.0.1:9001"
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -745,15 +751,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     license_activate_p = license_sub.add_parser("activate", help="Activate a license on this machine")
     license_activate_p.add_argument("key", help="License key to activate")
-    license_activate_p.add_argument("--server", default="http://127.0.0.1:9001", help="License server URL (default: http://127.0.0.1:9001)")
+    license_activate_p.add_argument("--server", default=DEFAULT_LICENSE_SERVER, help=f"License server URL (default: {DEFAULT_LICENSE_SERVER})")
     license_activate_p.add_argument("--machine-id", default=None, help="Machine identifier (default: auto-detect)")
 
     license_verify_p = license_sub.add_parser("verify", help="Verify a license key against the server")
     license_verify_p.add_argument("key", help="License key to verify")
-    license_verify_p.add_argument("--server", default="http://127.0.0.1:9001", help="License server URL (default: http://127.0.0.1:9001)")
+    license_verify_p.add_argument("--server", default=DEFAULT_LICENSE_SERVER, help=f"License server URL (default: {DEFAULT_LICENSE_SERVER})")
 
     license_trial_p = license_sub.add_parser("trial", help="Start a time-limited trial")
-    license_trial_p.add_argument("--server", default="http://127.0.0.1:9001", help="License server URL (default: http://127.0.0.1:9001)")
+    license_trial_p.add_argument("--server", default=DEFAULT_LICENSE_SERVER, help=f"License server URL (default: {DEFAULT_LICENSE_SERVER})")
     license_trial_p.add_argument("--email", default="", help="Email address for the trial (optional)")
     license_server_p = license_sub.add_parser("server", help="Start the license server")
     license_server_p.add_argument("--port", type=int, default=9001, help="Port (default: 9001)")
@@ -847,7 +853,8 @@ def _colorize(text: str, fmt: str) -> str:
         if not text.endswith("\n") and colored.endswith("\n"):
             colored = colored[:-1]
         return colored
-    except Exception:
+    except Exception as exc:
+        log.debug("colorize failed: %s", exc)
         return text
 
 
@@ -1248,8 +1255,26 @@ def _run_cf_keys(args) -> int:
     return EXIT_SUCCESS
 
 
+def _check_port_available(host: str, port: int) -> bool:
+    """Return True if host:port can be bound; print a clear error and return False if not."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+            return True
+        except OSError:
+            print(
+                f"error: port {port} is already in use on {host}.\n"
+                f"  Try: devbench cf --serve --port {port + 1}",
+                file=sys.stderr,
+            )
+            return False
+
+
 def _run_cf_serve(port: int, host: str = "127.0.0.1") -> int:
     """Launch the ConfigForge web UI (web/serve.py) on the given port."""
+    if not _check_port_available(host, port):
+        return EXIT_ERROR
 
     serve_path = Path(__file__).resolve().parent.parent / "web" / "serve.py"
     if not serve_path.exists():
@@ -1274,6 +1299,9 @@ def _run_cf_api(port: int, host: str = "127.0.0.1") -> int:
     POST /api/v1/convert, GET /api/v1/formats, GET /health and GET /, all
     delegating to ``core.configforge``.
     """
+    if not _check_port_available(host, port):
+        return EXIT_ERROR
+
     api_path = Path(__file__).resolve().parent.parent / "web" / "api.py"
     if not api_path.exists():
         print(f"API server not found: {api_path}", file=sys.stderr)
@@ -1296,6 +1324,9 @@ def _run_cf_api(port: int, host: str = "127.0.0.1") -> int:
 
 def _run_license_server(host: str = "127.0.0.1", port: int = 9001) -> int:
     """Launch the ConfigForge License Server (web/license_server.py)."""
+    if not _check_port_available(host, port):
+        return EXIT_ERROR
+
     server_path = Path(__file__).resolve().parent.parent / "web" / "license_server.py"
     if not server_path.exists():
         print(f"License server not found: {server_path}", file=sys.stderr)
@@ -2219,6 +2250,10 @@ def _run_cf_merge(args) -> int:
         try:
             target = _cf._get_by_path(data, merge_at)
         except KeyError:
+            print(
+                f"warning: --merge-at path '{merge_at}' does not exist; creating it",
+                file=sys.stderr,
+            )
             target = {}
             _cf._set_by_path(data, merge_at, target)
         merged = _cf._deep_merge(
