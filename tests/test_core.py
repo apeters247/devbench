@@ -5071,3 +5071,50 @@ def test_dispatch_unique_with_to_json(tmp_path, capsys):
     data = json.loads(out)
     assert len(data) == 3
     assert "go" in data
+
+
+# ---------------------------------------------------------------------------
+# --quiet / -q: suppress stdout, preserve exit codes (yq issue #2230)
+# ---------------------------------------------------------------------------
+
+
+def test_cf_quiet_suppresses_output(tmp_path, capsys):
+    """--quiet suppresses stdout but returns exit 0 on success."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\n")
+    rc = main(["cf", str(f), "--to", "json", "--quiet"])
+    assert rc == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_cf_quiet_validate_success(tmp_path, capsys):
+    """--quiet --validate: exit 0 with no output when valid."""
+    from core.cli import main
+    f = tmp_path / "valid.yaml"
+    f.write_text("key: value\n")
+    rc = main(["cf", str(f), "--validate", "--quiet"])
+    assert rc == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_cf_quiet_has_path_exit_code(tmp_path, capsys):
+    """--quiet --has: exit code signals existence without printing."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("db:\n  host: localhost\n")
+    rc_exists = main(["cf", str(f), "--has", "db.host", "--quiet"])
+    assert rc_exists == 0
+    rc_missing = main(["cf", str(f), "--has", "db.missing", "--quiet"])
+    assert rc_missing != 0
+    assert capsys.readouterr().out == ""
+
+
+def test_cf_quiet_get_suppresses_value(tmp_path, capsys):
+    """--quiet with --get suppresses the value but returns exit 0."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("timeout: 30\n")
+    rc = main(["cf", str(f), "--get", "timeout", "--quiet"])
+    assert rc == 0
+    assert capsys.readouterr().out == ""

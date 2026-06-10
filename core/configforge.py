@@ -1927,6 +1927,11 @@ def _expand_env_vars(data):
 def _split_path(path: str) -> list:
     r"""Split a dot-notation path on unescaped dots only.
 
+    Also handles bracket notation for array indices so yq-style paths work:
+      items[0].name   → ['items', '0', 'name']
+      items[-1]       → ['items', '-1']
+      a[0][1].b       → ['a', '0', '1', 'b']
+
     Escape rules (applied left-to-right):
       \.  → literal dot in key name (not a separator)
       \\  → literal backslash in key name
@@ -1951,13 +1956,29 @@ def _split_path(path: str) -> list:
                 current.append(nxt)  # \. → dot,  \\ → backslash
                 i += 2
                 continue
+        if ch == '[':
+            # Flush accumulated key segment before the bracket
+            if current:
+                parts.append(''.join(current))
+                current = []
+            # Collect everything up to the matching ']'
+            j = i + 1
+            while j < n and path[j] != ']':
+                j += 1
+            parts.append(path[i + 1:j])
+            i = j + 1
+            # A dot immediately after ']' is a separator, not a key character
+            if i < n and path[i] == '.':
+                i += 1
+            continue
         if ch == '.':
             parts.append(''.join(current))
             current = []
         else:
             current.append(ch)
         i += 1
-    parts.append(''.join(current))
+    if current:
+        parts.append(''.join(current))
     return parts
 
 

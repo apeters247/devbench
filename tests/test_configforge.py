@@ -1388,6 +1388,66 @@ def test_split_path_double_backslash_then_escaped_dot():
     assert len(result) == 1
 
 
+def test_split_path_bracket_index():
+    """Bracket notation items[0].name → ['items', '0', 'name']."""
+    from core.configforge import _split_path
+    assert _split_path("items[0].name") == ["items", "0", "name"]
+
+
+def test_split_path_bracket_negative_index():
+    """Negative bracket index items[-1] → ['items', '-1']."""
+    from core.configforge import _split_path
+    assert _split_path("items[-1]") == ["items", "-1"]
+
+
+def test_split_path_chained_brackets():
+    """Chained brackets a[0][1].b → ['a', '0', '1', 'b']."""
+    from core.configforge import _split_path
+    assert _split_path("a[0][1].b") == ["a", "0", "1", "b"]
+
+
+def test_split_path_bracket_only():
+    """Bracket-only path [0].name → ['0', 'name'] (list root)."""
+    from core.configforge import _split_path
+    assert _split_path("[0].name") == ["0", "name"]
+
+
+def test_get_by_path_bracket_notation():
+    """_get_by_path supports bracket notation for array access."""
+    from core.configforge import _get_by_path
+    data = {"items": [{"name": "foo"}, {"name": "bar"}]}
+    assert _get_by_path(data, "items[0].name") == "foo"
+    assert _get_by_path(data, "items[1].name") == "bar"
+    assert _get_by_path(data, "items[-1].name") == "bar"
+
+
+def test_get_by_path_bracket_cli(tmp_path, capsys):
+    """CLI --get bracket notation works end-to-end (yq-style path)."""
+    import json
+    from core.configforge import main
+    f = tmp_path / "data.json"
+    f.write_text(json.dumps({"pods": [{"name": "alpha"}, {"name": "beta"}]}))
+    rc = main([str(f), "--get", "pods[0].name"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "alpha"
+
+
+def test_set_by_path_bracket_notation():
+    """_set_by_path supports bracket notation for array mutation."""
+    from core.configforge import _set_by_path
+    data = {"items": [{"v": 1}, {"v": 2}]}
+    _set_by_path(data, "items[0].v", 99)
+    assert data["items"][0]["v"] == 99
+
+
+def test_delete_by_path_bracket_notation():
+    """_delete_by_path supports bracket notation to remove list elements."""
+    from core.configforge import _delete_by_path
+    data = {"items": [1, 2, 3]}
+    _delete_by_path(data, "items[1]")
+    assert data["items"] == [1, 3]
+
+
 def test_get_by_path_dotted_key():
     """--get with escaped dot retrieves a flat key containing a literal dot.
 

@@ -60,6 +60,22 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return EXIT_SUCCESS
 
+    # cf --quiet/-q  → suppress stdout; errors still go to stderr
+    if args.command == "cf" and getattr(args, "quiet", False):
+        import io
+        _orig_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            return _main_dispatch(args, parser)
+        finally:
+            sys.stdout = _orig_stdout
+        return EXIT_SUCCESS  # unreachable; finally restores stdout
+
+    return _main_dispatch(args, parser)
+
+
+def _main_dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Dispatch to the appropriate handler after args are parsed."""
     # batch command
     if args.command == "batch":
         return _run_batch(args)
@@ -587,6 +603,12 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "FIELD is a dot-notation path. Items without FIELD are always kept. "
                                      "Example: devbench cf pods.yaml --unique-by metadata.name "
                                      "         devbench cf services.yaml --get spec.ports --unique-by port")
+            tool_p.add_argument("--quiet", "-q", action="store_true", default=False, dest="quiet",
+                                help="Suppress normal output; rely on exit codes only. "
+                                     "Error messages are still written to stderr. "
+                                     "Addresses yq issue #2230: '--exit-status &>/dev/null' pattern. "
+                                     "Example: devbench cf config.yaml --validate --quiet && echo ok "
+                                     "         devbench cf config.yaml --has db.host --quiet")
             tool_p.add_argument("--flags", action="store_true", default=False, dest="flags_ref",
                                 help="Print all flags grouped by category (quick reference). "
                                      "Use devbench cf --help for full documentation. "
