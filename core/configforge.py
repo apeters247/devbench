@@ -688,18 +688,40 @@ def _make_block_scalar_dumper():
 
 
 def _make_yaml12_loader():
-    """Return a SafeLoader subclass with YAML 1.2 boolean rules.
+    """Return a SafeLoader subclass with YAML 1.2 boolean and integer rules.
 
-    YAML 1.1 (PyYAML's default) treats yes/no/on/off as booleans — the
-    "Norway problem" that bites DevOps users who write `allow_postgres: no`
-    and get False in JSON. YAML 1.2 only recognises true/false (any case).
-    This loader implements the stricter rule so yes/no/on/off stay as strings.
+    YAML 1.1 (PyYAML's default) has two notorious type-coercion pitfalls
+    that bite DevOps users:
+
+    1. Boolean Norway problem: yes/no/on/off → True/False.
+       YAML 1.2 recognises only true/false (any case).
+
+    2. Sexagesimal integers: 11:00 → 660, 1:30:00 → 5400.
+       YAML 1.2 has no sexagesimal notation — colon-separated values like
+       cron schedules, Redis time limits, or Docker port mappings stay strings.
+
+    This loader implements both fixes so config files round-trip cleanly.
     """
     class YAML12Loader(yaml.SafeLoader):
         pass
 
+    _YAML12_INT_RE = re.compile(
+        r"^(?:[-+]?[0-9]+|0x[0-9a-fA-F]+|0o[0-7]+)$"
+    )
+
+    def _fixed_resolvers(resolvers):
+        result = []
+        for tag, regex in resolvers:
+            if tag == "tag:yaml.org,2002:bool":
+                continue
+            if tag == "tag:yaml.org,2002:int":
+                result.append((tag, _YAML12_INT_RE))
+            else:
+                result.append((tag, regex))
+        return result
+
     YAML12Loader.yaml_implicit_resolvers = {
-        ch: [(t, r) for t, r in resolvers if t != "tag:yaml.org,2002:bool"]
+        ch: _fixed_resolvers(resolvers)
         for ch, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
     }
     YAML12Loader.add_implicit_resolver(
@@ -1716,18 +1738,25 @@ def _parse_text_impl(text: str, fmt: str = None, **options) -> dict:
 
     elif fmt == "ini":
         infer_types = options.get("infer_types", True)
+        strip_quotes = options.get("ini_strip_quotes", False)
         cfg = configparser.ConfigParser(interpolation=None, comment_prefixes=("#", ";", "!"))
         try:
             cfg.read_string(text)
         except configparser.MissingSectionHeaderError:
             # Bare key=value without section headers — wrap in DEFAULT
             cfg.read_string("[DEFAULT]\n" + text)
+
+        def _process_val(v):
+            if strip_quotes and isinstance(v, str) and len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+                v = v[1:-1]
+            return _infer_type(v) if infer_types else v
+
         result = {}
         # cfg.sections() excludes DEFAULT — handle it explicitly
         if cfg.defaults():
-            result["DEFAULT"] = {k: (_infer_type(v) if infer_types else v) for k, v in cfg.defaults().items()}
+            result["DEFAULT"] = {k: _process_val(v) for k, v in cfg.defaults().items()}
         for section in cfg.sections():
-            result[section] = {k: (_infer_type(v) if infer_types else v) for k, v in cfg[section].items()}
+            result[section] = {k: _process_val(v) for k, v in cfg[section].items()}
         return {"data": result, "format": "ini"}
 
     elif fmt == "env":
@@ -2780,6 +2809,14 @@ def _from_dict_to_xml(data, root_name="root", item_name="item"):
 def convert(text: str, to_fmt: str, from_fmt: str = "auto", **options) -> dict:
     """Convert config text from one format to another."""
     try:
+        if not text or not text.strip():
+            return {
+                "success": False,
+                "error": "Empty input: no data to convert. Provide valid content via stdin, file, or --set.",
+                "input_format": from_fmt if from_fmt != "auto" else "unknown",
+                "output_format": to_fmt,
+            }
+
         preserve_comments = options.pop("preserve_comments", True)
         carry_comments = options.pop("_carry_comments", None)
         carry_blanks = options.pop("_carry_blanks", None)
@@ -2980,7 +3017,11 @@ def batch_convert_stream(input_glob: str, to_fmt: str, output_dir: str = None, *
 
     show_progress = options.pop("show_progress", False)
     recursive = options.pop("recursive", False)
+    _MAX_BATCH = 10_000
     files = sorted(glob.glob(input_glob, recursive=recursive))
+    if len(files) > _MAX_BATCH:
+        print(f"[batch] Glob matched {len(files)} files; capped at {_MAX_BATCH}. Use a narrower pattern.", file=sys.stderr)
+        files = files[:_MAX_BATCH]
     total = len(files)
 
     if total == 0:
@@ -3052,7 +3093,11 @@ def batch_convert(input_glob: str, to_fmt: str, output_dir: str = None, **option
     show_progress = options.pop("show_progress", False)
     recursive = options.pop("recursive", False)
 
+    _MAX_BATCH = 10_000
     files = sorted(glob.glob(input_glob, recursive=recursive))
+    if len(files) > _MAX_BATCH:
+        print(f"[batch] Glob matched {len(files)} files; capped at {_MAX_BATCH}. Use a narrower pattern.", file=sys.stderr)
+        files = files[:_MAX_BATCH]
     total = len(files)
     if total == 0:
         if show_progress:
@@ -3371,10 +3416,15 @@ def main(argv=None):
     if err_text:
         _sys.stderr.write(err_text)
 
-    if rc != 0:
-        return rc
-
     out = buf.getvalue()
+
+    if rc != 0:
+        # Preserve output even for non-zero exit (e.g. --check/--dry-run prints
+        # "would change" or a diff and exits 1 by design — the output must
+        # reach the caller).
+        if out:
+            _sys.stdout.write(out)
+        return rc
 
     if output_file:
         try:

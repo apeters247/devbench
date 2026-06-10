@@ -427,20 +427,22 @@ class ConfigForgeHandler(BaseHTTPRequestHandler):
         if not rel or rel == "index.html":
             rel = "index.html"
         target = demo_root / rel
-        # Security: only serve files under demo/static/
+        # Security: resolve all symlinks then verify the real path is still under demo_root.
+        # This prevents TOCTOU races where a symlink is swapped in between the is_symlink()
+        # check and the actual read.
+        import os as _os
+        real_target = _Path(_os.path.realpath(target))
+        real_root = _Path(_os.path.realpath(demo_root))
         try:
-            target.relative_to(demo_root)
+            real_target.relative_to(real_root)
         except ValueError:
             self._send(403, b"Forbidden", "text/plain; charset=utf-8")
             return
-        if target.is_symlink():
-            self._send(403, b"Forbidden", "text/plain; charset=utf-8")
-            return
-        if not target.is_file():
+        if not real_target.is_file():
             self._send(404, b"Not found", "text/plain; charset=utf-8")
             return
         try:
-            body = target.read_bytes()
+            body = real_target.read_bytes()
         except OSError:
             self._send(500, b"Server error", "text/plain; charset=utf-8")
             return

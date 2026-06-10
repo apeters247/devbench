@@ -132,6 +132,12 @@ def _main_dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     if args.command == "cf" and getattr(args, "select_expr", None):
         return _run_cf_select(args)
 
+    # --check and --dry-run only make sense with --in-place
+    if args.command == "cf" and (getattr(args, "check_mode", False) or getattr(args, "dry_run", False)):
+        if not getattr(args, "in_place", False):
+            print("error: --check and --dry-run require --in-place", file=sys.stderr)
+            return EXIT_ERROR
+
     # cf CRUD / merge ops — read input themselves (file path or stdin)
     if args.command == "cf" and getattr(args, "get", None):
         return _run_cf_get(args)
@@ -1828,15 +1834,16 @@ def _cf_write_in_place(file_path, output_text: str, backup_suffix) -> bool:
         # Atomic replace — original is never truncated before the new content is ready.
         tmp_path.replace(file_path)
         tmp_path = None  # rename succeeded; nothing to clean up
+        return True
     except OSError as e:
         print(f"error: {e}", file=sys.stderr)
+        return False
+    finally:
         if tmp_path is not None:
             try:
                 tmp_path.unlink()
             except OSError:
                 pass
-        return False
-    return True
 
 
 def _cf_serialize_options(args) -> dict:
@@ -1851,6 +1858,8 @@ def _cf_serialize_options(args) -> dict:
         opts["preserve_comments"] = False
     if getattr(args, "block_scalars", False):
         opts["block_scalars"] = True
+    if getattr(args, "ini_quote_strings", False):
+        opts["ini_quote_strings"] = True
     return opts
 
 
@@ -2035,9 +2044,12 @@ def _run_cf_delete(args) -> int:
 
     try:
         _cf._delete_by_path(data, args.delete)
-    except KeyError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return EXIT_ERROR
+    except KeyError:
+        # With --in-place --check, a missing key means "already identical";
+        # skip the error and proceed so _cf_handle_check_or_dry_run reports it.
+        if not getattr(args, "check_mode", False):
+            print(f"error: key '{args.delete}' not found", file=sys.stderr)
+            return EXIT_ERROR
     to_fmt = getattr(args, "to", None) or detected_fmt
     if not to_fmt:
         print("error: cannot determine output format; use --to", file=sys.stderr)
@@ -2257,8 +2269,6 @@ def _run_cf_merge(args) -> int:
     return EXIT_SUCCESS
 
 
-# ---------------------------------------------------------------------------
-# cf --diff: structural cross-format config comparison
 # ---------------------------------------------------------------------------
 # cf --diff: structural cross-format config comparison
 # ---------------------------------------------------------------------------
@@ -4507,8 +4517,6 @@ def _run_cf_replace_value(args) -> int:
     return EXIT_SUCCESS
 
 
-# ---------------------------------------------------------------------------
-# cf --diff: structural cross-format config comparison
 # ---------------------------------------------------------------------------
 # Shell completion
 # ---------------------------------------------------------------------------

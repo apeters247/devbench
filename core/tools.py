@@ -909,7 +909,7 @@ def _err(tool: str, msg: str) -> str:
         "tool_name": tool,
         "output": "",
         "error": msg,
-        "metadata": {},
+        "metadata": {"success": False},
     }
     return json.dumps(result, ensure_ascii=False)
 
@@ -1141,15 +1141,18 @@ def context_builder(input_text: str) -> str:
 
     lines = [l.strip() for l in input_text.strip().splitlines() if l.strip()]
 
-    # Single-line glob detection
+    # Single-line glob detection — but only if the string isn't a literal existing path
     if len(lines) == 1 and any(c in lines[0] for c in ("*", "?", "[")):
-        pattern = lines[0]
-        matched = sorted(_glob_mod.glob(pattern, recursive=True))
-        if not matched:
-            return _err("context", f"Glob pattern matched no files: {pattern!r}")
-        if len(matched) > _MAX_CONTEXT_FILES:
-            return _err("context", f"Glob matched {len(matched)} files — limit is {_MAX_CONTEXT_FILES}. Narrow the pattern.")
-        paths = matched
+        if Path(lines[0]).exists():
+            paths = lines
+        else:
+            pattern = lines[0]
+            matched = sorted(_glob_mod.glob(pattern, recursive=True))
+            if not matched:
+                return _err("context", f"Glob pattern matched no files: {pattern!r}")
+            if len(matched) > _MAX_CONTEXT_FILES:
+                return _err("context", f"Glob matched {len(matched)} files — limit is {_MAX_CONTEXT_FILES}. Narrow the pattern.")
+            paths = matched
     else:
         paths = lines
 
@@ -1339,7 +1342,7 @@ def _infer_schema(value: Any) -> dict:
     return {}
 
 
-def schema_infer(input_text: str) -> str:
+def schema_infer(input_text: str, output_format: str = "json") -> str:
     """Infer a JSON Schema (Draft 7) from example JSON, YAML, or TOML data.
 
     Input: JSON object/array, YAML, or TOML.
@@ -1371,11 +1374,17 @@ def schema_infer(input_text: str) -> str:
     schema = {"$schema": "http://json-schema.org/draft-07/schema#"}
     schema.update(_infer_schema(data))
 
-    schema_json = json.dumps(schema, indent=2, ensure_ascii=False)
+    if output_format == "yaml":
+        if not _configforge.HAS_YAML:
+            return _err("schema", "PyYAML not installed; run: pip install pyyaml")
+        import yaml as _yaml
+        schema_out = _yaml.dump(schema, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    else:
+        schema_out = json.dumps(schema, indent=2, ensure_ascii=False)
 
     return _ok(
         "schema",
-        schema_json,
+        schema_out,
         format="json-schema-draft-07",
         inferred_type=schema.get("type", "unknown"),
     )
