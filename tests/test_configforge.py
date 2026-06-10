@@ -3287,6 +3287,56 @@ def test_yaml_width_custom():
     assert any(len(l) <= 45 for l in lines)
 
 
+# ── Blank line + comment preservation during CRUD ops (r/devops complaint) ──
+
+def test_set_preserves_yaml_blank_lines(tmp_path, capsys):
+    """--set keeps blank lines between sections (yq#1248: blank lines stripped during edits)."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("app: myapp\n\nversion: 1\n\ndebug: false\n")
+    rc = main([str(f), "--set", "debug", "true"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "\n\n" in captured.out, "blank lines must survive --set"
+    assert "debug: true" in captured.out
+
+
+def test_set_preserves_yaml_comments(tmp_path, capsys):
+    """--set keeps inline and leading comments when reserializing YAML."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("# app name\napp: myapp\nversion: 1\n")
+    rc = main([str(f), "--set", "version", "2"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "app name" in captured.out, "comments must survive --set"
+    assert "version: 2" in captured.out
+
+
+def test_delete_preserves_yaml_blank_lines(tmp_path, capsys):
+    """--delete keeps blank lines between surviving keys."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("app: myapp\n\nversion: 1\n\ndebug: true\n")
+    rc = main([str(f), "--delete", "debug"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "\n\n" in captured.out, "blank lines must survive --delete"
+    assert "debug" not in captured.out
+
+
+def test_append_preserves_yaml_blank_lines(tmp_path, capsys):
+    """--append keeps blank lines in surrounding YAML structure."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("app: myapp\n\nitems:\n  - a\n\ndebug: false\n")
+    rc = main([str(f), "--append", "items", "b"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "\n\n" in captured.out, "blank lines must survive --append"
+    assert "- b" in captured.out
+
+
 BOM = "﻿"
 
 

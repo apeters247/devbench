@@ -1808,6 +1808,12 @@ def _run_cf_set(args) -> int:
         return EXIT_ERROR
     detected_fmt = parsed.get("format")
     data = parsed.get("data", parsed)
+
+    comments, blanks = [], []
+    if detected_fmt == "yaml" and _cf.HAS_YAML:
+        comments = _cf._extract_yaml_comments(content)
+        blanks = _cf._extract_yaml_blank_lines(content)
+
     try:
         _cf._set_by_path(data, path, value)
     except KeyError as exc:
@@ -1831,6 +1837,11 @@ def _run_cf_set(args) -> int:
         return EXIT_ERROR
     if not output_text.endswith("\n"):
         output_text += "\n"
+    if to_fmt == "yaml":
+        if blanks:
+            output_text = _cf._reinsert_yaml_blank_lines(output_text, blanks)
+        if comments:
+            output_text = _cf._reinsert_yaml_comments(output_text, comments)
     if getattr(args, "in_place", False):
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
@@ -1858,6 +1869,12 @@ def _run_cf_append(args) -> int:
         return EXIT_ERROR
     detected_fmt = parsed.get("format")
     data = parsed.get("data", parsed)
+
+    comments, blanks = [], []
+    if detected_fmt == "yaml" and _cf.HAS_YAML:
+        comments = _cf._extract_yaml_comments(content)
+        blanks = _cf._extract_yaml_blank_lines(content)
+
     try:
         _cf._append_to_path(data, path, value)
     except KeyError as exc:
@@ -1874,6 +1891,11 @@ def _run_cf_append(args) -> int:
         return EXIT_ERROR
     if not output_text.endswith("\n"):
         output_text += "\n"
+    if to_fmt == "yaml":
+        if blanks:
+            output_text = _cf._reinsert_yaml_blank_lines(output_text, blanks)
+        if comments:
+            output_text = _cf._reinsert_yaml_comments(output_text, comments)
     if getattr(args, "in_place", False):
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)
@@ -1899,6 +1921,12 @@ def _run_cf_delete(args) -> int:
         return EXIT_ERROR
     detected_fmt = parsed.get("format")
     data = parsed.get("data", parsed)
+
+    comments, blanks = [], []
+    if detected_fmt == "yaml" and _cf.HAS_YAML:
+        comments = _cf._extract_yaml_comments(content)
+        blanks = _cf._extract_yaml_blank_lines(content)
+
     try:
         _cf._delete_by_path(data, args.delete)
     except KeyError as exc:
@@ -1915,6 +1943,11 @@ def _run_cf_delete(args) -> int:
         return EXIT_ERROR
     if not output_text.endswith("\n"):
         output_text += "\n"
+    if to_fmt == "yaml":
+        if blanks:
+            output_text = _cf._reinsert_yaml_blank_lines(output_text, blanks)
+        if comments:
+            output_text = _cf._reinsert_yaml_comments(output_text, comments)
     if getattr(args, "in_place", False):
         if file_path is None:
             print("error: --in-place requires a file argument, not stdin", file=sys.stderr)

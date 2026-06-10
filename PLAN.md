@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|||**Last updated:** 2026-06-10T14:20Z (Builder: committed empty TOML tables fix yq#2459, 1363 tests green) | 1363 passed / 7 skipped / 2 xfailed — 0 failures |
+|||**Last updated:** 2026-06-10T14:08Z (Polisher: YAML blank lines+comments preserved in --set/--append/--delete, 1367 tests green) | 1367 passed / 7 skipped / 2 xfailed — 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
