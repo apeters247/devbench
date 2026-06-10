@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Populate YAML Defaults Without Overwriting Existing Values | devbench cf --merge-new-only</title>
+  <meta name="description" content="Add missing config keys from a defaults file without overwriting existing values. devbench cf --merge-new-only adds absent keys and leaves everything else untouched. Works with YAML, JSON, TOML, and all config formats. pip install devbench.">
+  <meta property="og:title" content="Populate Config Defaults Without Overwriting — devbench cf --merge-new-only">
+  <meta property="og:description" content="Safe defaults injection: add keys that are missing from your config without clobbering keys that are already set. Works across YAML, JSON, TOML, INI.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/populate-config-defaults-cli.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Populate YAML Defaults Without Overwriting — CLI Tool">
+  <meta name="twitter:description" content="Add missing config keys from a defaults file without touching values that are already set. devbench cf --merge-new-only.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "11-format config file converter. Populate config defaults with --merge-new-only: add missing keys without overwriting existing values. Works offline.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+
+<h1>Populate Config Defaults Without Overwriting Existing Values</h1>
+<br />
+<p>A common CI/CD pattern: you have a team-wide <code>defaults.yaml</code> and per-environment config files. You want to ensure every config file has all the required keys — but you never want to clobber values that someone has already set. Standard <code>--merge</code> always lets the overlay win. <strong>devbench cf --merge-new-only</strong> inverts this: the base always wins, and only keys absent from the base are added from the defaults file.</p>
+<br />
+<pre><code class="language-bash">devbench cf config.yaml --merge defaults.yaml --merge-new-only</code></pre>
+<br />
+<p>This directly implements yq issue #2201 ("merge only keys that don't exist in base").</p>
+<br />
+
+<h2>Basic Example</h2>
+<br />
+<pre><code class="language-yaml"># config.yaml — existing environment-specific config
+database:
+  host: db.prod.example.com
+  port: 5432
+</code></pre>
+<br />
+<pre><code class="language-yaml"># defaults.yaml — team-wide defaults for every key
+database:
+  host: localhost
+  port: 5432
+  pool_size: 10
+  timeout: 30
+  ssl: true
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf config.yaml --merge defaults.yaml --merge-new-only</code></pre>
+<br />
+<pre><code class="language-yaml">database:
+  host: db.prod.example.com   # preserved — already set
+  port: 5432                   # preserved — already set
+  pool_size: 10                # added from defaults
+  timeout: 30                  # added from defaults
+  ssl: true                    # added from defaults
+</code></pre>
+<br />
+<p>The existing <code>host</code> and <code>port</code> are never touched. Only <code>pool_size</code>, <code>timeout</code>, and <code>ssl</code> — which were absent from the base — are injected.</p>
+<br />
+
+<h2>CI/CD: Ensure Required Keys Are Present</h2>
+<br />
+<pre><code class="language-bash">#!/bin/bash
+# Ensure every service config has all required observability keys
+DEFAULTS=config/observability-defaults.yaml
+
+for f in config/services/*.yaml; do
+  devbench cf "$f" \
+    --merge "$DEFAULTS" \
+    --merge-new-only \
+    --in-place
+done</code></pre>
+<br />
+<p>This adds any missing observability keys to every service config without touching service-specific values already defined.</p>
+<br />
+
+<h2>Populate Defaults at a Specific Nested Path</h2>
+<br />
+<p>Combine <code>--merge-new-only</code> with <code>--merge-at</code> to inject defaults only into a specific section of the config:</p>
+<br />
+<pre><code class="language-yaml"># base.yaml
+db:
+  host: localhost
+  port: 5432
+</code></pre>
+<br />
+<pre><code class="language-yaml"># db-defaults.yaml — just the key names and fallback values
+host: db.prod
+port: 9999
+timeout: 30
+max_connections: 20
+</code></pre>
+<br />
+<pre><code class="language-bash">devbench cf base.yaml \
+  --merge db-defaults.yaml \
+  --merge-at db \
+  --merge-new-only</code></pre>
+<br />
+<pre><code class="language-yaml">db:
+  host: localhost        # preserved
+  port: 5432             # preserved
+  timeout: 30            # added
+  max_connections: 20    # added
+</code></pre>
+<br />
+<p>The defaults file contains only the default values — no nesting required. <code>--merge-at db</code> targets the right section. <code>--merge-new-only</code> ensures existing production values are never overwritten.</p>
+<br />
+
+<h2>Cross-Format: JSON Config + YAML Defaults</h2>
+<br />
+<pre><code class="language-bash"># app.json gets any missing keys from YAML defaults
+devbench cf app.json --merge defaults.yaml --merge-new-only
+
+# Output as JSON (format preserved automatically)
+# Or force a specific format:
+devbench cf app.json --merge defaults.yaml --merge-new-only --to yaml</code></pre>
+<br />
+
+<h2>Verify What Would Be Added (Dry Run)</h2>
+<br />
+<pre><code class="language-bash"># See what keys are missing before applying
+devbench cf config.yaml --diff defaults.yaml
+
+# Apply when ready
+devbench cf config.yaml --merge defaults.yaml --merge-new-only --in-place</code></pre>
+<br />
+
+<h2>Difference From Regular --merge</h2>
+<br />
+<table>
+<thead>
+<tr><th>Behavior</th><th>--merge (default)</th><th>--merge-new-only</th></tr>
+</thead>
+<tbody>
+<tr><td>Key in base, key in overlay</td><td>Overlay wins</td><td>Base wins (preserved)</td></tr>
+<tr><td>Key in base, missing from overlay</td><td>Base value kept</td><td>Base value kept</td></tr>
+<tr><td>Key missing from base, in overlay</td><td>Overlay key added</td><td>Overlay key added</td></tr>
+<tr><td>Nested dict keys</td><td>Deep-merged (overlay wins)</td><td>Deep-merged (base wins at each level)</td></tr>
+<tr><td>List values</td><td>Replaced (or append/merge with --list-merge)</td><td>Base list preserved if present</td></tr>
+</tbody>
+</table>
+<br />
+
+<h2>Use Cases</h2>
+<br />
+<ul>
+<li><strong>Defaults files in monorepos</strong>: ensure every service config has required telemetry, logging, or feature flag keys without clobbering service-specific values.</li>
+<li><strong>Config migrations</strong>: add new required keys introduced in a new version without touching configs that already have custom values.</li>
+<li><strong>Kubernetes overlays</strong>: inject missing <code>resources.limits</code> or <code>probes</code> into deployments that don't define them yet, without disturbing deployments that already do.</li>
+<li><strong>Onboarding new environments</strong>: start from a full defaults file and let per-environment overrides take precedence automatically.</li>
+</ul>
+<br />
+
+<h2>Install</h2>
+<br />
+<pre><code class="language-bash">pip install devbench
+devbench cf --help</code></pre>
+<br />
+<p>Works on Python 3.10–3.13. Fully offline — no telemetry, no external API calls. Supports 11 formats: JSON, YAML, TOML, XML, CSV, INI, .env, HCL, Java .properties, Apple plist, JSONC.</p>
+<br />
+
+<h2>Quick Reference</h2>
+<br />
+<table>
+<thead>
+<tr><th>Task</th><th>Command</th></tr>
+</thead>
+<tbody>
+<tr><td>Add missing keys from defaults</td><td><code>devbench cf config.yaml --merge defaults.yaml --merge-new-only</code></td></tr>
+<tr><td>Defaults at nested path</td><td><code>devbench cf config.yaml --merge db-defaults.yaml --merge-at db --merge-new-only</code></td></tr>
+<tr><td>Apply in-place</td><td><code>devbench cf config.yaml --merge defaults.yaml --merge-new-only --in-place</code></td></tr>
+<tr><td>Check diff first</td><td><code>devbench cf config.yaml --diff defaults.yaml</code></td></tr>
+<tr><td>Cross-format defaults</td><td><code>devbench cf app.json --merge defaults.yaml --merge-new-only</code></td></tr>
+</tbody>
+</table>
+<br />
+
+    </div>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; 2026 NaxiAI. <a href="/tools/devbench/privacy.html">Privacy</a> · <a href="/tools/devbench/support.html">Support</a></p>
+    </div>
+  </footer>
+</body>
+</html>
