@@ -123,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_cf_count(args)
     if args.command == "cf" and getattr(args, "type_path", None):
         return _run_cf_type(args)
+    if args.command == "cf" and getattr(args, "has_path", None):
+        return _run_cf_has(args)
     if args.command == "cf" and getattr(args, "pick", None):
         return _run_cf_pick(args)
     # cf --shell-export  → emit shell-safe export statements (must precede --flatten)
@@ -361,6 +363,15 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "boolean, array, object, or null. Use '.' for the root value. "
                                      "Exit 0=found, 1=path not found. Use --raw for JSON output "
                                      "{path, type, length} where length is set for array/object.")
+            tool_p.add_argument("--has", metavar="PATH", default=None, dest="has_path",
+                                help="Check whether PATH exists in the config. "
+                                     "Prints 'true' and exits 0 if the path exists (even if null). "
+                                     "Prints 'false' and exits 1 if the path is not found. "
+                                     "Use '.' for the root (always true for any parseable config). "
+                                     "Use --raw for JSON output: {path, exists, type}. "
+                                     "Ideal for shell conditionals: if devbench cf config.yaml --has db.host; then ... "
+                                     "Example: devbench cf k8s.yaml --has spec.replicas "
+                                     "         devbench cf config.yaml --has database.password --raw")
             tool_p.add_argument("--pick", metavar="PATH", nargs="+", default=None,
                                 help="Extract specific paths from the config and output a new config with just those fields. "
                                      "Single path: outputs the raw value (like --get). "
@@ -1968,6 +1979,61 @@ def _run_cf_type(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# cf --has PATH: check whether a path exists in the config
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_has(args) -> int:
+    """Check whether PATH exists in the config.
+
+    Prints 'true' and exits 0 if found (even if the value is null).
+    Prints 'false' and exits 1 if the path is not found.
+    --raw outputs JSON: {path, exists, type}.
+
+    Examples:
+        devbench cf config.yaml --has database.host
+        devbench cf k8s.yaml --has spec.template.spec.containers
+        if devbench cf config.yaml --has feature.flags.dark_mode; then echo enabled; fi
+    """
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    path = args.has_path
+    raw = getattr(args, "raw", False)
+
+    if path == ".":
+        exists = True
+        type_name = _json_type_name(data)
+    else:
+        try:
+            val = _cf._get_by_path(data, path)
+            exists = True
+            type_name = _json_type_name(val)
+        except (KeyError, IndexError, TypeError):
+            exists = False
+            type_name = None
+
+    if raw:
+        result: dict = {"path": path, "exists": exists}
+        if type_name is not None:
+            result["type"] = type_name
+        print(json.dumps(result))
+    else:
+        print("true" if exists else "false")
+
+    return EXIT_SUCCESS if exists else EXIT_ERROR
+
+
+# ---------------------------------------------------------------------------
 # cf --validate: single-file or batch config validation
 # ---------------------------------------------------------------------------
 
@@ -3241,7 +3307,6 @@ def _run_cf_sort_by(args) -> int:
 
     field = args.sort_by
     desc = getattr(args, "sort_desc", False)
-    _MISSING = object()
 
     def _sort_key(item):
         try:
@@ -3554,7 +3619,7 @@ def _run_cf_replace_value(args) -> int:
 
 _CF_FLAGS = (
     "--to --from --get --default --set --append --delete --rename --merge --list-merge "
-    "--in-place -i --backup --diff --validate --count --type --keys "
+    "--in-place -i --backup --diff --validate --count --type --has --keys "
     "--recursive -R --pick --select --each --grep --grep-case-sensitive "
     "--flatten --unflatten --sep --env-expand "
     "--batch --stream --output-dir --sort-keys --sort-keys-reverse --indent "

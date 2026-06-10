@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generate JSON Schema from YAML/JSON/TOML CLI | DevBench --schema-gen</title>
+<meta name="description" content="Auto-generate JSON Schema Draft 7 from any config file (YAML, JSON, TOML, INI, HCL) with one command. DevBench infers types, required fields, and array shapes — no manual schema writing.">
+<meta property="og:title" content="Generate JSON Schema from YAML — DevBench --schema-gen">
+<meta property="og:description" content="One flag to infer a full JSON Schema from any config format. Works with YAML, JSON, TOML, HCL, INI, .env, and 6 more formats.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "name": "Generate JSON Schema from YAML/JSON/TOML CLI",
+  "description": "Use DevBench --schema-gen to auto-generate JSON Schema Draft 7 from any config file format.",
+  "keywords": "generate json schema from yaml, infer json schema cli, yaml to json schema, json schema generator command line, auto schema yaml json toml"
+}
+</script>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:860px;margin:0 auto;padding:2rem;color:#1a1a2e;line-height:1.6}
+h1{font-size:2rem;color:#0f3460}h2{color:#16213e;margin-top:2rem}
+code,pre{background:#f0f4f8;border-radius:4px;font-family:'SF Mono',Consolas,monospace}
+pre{padding:1rem;overflow-x:auto;border-left:3px solid #0f3460}code{padding:.1rem .3rem}
+.badge{display:inline-block;background:#0f3460;color:#fff;padding:.2rem .7rem;border-radius:12px;font-size:.8rem;margin:.2rem}
+table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{padding:.6rem 1rem;border:1px solid #d1d5db;text-align:left}th{background:#0f3460;color:#fff}
+.win{color:#059669;font-weight:bold}.warn{color:#d97706}
+a{color:#0f3460}
+</style>
+</head>
+<body>
+<h1>Generate JSON Schema from YAML, JSON, TOML — CLI One-Liner</h1>
+<p>
+  <span class="badge">--schema-gen</span>
+  <span class="badge">11 formats</span>
+  <span class="badge">Draft 7</span>
+  <span class="badge">No yq/jq expression</span>
+</p>
+
+<p>DevBench's <code>--schema-gen</code> flag infers a complete <strong>JSON Schema Draft 7</strong> document directly from any config file.
+It detects types, marks required fields, merges array item schemas, and handles nested objects — all automatically.
+No competitor (yq, dasel, jq) has this as a built-in flag.</p>
+
+<h2>Quickstart</h2>
+
+<pre><code># Install once
+pip install devbench
+
+# Generate schema from a YAML file
+devbench cf config.yaml --schema-gen
+
+# Output as YAML schema
+devbench cf deploy.yaml --schema-gen --to yaml
+
+# Save as a JSON Schema file for validation
+devbench cf app.toml --schema-gen > app-schema.json
+
+# Pipe the schema into jq for inspection
+devbench cf config.json --schema-gen --raw | jq .properties</code></pre>
+
+<h2>Example: Kubernetes Deployment → Schema</h2>
+
+<p>Input (<code>deploy.yaml</code>):</p>
+<pre><code>apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-api
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-api</code></pre>
+
+<p>Output (<code>devbench cf deploy.yaml --schema-gen</code>):</p>
+<pre><code>{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "apiVersion": {"type": "string"},
+    "kind": {"type": "string"},
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "namespace": {"type": "string"}
+      },
+      "required": ["name", "namespace"]
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "replicas": {"type": "integer"},
+        "selector": {"type": "object", ...}
+      },
+      "required": ["replicas", "selector"]
+    }
+  },
+  "required": ["apiVersion", "kind", "metadata", "spec"]
+}</code></pre>
+
+<h2>Schema Inference Rules</h2>
+
+<table>
+<tr><th>Python type</th><th>JSON Schema type</th><th>Example value</th></tr>
+<tr><td>str</td><td>string</td><td>"localhost"</td></tr>
+<tr><td>int</td><td>integer</td><td>8080</td></tr>
+<tr><td>float</td><td>number</td><td>0.75</td></tr>
+<tr><td>bool</td><td>boolean</td><td>true / false</td></tr>
+<tr><td>None</td><td>null</td><td>null</td></tr>
+<tr><td>list</td><td>array + items</td><td>[1, 2, 3]</td></tr>
+<tr><td>dict</td><td>object + properties + required</td><td>{key: val}</td></tr>
+</table>
+
+<h2>Array Item Schema Merging</h2>
+<p>When a list contains multiple objects, <code>--schema-gen</code> merges all item schemas.
+Fields present in every item are marked <code>required</code>; fields present in some are still included in <code>properties</code>.</p>
+
+<pre><code># Input: list of Kubernetes containers
+devbench cf containers.yaml --schema-gen
+
+# Result: array with merged item schema
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string"},
+      "image": {"type": "string"},
+      "ports": {"type": "array", ...}
+    },
+    "required": ["name", "image"]
+  }
+}</code></pre>
+
+<h2>Real-World Use Cases</h2>
+
+<h3>1. Document an undocumented API config</h3>
+<pre><code>devbench cf prod-config.yaml --schema-gen > docs/config-schema.json
+# Now you have a formal schema to share with your team</code></pre>
+
+<h3>2. Bootstrap validation in CI/CD</h3>
+<pre><code># Generate schema once
+devbench cf config.yaml --schema-gen > config-schema.json
+
+# Validate new configs against it
+devbench cf staging-config.yaml --schema config-schema.json
+echo "Exit $?: config is valid"</code></pre>
+
+<h3>3. OpenAPI schema generation</h3>
+<pre><code># TOML config → inline JSON Schema for OpenAPI spec
+devbench cf settings.toml --schema-gen --raw | python3 -c "
+import json, sys
+schema = json.load(sys.stdin)
+print(json.dumps({'requestBody': {'content': {'application/json': {'schema': schema}}}}, indent=2))
+"</code></pre>
+
+<h3>4. YAML schema for IDE autocompletion</h3>
+<pre><code># Generate YAML schema for VS Code / JetBrains YAML plugin
+devbench cf config.yaml --schema-gen --to yaml > .vscode/config-schema.yaml</code></pre>
+
+<h3>5. Validate multiple environments against a shared schema</h3>
+<pre><code># Generate schema from prod (the reference)
+devbench cf configs/prod.yaml --schema-gen > shared-schema.json
+
+# Validate all other environments
+for env in staging dev test; do
+  devbench cf configs/$env.yaml --schema shared-schema.json \
+    && echo "$env: valid" || echo "$env: INVALID"
+done</code></pre>
+
+<h2>Cross-Format: TOML, INI, HCL, .env → JSON Schema</h2>
+<pre><code># TOML config → JSON Schema
+devbench cf pyproject.toml --schema-gen
+
+# HCL (Terraform) → JSON Schema
+devbench cf main.tf --schema-gen --to yaml
+
+# .env file → schema (useful for documenting required env vars)
+devbench cf .env --schema-gen
+
+# INI config → schema
+devbench cf app.ini --schema-gen</code></pre>
+
+<h2>Comparison: --schema-gen vs Alternatives</h2>
+<table>
+<tr><th>Tool</th><th>Schema Gen</th><th>Formats</th><th>YAML input</th><th>TOML input</th></tr>
+<tr><td><strong>DevBench</strong></td><td class="win">✅ Built-in --schema-gen</td><td class="win">11</td><td class="win">✅</td><td class="win">✅</td></tr>
+<tr><td>yq</td><td class="warn">❌ Not available</td><td>7</td><td>✅</td><td>❌ no write</td></tr>
+<tr><td>dasel</td><td class="warn">❌ Not available</td><td>8</td><td>✅</td><td class="warn">partial</td></tr>
+<tr><td>jq</td><td class="warn">❌ Not available</td><td>1 (JSON)</td><td>❌</td><td>❌</td></tr>
+<tr><td>quicktype</td><td class="win">✅ Yes</td><td>JSON only</td><td>❌</td><td>❌</td></tr>
+<tr><td>json-schema-inferrer</td><td class="win">✅ Yes</td><td>JSON only</td><td>❌</td><td>❌</td></tr>
+</table>
+
+<p><strong>DevBench is the only CLI tool that generates JSON Schema from YAML, TOML, HCL, INI, and 7 other formats.</strong>
+quicktype and json-schema-inferrer only handle JSON input.</p>
+
+<h2>Install</h2>
+<pre><code>pip install devbench
+# Or with all optional format deps:
+pip install devbench[all]
+
+# macOS via Homebrew:
+brew tap apeters247/devbench
+brew install devbench</code></pre>
+
+<p>
+  <a href="/tools/devbench/">← DevBench home</a> |
+  <a href="validate-config-ci.html">Validate config in CI →</a> |
+  <a href="vs-yq.html">DevBench vs yq →</a>
+</p>
+</body>
+</html>

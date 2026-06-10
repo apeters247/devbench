@@ -937,6 +937,95 @@ def test_cf_count_json_input(tmp_path, capsys):
 
 
 # ---------------------------------------------------------------------------
+# cf --has PATH: check path existence
+# ---------------------------------------------------------------------------
+
+
+def test_cf_has_existing_key_exits_0(tmp_path, capsys):
+    """--has returns true and exits 0 when the path exists."""
+    f = tmp_path / "config.yaml"
+    f.write_text("database:\n  host: localhost\n  port: 5432\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--has", "database.host"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "true"
+
+
+def test_cf_has_missing_key_exits_1(tmp_path, capsys):
+    """--has returns false and exits 1 when the path is absent."""
+    f = tmp_path / "config.yaml"
+    f.write_text("database:\n  host: localhost\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--has", "database.password"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert out.strip() == "false"
+
+
+def test_cf_has_nested_path(tmp_path, capsys):
+    """--has works with deeply nested dot-notation paths."""
+    f = tmp_path / "k8s.yaml"
+    f.write_text("spec:\n  template:\n    spec:\n      containers:\n        - name: web\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--has", "spec.template.spec.containers"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "true"
+
+
+def test_cf_has_root_dot_always_true(tmp_path, capsys):
+    """--has '.' is always true for any parseable config."""
+    f = tmp_path / "config.yaml"
+    f.write_text("key: value\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--has", "."])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "true"
+
+
+def test_cf_has_raw_output_existing(tmp_path, capsys):
+    """--has --raw outputs JSON with exists=true and type when path exists."""
+    import json
+    f = tmp_path / "config.yaml"
+    f.write_text("ports:\n  - 8080\n  - 9090\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--has", "ports", "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    data = json.loads(out)
+    assert data["exists"] is True
+    assert data["path"] == "ports"
+    assert data["type"] == "array"
+
+
+def test_cf_has_raw_output_missing(tmp_path, capsys):
+    """--has --raw outputs JSON with exists=false when path is absent."""
+    import json
+    f = tmp_path / "config.yaml"
+    f.write_text("host: example.com\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--has", "timeout", "--raw"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    data = json.loads(out)
+    assert data["exists"] is False
+    assert "type" not in data
+
+
+def test_cf_has_null_value_is_found(tmp_path, capsys):
+    """--has returns true even when the value at PATH is null."""
+    f = tmp_path / "config.yaml"
+    f.write_text("optional_key: null\n")
+    from core.cli import main
+    rc = main(["cf", str(f), "--has", "optional_key"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert out.strip() == "true"
+
+
+# ---------------------------------------------------------------------------
 # cf --backup (in-place with backup file)
 # ---------------------------------------------------------------------------
 
