@@ -293,6 +293,16 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/yaml-block-scalars.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://naxiai.com/tools/devbench/forge/seo/yq-cant-write-toml.html</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://naxiai.com/tools/devbench/forge/seo/merge-yaml-files-cli.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>

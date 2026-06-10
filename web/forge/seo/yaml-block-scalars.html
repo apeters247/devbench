@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YAML Block Scalar Style — Preserve Multiline Strings | ConfigForge</title>
+  <meta name="description" content="Force YAML block scalar (|) style for multiline strings with ConfigForge --block-scalars. Fixes PyYAML and yq quoted-style corruption of shell scripts, PEM certs, and multiline descriptions.">
+  <meta property="og:title" content="YAML Block Scalar Style — ConfigForge --block-scalars">
+  <meta property="og:description" content="Force YAML block scalar | style for multiline strings. Fixes trailing-space corruption in yq-style tools. One flag: devbench cf config.yaml -t yaml --block-scalars">
+  <link rel="canonical" href="https://naxiai.com/tools/devbench/seo/yaml-block-scalars.html">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "Force YAML block scalar style for multiline strings",
+    "description": "Use ConfigForge --block-scalars to output multiline YAML strings as literal block scalars (|) instead of quoted single-line style.",
+    "tool": {"@type": "SoftwareApplication", "name": "ConfigForge / DevBench"},
+    "step": [
+      {"@type": "HowToStep", "text": "Install: pip install devbench"},
+      {"@type": "HowToStep", "text": "Run: devbench cf config.yaml -t yaml --block-scalars"}
+    ]
+  }
+  </script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 860px; margin: 0 auto; padding: 2rem; line-height: 1.6; color: #1a1a1a; }
+    h1 { font-size: 2rem; }
+    h2 { margin-top: 2rem; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1.2rem; border-radius: 6px; overflow-x: auto; }
+    code { font-family: 'Courier New', monospace; font-size: 0.9em; }
+    .badge { display: inline-block; background: #0070f3; color: #fff; padding: .2rem .6rem; border-radius: 4px; font-size: .85rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1.5rem 0; }
+    th, td { border: 1px solid #ddd; padding: .5rem .8rem; text-align: left; }
+    th { background: #f5f5f5; }
+    .check { color: #22c55e; } .cross { color: #ef4444; }
+    a { color: #0070f3; }
+  </style>
+</head>
+<body>
+
+<h1>YAML Block Scalars: Fix Multiline String Corruption</h1>
+<p><span class="badge">ConfigForge</span> &nbsp; <code>--block-scalars</code> flag</p>
+
+<p>
+PyYAML defaults to single-quoted style for multiline strings, producing unreadable output like
+<code>'step1\n  step2\n  '</code>. The <code>--block-scalars</code> flag forces literal block scalar
+style (<code>|</code>) — clean, lossless, and exactly what DevOps engineers expect.
+</p>
+
+<h2>The Problem: Quoted vs Block Scalar</h2>
+
+<p>Without <code>--block-scalars</code>, multiline strings come out mangled:</p>
+<pre><code># Input (JSON with multiline script)
+{
+  "install": "apt-get update\napt-get install -y curl\ncurl https://example.com/setup.sh | bash\n"
+}
+</code></pre>
+
+<pre><code># Default PyYAML output — hard to read, trailing spaces corrupt
+$ devbench cf install.json -t yaml
+install: "apt-get update\napt-get install -y curl\ncurl https://example.com/setup.sh\
+  | bash\n"
+</code></pre>
+
+<pre><code># With --block-scalars — clean, readable, lossless
+$ devbench cf install.json -t yaml --block-scalars
+install: |
+  apt-get update
+  apt-get install -y curl
+  curl https://example.com/setup.sh | bash
+</code></pre>
+
+<h2>Common Use Cases</h2>
+
+<h3>Shell scripts in CI/CD config</h3>
+<pre><code># Kubernetes Job spec with install script
+$ devbench cf job.json -t yaml --block-scalars
+spec:
+  template:
+    spec:
+      containers:
+        - name: installer
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              apt-get install -y curl
+              curl -s https://setup.com | bash
+</code></pre>
+
+<h3>PEM certificates in secrets</h3>
+<pre><code># TLS certificate stored in JSON → YAML with block scalars
+$ devbench cf tls-secret.json -t yaml --block-scalars
+tls.crt: |
+  -----BEGIN CERTIFICATE-----
+  MIIDXTCCAkWgAwIBAgIJAMB...
+  -----END CERTIFICATE-----
+tls.key: |
+  -----BEGIN PRIVATE KEY-----
+  MIIEvQIBADANBgkqhkiG9w0...
+  -----END PRIVATE KEY-----
+</code></pre>
+
+<h3>Ansible task descriptions</h3>
+<pre><code># Multi-line description in Ansible role metadata
+$ devbench cf meta.json -t yaml --block-scalars
+galaxy_info:
+  description: |
+    Installs and configures nginx as a reverse proxy.
+    Supports SSL termination, rate limiting, and
+    custom upstream pools.
+</code></pre>
+
+<h3>Docker Compose entrypoints</h3>
+<pre><code>$ devbench cf compose.json -t yaml --block-scalars
+services:
+  app:
+    entrypoint:
+      - /bin/sh
+      - -c
+    command: |
+      echo "Starting server..."
+      python manage.py migrate
+      exec gunicorn -b 0.0.0.0:8080 app.wsgi
+</code></pre>
+
+<h2>Cross-format: JSON → YAML with Block Scalars</h2>
+<pre><code># Any source format works
+$ devbench cf github-actions.json -t yaml --block-scalars
+$ devbench cf config.toml -t yaml --block-scalars
+$ cat multiline.json | devbench cf - -f json -t yaml --block-scalars
+</code></pre>
+
+<h2>Combine with Other Flags</h2>
+<pre><code># Sort keys + block scalars
+$ devbench cf config.yaml --sort-keys --block-scalars
+
+# Block scalars + in-place edit
+$ devbench cf scripts.yaml -t yaml --block-scalars --in-place
+
+# Batch conversion: all JSON files → clean YAML
+$ devbench cf "configs/*.json" -t yaml --block-scalars --batch --output-dir yaml_out/
+
+# Filter + block scalars
+$ devbench cf job.yaml --get spec.template.spec --to yaml --block-scalars
+</code></pre>
+
+<h2>API Usage</h2>
+<pre><code>from core.configforge import serialize, parse_text
+
+data = parse_text('{"script": "step1\\nstep2\\n"}', "json")
+yaml_out = serialize(data, "yaml", block_scalars=True)
+# script: |
+#   step1
+#   step2
+</code></pre>
+
+<h2>Comparison: ConfigForge vs yq vs PyYAML Default</h2>
+<table>
+  <tr><th>Tool</th><th>Multiline output style</th><th>Trailing-space safe</th><th>No flag needed</th></tr>
+  <tr>
+    <td>ConfigForge <code>--block-scalars</code></td>
+    <td class="check">✓ Block scalar <code>|</code></td>
+    <td class="check">✓ Yes</td>
+    <td>Explicit flag (by design)</td>
+  </tr>
+  <tr>
+    <td>PyYAML default (no flag)</td>
+    <td class="cross">✗ Single-quoted <code>'...\n...'</code></td>
+    <td class="cross">✗ No — corrupts trailing spaces</td>
+    <td class="check">✓ Default but unreadable</td>
+  </tr>
+  <tr>
+    <td>yq (Go)</td>
+    <td>Depends on style flag / input</td>
+    <td class="cross">✗ Known corruption in in-place edits</td>
+    <td class="cross">✗ Requires <code>style=&quot;literal&quot;</code> expression</td>
+  </tr>
+  <tr>
+    <td>ruamel.yaml</td>
+    <td>Preserves original style</td>
+    <td class="check">✓ If roundtripped</td>
+    <td class="cross">✗ Python library, no CLI</td>
+  </tr>
+</table>
+
+<h2>Install</h2>
+<pre><code>pip install devbench
+devbench cf config.json -t yaml --block-scalars
+</code></pre>
+
+<p>ConfigForge is part of <a href="https://naxiai.com/tools/devbench/">DevBench</a> — 11-format config converter + 9 developer tools. One-time purchase, $19.</p>
+
+<h2>See Also</h2>
+<ul>
+  <li><a href="yaml-to-json-converter.html">YAML to JSON converter</a></li>
+  <li><a href="render-template-from-config.html">Render templates from config files</a></li>
+  <li><a href="sort-yaml-keys-reverse.html">Sort YAML keys in reverse order</a></li>
+  <li><a href="merge-yaml-files-cli.html">Merge YAML files on the command line</a></li>
+</ul>
+
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Positional Merge YAML Lists CLI — devbench cf --list-merge merge</title>
+  <meta name="description" content="Merge two YAML (or JSON/TOML) files and combine their arrays by position rather than appending. devbench cf --merge --list-merge merge. Ideal for Kubernetes patch workflows.">
+  <meta property="og:title" content="Positional Merge YAML Lists from the CLI">
+  <meta property="og:description" content="Control how list values are merged when combining YAML, JSON, or TOML config files. devbench cf --merge supports append (default), replace, and positional merge strategies.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/positional-merge-yaml-lists.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Positional Merge YAML Lists from the CLI">
+  <meta name="twitter:description" content="Control how list values are merged when combining YAML, JSON, or TOML config files. devbench cf --merge supports append (default), replace, and positional merge strategies.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="positional-merge-for-yaml-lists-from-the-cli">Positional Merge for YAML Lists from the CLI</h1>
+<br />
+<p>When you deep-merge two config files with overlapping list values, you have three different things you might want to happen:</p>
+<br />
+<p>1. <strong>Append</strong> — keep every item from both lists (good for log sinks, feature flags)</p>
+<p>2. <strong>Replace</strong> — the overlay list completely overwrites the base list (good for env vars)</p>
+<p>3. <strong>Positional / merge</strong> — overlay items are merged onto base items at the same index (good for Kubernetes container specs, where index 0 is always the main container)</p>
+<br />
+<p><code>devbench cf --merge</code> supports all three via <code>--list-merge</code>:</p>
+<br />
+<pre><code class="language-bash">
+devbench cf base.yaml --merge overlay.yaml --list-merge append   # default
+devbench cf base.yaml --merge overlay.yaml --list-merge replace
+devbench cf base.yaml --merge overlay.yaml --list-merge merge    # positional
+</code></pre>
+<br />
+<h2 id="example-patching-a-kubernetes-deployment">Example: Patching a Kubernetes Deployment</h2>
+<br />
+<p>Base <code>deployment.yaml</code>:</p>
+<pre><code class="language-yaml">
+spec:
+  containers:
+    - name: app
+      image: myapp:1.0.0
+      env:
+        - name: LOG_LEVEL
+          value: info
+    - name: sidecar
+      image: envoy:1.28
+</code></pre>
+<br />
+<p>Overlay <code>patch.yaml</code>:</p>
+<pre><code class="language-yaml">
+spec:
+  containers:
+    - image: myapp:1.1.0
+      env:
+        - name: LOG_LEVEL
+          value: debug
+</code></pre>
+<br />
+<pre><code class="language-bash">
+devbench cf deployment.yaml --merge patch.yaml --list-merge merge
+</code></pre>
+<br />
+<p>Output — container 0 is patched, container 1 is untouched, keys not present in the overlay are preserved:</p>
+<pre><code class="language-yaml">
+spec:
+  containers:
+    - name: app
+      image: myapp:1.1.0
+      env:
+        - name: LOG_LEVEL
+          value: debug
+    - name: sidecar
+      image: envoy:1.28
+</code></pre>
+<br />
+<p>With <code>--list-merge append</code> (the default), you'd get *four* containers — that's almost never what you want for a Kubernetes patch.</p>
+<br />
+<h2 id="list-merge-strategy-comparison">List Merge Strategy Comparison</h2>
+<br />
+<tr><td>Strategy</td><td>What happens to list items</td><td>When to use</td></tr>
+|----------|---------------------------|-------------|
+<tr><td>`append` (default)</td><td>All base items + all overlay items</td><td>Feature flag lists, log sinks, additives</td></tr>
+<tr><td>`replace`</td><td>Overlay list replaces base list entirely</td><td>Env var blocks, full rewrite</td></tr>
+<tr><td>`merge`</td><td>Overlay items deep-merged onto base at same index</td><td>Kubernetes specs, Docker Compose service patches</td></tr>
+<br />
+<h2 id="combining-with---select-for-targeted-patches">Combining with `--select` for Targeted Patches</h2>
+<br />
+<pre><code class="language-bash">
+# Only patch containers matching name=app, leave others alone
+devbench cf deployment.yaml --select spec.containers --merge patch.yaml --list-merge merge
+</code></pre>
+<br />
+<h2 id="comparison-with-other-tools">Comparison with Other Tools</h2>
+<br />
+<p><code>yq</code> and <code>dasel</code> perform simple append-or-replace list merging. Neither supports index-aligned positional merging without a custom expression.</p>
+<br />
+<p><code>kubectl apply</code> strategic merge patch supports positional semantics for Kubernetes resources only. <code>devbench cf --list-merge merge</code> brings the same behaviour to *any* YAML/JSON/TOML file outside of Kubernetes tooling.</p>
+<br />
+<pre><code class="language-bash">
+# Without devbench: multi-step yq pipeline for a simple container image patch
+IMAGE="myapp:1.1.0"
+yq eval ".spec.containers[0].image = \"$IMAGE\"" deployment.yaml
+
+# With devbench: declarative overlay, no index magic needed
+devbench cf deployment.yaml --merge patch.yaml --list-merge merge --in-place
+</code></pre>
+<br />
+<h2 id="install">Install</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+# or
+pip install devbench
+</code></pre>
+<br />
+<p>Works on macOS, Linux, and Windows. Python 3.10–3.13.</p>
+<br />
+<h2 id="related-commands">Related Commands</h2>
+<br />
+<p>- <code>--merge OVERLAY</code> — deep-merge a second config file onto the base</p>
+<p>- <code>--list-merge append|replace|merge</code> — control list merge behaviour (default: append)</p>
+<p>- <code>--in-place</code> — write the merged result back to the source file</p>
+<p>- <code>--set PATH VALUE</code> — set a specific value by path after merging</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

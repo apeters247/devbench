@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>yq Can't Write TOML — devbench cf Can | YAML→TOML CLI Converter</title>
+  <meta name="description" content="yq has no TOML output support (GitHub issue #1364, open since 2020). devbench cf converts YAML, JSON, and INI to TOML natively. pip install devbench. Works offline, no jq required.">
+  <meta property="og:title" content="yq Can't Write TOML — devbench cf Can">
+  <meta property="og:description" content="mikefarah/yq issue #1364 has been open since 2020: no TOML write support. devbench cf ships native TOML read+write for all 11 formats.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/yq-cant-write-toml.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="yq Can't Write TOML — devbench cf Can">
+  <meta name="twitter:description" content="yq issue #1364: no TOML output. devbench cf adds it. Convert any format to TOML in one command.">
+  <link rel="stylesheet" href="/tools/devbench/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "devbench",
+    "operatingSystem": "macOS, Linux, Windows",
+    "applicationCategory": "DeveloperApplication",
+    "description": "11-format config file converter. The only CLI tool with TOML write support alongside YAML, JSON, XML, CSV, INI, .env, HCL, .properties, plist, JSONC.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD",
+      "description": "Free via pip install devbench"
+    },
+    "softwareVersion": "1.0.0"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Can yq write TOML output?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. mikefarah/yq GitHub issue #1364 ('TOML support') has been open since 2020 and remains unimplemented. yq can read TOML but cannot write it."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What CLI tool can convert YAML to TOML?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "devbench cf converts YAML, JSON, INI, XML, CSV, .env, HCL, .properties, plist, and JSONC to TOML natively. Install with: pip install devbench"
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I convert a YAML file to TOML on the command line?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Run: devbench cf input.yaml -t toml. For in-place conversion: devbench cf input.yaml -t toml --in-place. Works offline, no API required."
+        }
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+<header>
+  <nav><a href="/tools/devbench/">devbench</a> › <a href="/tools/devbench/forge/seo/">Guides</a> › yq Can't Write TOML</nav>
+</header>
+<main>
+
+<h1>yq Can't Write TOML — <code>devbench cf</code> Can</h1>
+
+<p class="lead">
+  <a href="https://github.com/mikefarah/yq/issues/1364" rel="nofollow">mikefarah/yq issue&nbsp;#1364</a>
+  — <em>"TOML support"</em> — has been open since <strong>April 2020</strong>.
+  yq can <em>read</em> TOML, but it cannot <em>write</em> it.
+  If you need YAML→TOML, JSON→TOML, or INI→TOML from the command line,
+  <code>devbench cf</code> is the only general-purpose tool that ships native TOML output.
+</p>
+
+<h2>The Problem</h2>
+
+<pre><code class="language-bash"># yq: reads TOML fine, but can't write it
+yq -o=toml input.yaml   # Error: unsupported output format 'toml'
+
+# kislyuk/yq: JSON-only output (wraps jq)
+cat input.yaml | yq .   # YAML→JSON only; no TOML path
+
+# dasel: silently drops comments, no TOML write either
+dasel -f yaml -o toml input.yaml   # Error or empty output</code></pre>
+
+<p>
+  Users have been workarounds-posting on Reddit and Stack Overflow since 2020:
+  use Python inline, use <code>python -c "import toml, yaml; ..."</code>,
+  use a Dockerfile with multiple deps. There's no clean one-liner.
+</p>
+
+<h2>The Fix: <code>devbench cf -t toml</code></h2>
+
+<pre><code class="language-bash">pip install devbench
+
+# YAML → TOML
+devbench cf config.yaml -t toml
+
+# JSON → TOML
+devbench cf package.json -t toml
+
+# INI → TOML
+devbench cf setup.cfg -t toml
+
+# In-place conversion (rewrites the file)
+devbench cf pyproject.yaml -t toml --in-place
+
+# Stdin → TOML (pipe-friendly)
+cat config.yaml | devbench cf -f yaml -t toml</code></pre>
+
+<h2>Real-World Examples</h2>
+
+<h3>pyproject.toml Migration</h3>
+<p>Many projects maintain a <code>setup.cfg</code> or <code>setup.yaml</code> and want to migrate to PEP 517/518 <code>pyproject.toml</code>:</p>
+<pre><code class="language-bash"># Before: setup.cfg (INI format)
+cat setup.cfg
+# [metadata]
+# name = mypackage
+# version = 1.0.0
+# [options]
+# install_requires = requests>=2.28
+
+devbench cf setup.cfg -t toml
+# [metadata]
+# name = "mypackage"
+# version = "1.0.0"
+#
+# [options]
+# install_requires = ["requests>=2.28"]</code></pre>
+
+<h3>Cargo.toml — Check if Keys Exist</h3>
+<pre><code class="language-bash"># Read values from TOML (yq can do this)
+devbench cf Cargo.toml --get package.version
+
+# Write TOML from another format (yq cannot do this)
+devbench cf deps.yaml -t toml >> Cargo.toml</code></pre>
+
+<h3>Kubernetes ConfigMap to TOML App Config</h3>
+<pre><code class="language-bash"># Export ConfigMap data section as TOML for an app that reads TOML natively
+kubectl get configmap app-config -o json \
+  | devbench cf -f json --get data -t toml</code></pre>
+
+<h3>Helm values.yaml → TOML for Rust/Go services</h3>
+<pre><code class="language-bash"># Helm renders values.yaml; your service reads TOML. Convert at deploy time:
+helm show values myrepo/mychart | devbench cf -f yaml -t toml > config.toml</code></pre>
+
+<h2>Type Mapping: YAML → TOML</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>YAML type</th>
+      <th>TOML output</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>string</td><td><code>"value"</code></td><td>Always quoted</td></tr>
+    <tr><td>integer</td><td><code>42</code></td><td>Unquoted integer</td></tr>
+    <tr><td>float</td><td><code>3.14</code></td><td>Unquoted float</td></tr>
+    <tr><td>boolean <code>true/false</code></td><td><code>true / false</code></td><td>YAML 1.2 booleans only (not yes/no/on/off)</td></tr>
+    <tr><td>null</td><td>key omitted</td><td>TOML has no null; key is dropped</td></tr>
+    <tr><td>list of strings</td><td><code>["a", "b"]</code></td><td>Inline array</td></tr>
+    <tr><td>list of dicts</td><td><code>[[table]]</code></td><td>TOML array of tables</td></tr>
+    <tr><td>nested dict</td><td><code>[section.subsection]</code></td><td>TOML nested table headers</td></tr>
+    <tr><td>datetime string</td><td><code>2024-01-01T00:00:00Z</code></td><td>RFC 3339 preserved</td></tr>
+  </tbody>
+</table>
+
+<h2>Why Not Use Python Inline?</h2>
+
+<pre><code class="language-bash"># The common workaround (fragile, not pipeable, requires both pyyaml + toml)
+python3 -c "import sys, yaml, toml; print(toml.dumps(yaml.safe_load(sys.stdin)))"
+
+# Problems:
+# - Requires pyyaml AND toml/tomli_w to be installed
+# - No error handling
+# - No --get, --select, --merge composability
+# - Can't process multiple files
+# - Breaks on YAML anchors, multiline strings, dates</code></pre>
+
+<p><code>devbench cf</code> is a single pure-Python dependency that handles all 11 formats without needing jq, yq, or format-specific packages separately.</p>
+
+<h2>Comparison Table</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Read TOML</th>
+      <th>Write TOML</th>
+      <th>Offline</th>
+      <th>Pipe-friendly</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>devbench cf</strong></td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+    <tr><td>mikefarah/yq</td><td>✅</td><td>❌ (issue #1364)</td><td>✅</td><td>✅</td></tr>
+    <tr><td>kislyuk/yq</td><td>❌</td><td>❌</td><td>requires jq</td><td>✅</td></tr>
+    <tr><td>dasel</td><td>✅</td><td>❌</td><td>✅</td><td>✅</td></tr>
+    <tr><td>jq</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td></tr>
+    <tr><td>python inline</td><td>requires toml lib</td><td>requires tomli_w</td><td>✅</td><td>fragile</td></tr>
+  </tbody>
+</table>
+
+<h2>Install</h2>
+
+<pre><code class="language-bash">pip install devbench
+# or: pip install devbench[all]  # includes all optional format deps
+
+devbench cf --help
+devbench cf --list-formats   # shows all 11 supported formats</code></pre>
+
+<p>Works on Python 3.10–3.13, macOS, Linux, and Windows. No Homebrew, no binary download.</p>
+
+<h2>Related</h2>
+<ul>
+  <li><a href="yaml-to-toml-converter.html">YAML to TOML Converter CLI — full guide</a></li>
+  <li><a href="json-to-toml-converter.html">JSON to TOML Converter CLI</a></li>
+  <li><a href="vs-yq.html">devbench cf vs yq — full comparison</a></li>
+  <li><a href="toml-converter.html">TOML converter — all format combinations</a></li>
+  <li><a href="vs-dasel.html">devbench cf vs dasel</a></li>
+</ul>
+
+</main>
+<footer>
+  <p><a href="/tools/devbench/">devbench home</a> · <a href="https://github.com/apeters247/devbench">GitHub</a> · <a href="/tools/devbench/sitemap.xml">Sitemap</a></p>
+</footer>
+</body>
+</html>

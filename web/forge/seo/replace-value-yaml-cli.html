@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Find and Replace YAML Value from CLI — devbench cf --replace-value</title>
+  <meta name="description" content="Replace a value across an entire YAML, JSON, or TOML config file from the command line — no sed, no Python script. devbench cf --replace-value finds every occurrence and rewrites the file in place.">
+  <meta property="og:title" content="Find and Replace YAML Value from CLI">
+  <meta property="og:description" content="Replace any string value across a YAML, JSON, TOML, or INI config file in one command. devbench cf --replace-value. No sed gymnastics required.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://naxiai.com/tools/devbench/forge/seo/replace-value-yaml-cli.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Find and Replace YAML Value from CLI">
+  <meta name="twitter:description" content="Replace any string value across a YAML, JSON, TOML, or INI config file in one command. devbench cf --replace-value. No sed gymnastics required.">
+<link rel="stylesheet" href="/tools/devbench/style.css">
+  <!-- JSON-LD Schema.org / SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Devbench",
+    "operatingSystem": "macOS 13+",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Developer Utilities",
+    "description": "9 essential developer tools + ConfigForge CLI in your macOS menubar. Includes JSON/YAML/TOML/XML/CSV/INI/.env/HCL/.properties config converter, JSON formatter, base64 encoder/decoder, UUID generator, timestamp converter, clipboard auto-detect, and more.",
+    "url": "https://naxiai.com/tools/devbench/",
+    "sameAs": "https://x.com/naxiai",
+    "author": {
+      "@type": "Organization",
+      "name": "NaxiAI",
+      "url": "https://naxiai.com"
+    },
+    "offers": [
+      {
+        "@type": "Offer",
+        "price": "19.00",
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": "https://naxiai.com/tools/devbench/"
+      }
+    ],
+    "screenshot": "https://naxiai.com/tools/devbench/screenshot.png",
+    "softwareVersion": "1.0.0",
+    "releaseNotes": "https://naxiai.com/tools/devbench/support.html",
+    "processorRequirements": "Apple Silicon or Intel"
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header" role="banner">
+    <div class="container">
+      <a href="/tools/devbench/" class="site-logo" aria-label="Devbench Home">
+        <span class="logo-icon" aria-hidden="true">DB</span>
+        Devbench
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-links">
+          <li><a href="/tools/devbench/#features">Features</a></li>
+          <li><a href="/tools/devbench/#screenshots">Screenshots</a></li>
+          <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+          <li><a href="/tools/devbench/support.html">Support</a></li>
+          <li><a href="/tools/devbench/privacy.html">Privacy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+  <main class="seo-page container">
+    <div style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+    <h1 id="find-and-replace-a-yaml-or-json-toml-value-from-the-command-line">Find and Replace a YAML (or JSON/TOML) Value from the Command Line</h1>
+<br />
+<p>You have a config file and you need to replace a value everywhere it appears — renaming an environment, rotating a URL, swapping a version string. The instinct is to reach for <code>sed</code>, but <code>sed</code> is text-substitution: it doesn't parse YAML structure, it silently mangles quoted strings, and it has no idea what "a value" vs "a key name" means.</p>
+<br />
+<p><code>devbench cf --replace-value</code> is the right tool. It understands config structure: it replaces *values* (not key names, not comments, not partial substrings) and writes output in the same format it read.</p>
+<br />
+<h2 id="basic-usage">Basic Usage</h2>
+<br />
+<pre><code class="language-bash">
+# Replace "staging" with "production" everywhere in values
+devbench cf config.yaml --replace-value staging production
+
+# Write back to the same file
+devbench cf config.yaml --replace-value staging production --in-place
+
+# Works across all 11 formats
+devbench cf config.json --replace-value "http://old-api.internal" "https://api.prod.example.com" --in-place
+devbench cf pyproject.toml --replace-value "0.9.0" "1.0.0" --in-place
+</code></pre>
+<br />
+<h2 id="why-not-sed">Why Not `sed`?</h2>
+<br />
+<p><code>sed -i 's/staging/production/g' config.yaml</code> has serious problems for config files:</p>
+<br />
+<p>1. <strong>Replaces key names too</strong> — if your YAML has <code>staging_timeout: 30</code>, sed turns the key into <code>production_timeout: 30</code></p>
+<p>2. <strong>Breaks quoted strings</strong> — YAML single vs double quote differences trip up naive text replacement</p>
+<p>3. <strong>Corrupts comments</strong> — comments mentioning the old value are silently changed too</p>
+<p>4. <strong>No format awareness</strong> — a TOML datetime or YAML anchor looks like any other text to sed</p>
+<br />
+<p><code>devbench cf --replace-value</code> operates on the parsed data model, so only leaf *values* are matched. Key names, comments, and YAML anchors are left alone.</p>
+<br />
+<h2 id="targeting-specific-subtrees-with---get">Targeting Specific Subtrees with `--get`</h2>
+<br />
+<p>Replace values only within a subtree by combining <code>--get</code> with <code>--replace-value</code>:</p>
+<br />
+<pre><code class="language-bash">
+# Replace values only inside the `env` block — don't touch the rest of the file
+devbench cf deploy.yaml --get env --replace-value old-cluster new-cluster
+</code></pre>
+<br />
+<h2 id="scripting-bulk-rotation-across-many-files">Scripting: Bulk Rotation Across Many Files</h2>
+<br />
+<pre><code class="language-bash">
+# Replace an API base URL in every YAML file in the project
+find . -name "*.yaml" -o -name "*.yml" | xargs -I{} devbench cf {} \
+  --replace-value "https://api-v1.internal" "https://api-v2.internal" --in-place
+
+# Rotate a shared secret string across TOML and JSON configs
+for f in config/*.{toml,json}; do
+  devbench cf "$f" --replace-value "old-secret-token" "new-secret-token" --in-place
+done
+</code></pre>
+<br />
+<h2 id="comparison-with-other-tools">Comparison with Other Tools</h2>
+<br />
+<tr><td>Approach</td><td>Config-aware</td><td>Preserves keys</td><td>Preserves comments</td><td>All formats</td></tr>
+|----------|-------------|----------------|-------------------|-------------|
+<tr><td>`sed -i 's/a/b/g'`</td><td>❌</td><td>❌</td><td>Replaces too</td><td>❌</td></tr>
+<tr><td>`yq '(.[]</td><td>select(. == "a")) = "b"'`</td><td>✅ (YAML only)</td><td>✅</td><td>⚠️ Partial</td><td>❌</td></tr>
+<tr><td>`devbench cf --replace-value a b`</td><td>✅</td><td>✅</td><td>✅ Untouched</td><td>✅ 11 formats</td></tr>
+<br />
+<h2 id="install">Install</h2>
+<br />
+<pre><code class="language-bash">
+pip install devbench-cf
+# or
+pip install devbench          # includes all tools
+</code></pre>
+<br />
+<p>Once installed, <code>devbench cf</code> is on your PATH. Works on macOS, Linux, and Windows. Python 3.10–3.13.</p>
+<br />
+<h2 id="related-commands">Related Commands</h2>
+<br />
+<p>- <code>--set PATH VALUE</code> — overwrite a specific path by key (not by value)</p>
+<p>- <code>--delete PATH</code> — remove a key/value pair</p>
+<p>- <code>--merge OVERLAY</code> — deep-merge a second file onto the first</p>
+<p>- <code>--in-place</code> — write result back to the source file (works with <code>--replace-value</code>, <code>--set</code>, <code>--delete</code>, <code>--merge</code>)</p>
+
+    </div>
+  </main>
+<footer class="site-footer" role="contentinfo">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h4>Devbench</h4>
+          <p>9 essential developer tools in your menubar. Built by <a href="https://naxiai.com">NaxiAI</a>.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/tools/devbench/#features">Features</a></li>
+            <li><a href="/tools/devbench/#pricing">Pricing</a></li>
+            <li><a href="/tools/devbench/support.html#faq">FAQ</a></li>
+            <li><a href="/tools/devbench/support.html#changelog">Changelog</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <ul>
+            <li><a href="/tools/devbench/support.html">Help Center</a></li>
+            <li><a href="/tools/devbench/support.html#contact">Contact Us</a></li>
+            <li><a href="/tools/devbench/support.html#troubleshooting">Troubleshooting</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>ConfigForge</h4>
+          <ul>
+            <li><a href="/tools/devbench/forge/seo/vs-yq.html">vs yq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-jq.html">vs jq</a></li>
+            <li><a href="/tools/devbench/forge/seo/vs-online.html">vs Online Converters</a></li>
+            <li><a href="/tools/devbench/forge/seo/use-cases.html">Use Cases</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 NaxiAI. All rights reserved. | <a href="/tools/devbench/privacy.html">Privacy Policy</a></p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
