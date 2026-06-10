@@ -387,6 +387,11 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--merge-new-only", action="store_true", dest="merge_new_only", default=False,
                                 help="With --merge: only add keys absent from the base file; never overwrite existing values. "
                                      "Useful for populating defaults without clobbering already-set config (yq issue #2201).")
+            tool_p.add_argument("--merge-at", metavar="PATH", dest="merge_at", default=None,
+                                help="With --merge: merge overlay into the nested path PATH instead of the document root. "
+                                     "Use dot-notation (e.g. spec.template.spec) to target any level. "
+                                     "Fixes the yq limitation where merges are always top-level "
+                                     "(r/devops complaint: 'cannot add a chunk of YAML under .spec.containers').")
             tool_p.add_argument("--diff", metavar="FILE", default=None,
                                 help="Structural diff: compare the base input against FILE across any format. "
                                      "Exit 0 = identical, exit 1 = differences. "
@@ -1414,6 +1419,7 @@ _CF_FLAG_CATEGORIES = [
         "--get PATH", "--default VALUE", "--set PATH VALUE",
         "--append PATH VALUE", "--delete PATH", "--rename OLD NEW",
         "--merge FILE", "--list-merge {replace|append|merge}",
+        "--merge-new-only", "--merge-at PATH",
         "--in-place / -i", "--backup [SUFFIX]",
     ]),
     ("List ops", [
@@ -1942,7 +1948,22 @@ def _run_cf_merge(args) -> int:
     overlay_data = overlay_parsed.get("data", overlay_parsed)
     list_mode = getattr(args, "list_merge", "replace")
     new_only = getattr(args, "merge_new_only", False)
-    merged = _cf._deep_merge(base_data, overlay_data, list_mode=list_mode, new_only=new_only)
+    merge_at = getattr(args, "merge_at", None)
+    if merge_at:
+        try:
+            target = _cf._get_by_path(base_data, merge_at)
+        except (KeyError, IndexError):
+            target = {}
+        merged_target = _cf._deep_merge(target, overlay_data, list_mode=list_mode, new_only=new_only)
+        import copy
+        merged = copy.deepcopy(base_data)
+        try:
+            _cf._set_by_path(merged, merge_at, merged_target)
+        except KeyError as exc:
+            print(f"error: --merge-at path invalid: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+    else:
+        merged = _cf._deep_merge(base_data, overlay_data, list_mode=list_mode, new_only=new_only)
     to_fmt = getattr(args, "to", None) or detected_fmt
     if not to_fmt:
         print("error: cannot determine output format; use --to", file=sys.stderr)
@@ -4202,7 +4223,7 @@ def _run_cf_replace_value(args) -> int:
 # ---------------------------------------------------------------------------
 
 _CF_FLAGS = (
-    "--to --from --get --default --set --append --delete --rename --merge --list-merge "
+    "--to --from --get --default --set --append --delete --rename --merge --list-merge --merge-new-only --merge-at "
     "--in-place -i --backup --diff --validate --count --length --type --has --keys "
     "--recursive -R --pick --select --each --join --grep --grep-case-sensitive "
     "--flatten --unflatten --sep --env-expand "
@@ -4368,6 +4389,8 @@ _devbench() {{
                         '--rename=[Rename key: OLD_PATH NEW_PATH]:old_path new_path:' \\
                         '--merge=[Merge overlay file]:file:_files' \\
                         '--list-merge=[List merge strategy]:mode:(replace append merge)' \\
+                        '--merge-new-only[Merge: add missing keys only]' \\
+                        '--merge-at=[Merge overlay at nested path]:path:' \\
                         '--diff=[Structural diff against file]:file:_files' \\
                         '--validate[Validate config is parseable]' \\
                         '--count=[Count items at path]:path:' \\
@@ -4489,7 +4512,9 @@ complete -c devbench -n __devbench_seen_cf -l append  -d 'Append value at path' 
 complete -c devbench -n __devbench_seen_cf -l delete  -d 'Delete value at path'      -r
 complete -c devbench -n __devbench_seen_cf -l rename  -d 'Rename key: OLD_PATH NEW_PATH'  -r
 complete -c devbench -n __devbench_seen_cf -l merge   -d 'Merge overlay file'        -r -F
-complete -c devbench -n __devbench_seen_cf -l list-merge -d 'List merge strategy'    -r -f -a 'replace append merge'
+complete -c devbench -n __devbench_seen_cf -l list-merge  -d 'List merge strategy'    -r -f -a 'replace append merge'
+complete -c devbench -n __devbench_seen_cf -l merge-new-only -d 'Merge: add missing keys only'
+complete -c devbench -n __devbench_seen_cf -l merge-at    -d 'Merge overlay at nested path'  -r
 complete -c devbench -n __devbench_seen_cf -l diff    -d 'Structural diff vs file'   -r -F
 
 # cf: query / search flags

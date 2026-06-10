@@ -1155,6 +1155,70 @@ def test_merge_new_only_json(tmp_path, capsys):
     assert result["description"] == "a tool"
 
 
+def test_merge_at_nested_path(tmp_path, capsys):
+    """--merge-at merges overlay into a specific nested path, not the root.
+
+    r/devops complaint: yq can only merge at the top-level — cannot inject
+    a chunk of YAML under .spec.template.spec without a complex expression.
+    """
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text(
+        "spec:\n"
+        "  replicas: 3\n"
+        "  template:\n"
+        "    spec:\n"
+        "      nodeSelector: {}\n"
+    )
+    overlay = tmp_path / "patch.yaml"
+    overlay.write_text("tolerations:\n  - key: gpu\n    effect: NoSchedule\n")
+    rc = main([str(base), "--merge", str(overlay), "--merge-at", "spec.template.spec"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    # Top-level and sibling keys untouched
+    assert result["spec"]["replicas"] == 3
+    assert result["spec"]["template"]["spec"]["nodeSelector"] == {}
+    # Overlay content injected at the target path
+    assert result["spec"]["template"]["spec"]["tolerations"] == [
+        {"key": "gpu", "effect": "NoSchedule"}
+    ]
+
+
+def test_merge_at_creates_missing_intermediate(tmp_path, capsys):
+    """--merge-at creates the target path if it doesn't exist yet."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("name: myapp\n")
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text("debug: true\nlog_level: info\n")
+    rc = main([str(base), "--merge", str(overlay), "--merge-at", "settings"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    assert result["name"] == "myapp"
+    assert result["settings"]["debug"] is True
+    assert result["settings"]["log_level"] == "info"
+
+
+def test_merge_at_with_merge_new_only(tmp_path, capsys):
+    """--merge-at and --merge-new-only compose: inject defaults at path."""
+    from core.configforge import main
+    base = tmp_path / "base.yaml"
+    base.write_text("db:\n  host: localhost\n  port: 5432\n")
+    overlay = tmp_path / "defaults.yaml"
+    overlay.write_text("host: db.prod\nport: 9999\ntimeout: 30\n")
+    rc = main([str(base), "--merge", str(overlay), "--merge-at", "db", "--merge-new-only"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = yaml.safe_load(captured.out)
+    # Existing values protected
+    assert result["db"]["host"] == "localhost"
+    assert result["db"]["port"] == 5432
+    # New key added
+    assert result["db"]["timeout"] == 30
+
+
 def test_toml_set_pyproject_version(tmp_path, capsys):
     """--set on a pyproject.toml-style file updates the version and preserves structure.
 
