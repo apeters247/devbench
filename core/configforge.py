@@ -638,6 +638,33 @@ def _quote_template_values(text: str) -> str:
     return "\n".join(result_lines)
 
 
+def _make_block_scalar_dumper():
+    """Return a YAML Dumper that represents multiline strings as block scalars.
+
+    PyYAML 6.x falls back to double-quoted style when a string contains
+    trailing whitespace on any line, even when style='|' is requested — the
+    root cause of yq issue #439 ("multiline string formatting not preserved").
+    We strip per-line trailing spaces before handing the string to PyYAML so
+    block scalar style is always used for multiline strings.  Trailing spaces
+    in config-file strings are virtually never intentional, so this normalise-
+    then-block approach is safe and produces stable, readable output.
+    """
+    class BlockScalarDumper(yaml.Dumper):
+        pass
+
+    def _str_representer(dumper, data):
+        if "\n" in data:
+            # Strip trailing spaces per line so PyYAML doesn't fall back to
+            # double-quoted style (its workaround for trailing-space preservation).
+            lines = data.split("\n")
+            cleaned = "\n".join(line.rstrip(" \t") for line in lines)
+            return dumper.represent_scalar("tag:yaml.org,2002:str", cleaned, style="|")
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+    BlockScalarDumper.add_representer(str, _str_representer)
+    return BlockScalarDumper
+
+
 def _make_yaml12_loader():
     """Return a SafeLoader subclass with YAML 1.2 boolean rules.
 
@@ -2304,14 +2331,16 @@ def serialize(data, fmt: str, **options) -> str:
         indent = options.get("indent", 2)
         sort_keys = options.get("sort_keys", False)
         sort_keys_reverse = options.get("sort_keys_reverse", False)
+        block_scalars = options.get("block_scalars", False)
         if sort_keys_reverse:
             data = _sort_keys_reverse_recursive(data)
+        dumper_cls = _make_block_scalar_dumper() if block_scalars else yaml.Dumper
         # Handle multi-document YAML: list of dicts → --- separated docs
         if isinstance(data, list) and all(isinstance(d, dict) for d in data):
             return yaml.dump_all(data, default_flow_style=False, allow_unicode=True,
-                                 sort_keys=sort_keys, indent=indent)
+                                 sort_keys=sort_keys, indent=indent, Dumper=dumper_cls)
         return yaml.dump(data, default_flow_style=False, allow_unicode=True,
-                         sort_keys=sort_keys, indent=indent)
+                         sort_keys=sort_keys, indent=indent, Dumper=dumper_cls)
 
     elif fmt == "toml":
         if options.get("sort_keys", False):
@@ -3001,6 +3030,54 @@ def mask_sensitive(data, key_pattern: str, replacement: str = "***REDACTED***"):
     return _walk(data)
 
 
+def hash_field_values(data, key_pattern: str, algorithm: str = "sha256"):
+    """Recursively replace config values whose key names match *key_pattern* with their hash.
+
+    Useful for anonymizing sensitive fields (passwords, tokens, secrets) while
+    keeping the config structurally valid — e.g. for sharing configs in bug reports
+    or storing in audit logs.  Addresses yq issue #2283 ("add hash function").
+
+    Supported algorithms: md5, sha1, sha256, sha512, blake2b.
+    Only string and numeric values are hashed; dicts/lists are recursed into.
+    Returns a new object; the original *data* is not modified.
+    """
+    import re as _re
+    import hashlib as _hashlib
+
+    _ALGOS = {
+        "md5": lambda d: _hashlib.md5(d, usedforsecurity=False).hexdigest(),
+        "sha1": lambda d: _hashlib.sha1(d, usedforsecurity=False).hexdigest(),
+        "sha256": lambda d: _hashlib.sha256(d).hexdigest(),
+        "sha512": lambda d: _hashlib.sha512(d).hexdigest(),
+        "blake2b": lambda d: _hashlib.blake2b(d).hexdigest(),
+    }
+    algo = algorithm.lower().replace("-", "")
+    if algo not in _ALGOS:
+        raise ValueError(f"Unsupported hash algorithm '{algorithm}'. Choose from: {', '.join(_ALGOS)}")
+
+    hasher = _ALGOS[algo]
+    pat = _re.compile(key_pattern, _re.IGNORECASE)
+
+    def _hash_value(v):
+        raw = str(v).encode()
+        return f"{algo}:{hasher(raw)}"
+
+    def _walk(obj):
+        if isinstance(obj, dict):
+            out = {}
+            for k, v in obj.items():
+                if pat.search(str(k)) and not isinstance(v, (dict, list)):
+                    out[k] = _hash_value(v)
+                else:
+                    out[k] = _walk(v)
+            return out
+        if isinstance(obj, list):
+            return [_walk(item) for item in obj]
+        return obj
+
+    return _walk(data)
+
+
 def schema_validate(data, schema: dict) -> dict:
     """Validate *data* against a JSON Schema *schema*.
 
@@ -3125,6 +3202,9 @@ Compared to yq/jq:
                              "before parsing. Use for Helm charts, Ansible playbooks, or any "
                              "YAML with unquoted {{ ... }} expressions. Auto-retry is the "
                              "default; this flag forces quoting on the first pass.")
+    parser.add_argument("--block-scalars", action="store_true", dest="block_scalars",
+                        help="Force YAML output to use block scalar style (|) for multiline strings. "
+                             "Prevents yq-style corruption of strings with trailing whitespace.")
     parser.add_argument("--sort-keys", action="store_true", help="Sort keys in output.")
     parser.add_argument("--sort-keys-reverse", action="store_true", dest="sort_keys_reverse",
                         help="Sort keys in reverse alphabetical order.")
@@ -3211,6 +3291,29 @@ Compared to yq/jq:
     parser.add_argument("--replace-value", metavar=("OLD", "NEW"), nargs=2, dest="replace_value",
                         help="Find and replace all matching leaf values across the config. "
                              "OLD compared as string; NEW is JSON-coerced.")
+    parser.add_argument("--has", metavar="PATH", default=None, dest="has_path",
+                        help="Check if PATH exists in the config (exit 0=found, 1=missing). "
+                             "Prints 'true'/'false'. Use --raw for JSON output.")
+    parser.add_argument("--length", metavar="PATH", default=None, dest="length_path",
+                        help="Print length of value at PATH (string: char count, "
+                             "list/object: item count, null: 0, scalar: 1).")
+    parser.add_argument("--hash-field", metavar="PATTERN", default=None, dest="hash_pattern",
+                        help="Hash all values whose key name matches this regex. "
+                             "Output: algorithm:hexdigest. "
+                             "Example: configforge prod.yaml --hash-field 'password|secret|token'")
+    parser.add_argument("--hash-algorithm", metavar="ALGO", default="sha256", dest="hash_algorithm",
+                        choices=["md5", "sha1", "sha256", "sha512", "blake2b"],
+                        help="Hash algorithm for --hash-field (default: sha256).")
+    parser.add_argument("--sort-by", metavar="FIELD", default=None, dest="sort_by",
+                        help="Sort a list of objects by a field value. "
+                             "Use --sort-desc for descending order.")
+    parser.add_argument("--sort-desc", action="store_true", default=False, dest="sort_desc",
+                        help="Reverse sort order for --sort-by (descending).")
+    parser.add_argument("--unique", action="store_true", default=False, dest="unique",
+                        help="Deduplicate list items. "
+                             "Use --unique-by FIELD to deduplicate object lists by a specific field.")
+    parser.add_argument("--unique-by", metavar="FIELD", default=None, dest="unique_by",
+                        help="Deduplicate a list of objects by a field value.")
     args = parser.parse_args(argv)
 
     _csv_delim = None
@@ -3230,6 +3333,7 @@ Compared to yq/jq:
         "null_handling": args.null_handling,
         "yaml12": args.yaml12,
         "template_safe": args.template_safe,
+        "block_scalars": getattr(args, "block_scalars", False),
     }
     if _csv_delim:
         options["csv_delimiter"] = _csv_delim
@@ -3248,6 +3352,206 @@ Compared to yq/jq:
         results = batch_convert(args.input, args.to, args.output_dir,
                                 recursive=args.recursive, **options)
         return 0 if results and all(r.get("success") for r in results) else 1
+
+    if getattr(args, "has_path", None):
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        path = args.has_path
+        if path == ".":
+            exists = True
+        else:
+            try:
+                _get_by_path(data, path)
+                exists = True
+            except (KeyError, IndexError, TypeError):
+                exists = False
+        if getattr(args, "raw", False):
+            import json as _json
+            print(_json.dumps({"path": path, "exists": exists}))
+        else:
+            print("true" if exists else "false")
+        return 0 if exists else 1
+
+    if getattr(args, "length_path", None):
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        path = args.length_path
+        if path == ".":
+            val = data
+        else:
+            try:
+                val = _get_by_path(data, path)
+            except (KeyError, IndexError, TypeError):
+                print(f"error: path not found: {path!r}", file=sys.stderr)
+                return 1
+        if val is None:
+            length = 0
+        elif isinstance(val, str):
+            length = len(val)
+        elif isinstance(val, (list, dict)):
+            length = len(val)
+        else:
+            length = 1
+        print(length)
+        return 0
+
+    if getattr(args, "hash_pattern", None):
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        detected_fmt = parsed.get("format", "yaml")
+        try:
+            hashed = hash_field_values(data, args.hash_pattern,
+                                       getattr(args, "hash_algorithm", "sha256"))
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        out_fmt = args.to or detected_fmt
+        try:
+            output_text = serialize(hashed, out_fmt, **options)
+        except ValueError as exc:
+            print(f"error: could not serialize as {out_fmt}: {exc}", file=sys.stderr)
+            return 1
+        sys.stdout.write(output_text if output_text.endswith("\n") else output_text + "\n")
+        return 0
+
+    if getattr(args, "sort_by", None):
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        detected_fmt = parsed.get("format", "yaml")
+        if args.get:
+            try:
+                data = _get_by_path(data, args.get)
+            except (KeyError, IndexError) as exc:
+                default = getattr(args, "get_default", None)
+                if default is not None:
+                    sys.stdout.write(default + "\n")
+                    return 0
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        if not isinstance(data, list):
+            print("error: --sort-by requires a list; input is not a list "
+                  "(use --get PATH to navigate to one)", file=sys.stderr)
+            return 1
+        field = args.sort_by
+        desc = getattr(args, "sort_desc", False)
+
+        def _sort_key(item):
+            try:
+                val = _get_by_path(item, field)
+            except (KeyError, IndexError, TypeError):
+                return (2, "")
+            if isinstance(val, bool):
+                return (1, int(val))
+            if isinstance(val, (int, float)):
+                return (0, val)
+            return (1, str(val))
+
+        sorted_data = sorted(data, key=_sort_key, reverse=desc)
+        to_fmt_sort = args.to or detected_fmt or "yaml"
+        compact = getattr(args, "compact", False)
+        if to_fmt_sort in ("yaml", "yml"):
+            import yaml as _yaml
+            output_text = _yaml.dump(sorted_data, default_flow_style=False,
+                                     allow_unicode=True, indent=args.indent)
+        elif to_fmt_sort in ("json", "jsonc"):
+            output_text = (json.dumps(sorted_data, separators=(",", ":"))
+                           if compact else json.dumps(sorted_data, indent=args.indent)) + "\n"
+        else:
+            try:
+                output_text = serialize(sorted_data, to_fmt_sort, **options)
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        sys.stdout.write(output_text if output_text.endswith("\n") else output_text + "\n")
+        return 0
+
+    if getattr(args, "unique", False) or getattr(args, "unique_by", None):
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        detected_fmt = parsed.get("format", "yaml")
+        if args.get:
+            try:
+                data = _get_by_path(data, args.get)
+            except (KeyError, IndexError) as exc:
+                default = getattr(args, "get_default", None)
+                if default is not None:
+                    sys.stdout.write(default + "\n")
+                    return 0
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        if not isinstance(data, list):
+            print("error: --unique/--unique-by requires a list; input is not a list "
+                  "(use --get PATH to navigate to one)", file=sys.stderr)
+            return 1
+        unique_by_field = getattr(args, "unique_by", None)
+        if unique_by_field:
+            seen: set = set()
+            result_list = []
+            for item in data:
+                try:
+                    val = _get_by_path(item, unique_by_field)
+                    key = repr(val)
+                except (KeyError, IndexError, TypeError):
+                    key = None
+                if key is None or key not in seen:
+                    if key is not None:
+                        seen.add(key)
+                    result_list.append(item)
+        else:
+            seen_exact: set = set()
+            result_list = []
+            for item in data:
+                fingerprint = json.dumps(item, sort_keys=True, default=str)
+                if fingerprint not in seen_exact:
+                    seen_exact.add(fingerprint)
+                    result_list.append(item)
+        to_fmt_uniq = args.to or detected_fmt or "yaml"
+        compact = getattr(args, "compact", False)
+        if to_fmt_uniq in ("yaml", "yml"):
+            import yaml as _yaml
+            output_text = _yaml.dump(result_list, default_flow_style=False,
+                                     allow_unicode=True, indent=args.indent)
+        elif to_fmt_uniq in ("json", "jsonc"):
+            output_text = (json.dumps(result_list, separators=(",", ":"))
+                           if compact else json.dumps(result_list, indent=args.indent)) + "\n"
+        else:
+            try:
+                output_text = serialize(result_list, to_fmt_uniq, **options)
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        sys.stdout.write(output_text if output_text.endswith("\n") else output_text + "\n")
+        return 0
 
     if args.keys:
         text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
