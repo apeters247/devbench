@@ -1817,8 +1817,15 @@ def _run_cf_set(args) -> int:
     if not to_fmt:
         print("error: cannot determine output format; use --to", file=sys.stderr)
         return EXIT_ERROR
+    ser_opts = _cf_serialize_options(args)
+    # Auto-enable block scalars when setting a multiline string in YAML output.
+    # Fixes yq#2025: without this, PyYAML emits ugly single-quoted multi-line
+    # literals like `key: 'line1\n  line2'` instead of clean `key: |-\n  …`.
+    if (to_fmt in ("yaml",) and isinstance(value, str) and "\n" in value
+            and not ser_opts.get("block_scalars")):
+        ser_opts["block_scalars"] = True
     try:
-        output_text = _cf.serialize(data, to_fmt, **_cf_serialize_options(args))
+        output_text = _cf.serialize(data, to_fmt, **ser_opts)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR

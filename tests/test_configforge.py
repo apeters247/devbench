@@ -598,6 +598,26 @@ def test_set_python_true_is_boolean(tmp_path, capsys):
     assert result["enabled"] is True
 
 
+def test_set_multiline_value_uses_block_scalar(tmp_path, capsys):
+    """--set with a multiline string auto-uses block scalar style (yq#2025).
+
+    Regression: without the fix PyYAML emits ugly single-quoted multi-line
+    literals like ``key: 'line1\\n  line2'`` instead of the clean block form.
+    """
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("key: old\nother: foo\n")
+    rc = main([str(f), "--set", "key", "line1\nline2"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    # Output must use block scalar, not quoted single-line
+    assert "|-" in captured.out or "|" in captured.out
+    # Value must round-trip correctly
+    result = yaml.safe_load(captured.out)
+    assert result["key"] == "line1\nline2"
+    assert result["other"] == "foo"
+
+
 def test_set_python_false_is_boolean(tmp_path, capsys):
     """--set 'False' (Python-style) yields a boolean, not the string 'False'."""
     from core.configforge import main
