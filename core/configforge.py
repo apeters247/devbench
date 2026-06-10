@@ -110,7 +110,6 @@ def _count_delims_outside_quotes(line: str, delim: str) -> int:
 
 
 # ── Comment Preservation (YAML + INI) ──
-_COMMENT_CACHE = {}
 
 
 def _yaml_find_comment(line: str) -> int:
@@ -753,20 +752,20 @@ def _reinsert_yaml_blank_lines(yaml_text: str, blanks: list) -> str:
     return "\n".join(lines)
 
 
-def _extract_ini_comments(text: str) -> list:
-    """Extract # and ; comments from INI text."""
+def _extract_ini_comments(text: str, markers: tuple = ("#", ";", "!")) -> list:
+    """Extract #, ;, and ! comments from INI/text."""
     comments = []
     lines = text.split("\n")
     current_key = None
     for i, line in enumerate(lines):
         stripped = line.strip()
         # Track keys
-        if "=" in stripped and not stripped.startswith(("#", ";")):
+        if "=" in stripped and not stripped.startswith(("#", ";", "!")):
             current_key = stripped.split("=", 1)[0].strip()
         elif stripped.startswith("[") and stripped.endswith("]"):
             current_key = None
         # Extract comments
-        for marker in ("#", ";"):
+        for marker in markers:
             if marker in stripped:
                 ci = stripped.index(marker)
                 # Not inside a value string
@@ -1401,13 +1400,13 @@ def detect_format(text: str) -> str:
     # INI: contains key=value (bare values, no types)
     if re.search(r"^\[.*\]$", text, re.MULTILINE) or re.search(r"^[\w]+\s*=", text, re.MULTILINE):
         try:
-            cfg = configparser.ConfigParser(interpolation=None)
+            cfg = configparser.ConfigParser(interpolation=None, comment_prefixes=("#", ";", "!"))
             cfg.read_string(text)
             return "ini"
         except configparser.MissingSectionHeaderError:
             # Bare key=value without section headers — wrap in DEFAULT
             try:
-                cfg = configparser.ConfigParser(interpolation=None)
+                cfg = configparser.ConfigParser(interpolation=None, comment_prefixes=("#", ";", "!"))
                 cfg.read_string("[DEFAULT]\n" + text)
                 if cfg.defaults():
                     return "ini"
@@ -1595,6 +1594,11 @@ def parse_text(text: str, fmt: str = None, **options) -> dict:
 
 def _parse_text_impl(text: str, fmt: str = None, **options) -> dict:
     """Internal implementation — use parse_text() externally."""
+    # Strip UTF-8 BOM (﻿) silently — Windows tools and Excel add it to JSON/YAML/CSV exports.
+    # Without this, json.loads() raises JSONDecodeError and yaml.load() corrupts the first key.
+    # Guard: binary plist passes bytes, not str.
+    if isinstance(text, str):
+        text = text.lstrip("﻿")
     if not fmt or fmt == "auto":
         fmt = detect_format(text)
 
@@ -1679,7 +1683,7 @@ def _parse_text_impl(text: str, fmt: str = None, **options) -> dict:
 
     elif fmt == "ini":
         infer_types = options.get("infer_types", True)
-        cfg = configparser.ConfigParser(interpolation=None)
+        cfg = configparser.ConfigParser(interpolation=None, comment_prefixes=("#", ";", "!"))
         try:
             cfg.read_string(text)
         except configparser.MissingSectionHeaderError:
@@ -2098,7 +2102,7 @@ def _coerce_set_value(s: str):
         return s
 
 
-def _deep_merge(base, overlay, list_mode: str = "replace", new_only: bool = False):
+def _deep_merge(base, overlay, list_mode: str = "replace", new_only: bool = False, dedupe_lists: bool = False):
     """Recursively merge overlay onto base.
 
     Addresses the r/devops complaint that yq has no ergonomic way to merge
@@ -2111,23 +2115,34 @@ def _deep_merge(base, overlay, list_mode: str = "replace", new_only: bool = Fals
     new_only=True: only add keys absent from base; never overwrite existing values.
                    Addresses yq issue #2201 where users want to populate defaults
                    without clobbering already-set values.
+    dedupe_lists=True: when list_mode="append", deduplicate items preserving first occurrence.
+                       Fixes yq issue #2564 where merging with *= or *+ produces duplicate
+                       mapping entries; especially useful when merging a file with itself or
+                       when overlay shares items with base.
     """
     if isinstance(base, dict) and isinstance(overlay, dict):
         result = dict(base)
         for key, val in overlay.items():
             if key in result:
                 if not new_only:
-                    result[key] = _deep_merge(result[key], val, list_mode, new_only)
+                    result[key] = _deep_merge(result[key], val, list_mode, new_only, dedupe_lists)
                 elif isinstance(result[key], dict) and isinstance(val, dict):
                     # new_only=True but both sides are dicts: recurse to add missing sub-keys
-                    result[key] = _deep_merge(result[key], val, list_mode, new_only)
+                    result[key] = _deep_merge(result[key], val, list_mode, new_only, dedupe_lists)
                 # else: new_only=True, leaf scalar/list — base value wins, skip
             else:
                 result[key] = val
         return result
     if isinstance(base, list) and isinstance(overlay, list):
         if list_mode == "append":
-            return list(base) + list(overlay)
+            combined = list(base) + list(overlay)
+            if dedupe_lists:
+                seen = []
+                for item in combined:
+                    if item not in seen:
+                        seen.append(item)
+                return seen
+            return combined
         if list_mode == "merge":
             # Deep-merge corresponding items by position; append extras from overlay.
             # Useful for Kubernetes containers/env where positional list items
@@ -2135,7 +2150,7 @@ def _deep_merge(base, overlay, list_mode: str = "replace", new_only: bool = Fals
             result = list(base)
             for i, item in enumerate(overlay):
                 if i < len(result):
-                    result[i] = _deep_merge(result[i], item, list_mode, new_only)
+                    result[i] = _deep_merge(result[i], item, list_mode, new_only, dedupe_lists)
                 else:
                     result.append(item)
             return result
@@ -2387,15 +2402,23 @@ def serialize(data, fmt: str, **options) -> str:
         sort_keys = options.get("sort_keys", False)
         sort_keys_reverse = options.get("sort_keys_reverse", False)
         block_scalars = options.get("block_scalars", False)
+        explicit_start = options.get("explicit_start", False)
+        explicit_end = options.get("explicit_end", False)
+        yaml_width_opt = options.get("yaml_width", None)
+        # yaml.dump width=0 is treated as no-wrap; translate None→80 (PyYAML default)
+        width = None if yaml_width_opt is None else (None if yaml_width_opt == 0 else yaml_width_opt)
         if sort_keys_reverse:
             data = _sort_keys_reverse_recursive(data)
         dumper_cls = _make_block_scalar_dumper() if block_scalars else yaml.Dumper
+        dump_kwargs = dict(default_flow_style=False, allow_unicode=True,
+                           sort_keys=sort_keys, indent=indent, Dumper=dumper_cls,
+                           explicit_start=explicit_start, explicit_end=explicit_end)
+        if width is not None:
+            dump_kwargs["width"] = width
         # Handle multi-document YAML: list of dicts → --- separated docs
         if isinstance(data, list) and all(isinstance(d, dict) for d in data):
-            return yaml.dump_all(data, default_flow_style=False, allow_unicode=True,
-                                 sort_keys=sort_keys, indent=indent, Dumper=dumper_cls)
-        return yaml.dump(data, default_flow_style=False, allow_unicode=True,
-                         sort_keys=sort_keys, indent=indent, Dumper=dumper_cls)
+            return yaml.dump_all(data, **dump_kwargs)
+        return yaml.dump(data, **dump_kwargs)
 
     elif fmt == "toml":
         if options.get("sort_keys", False):
@@ -2901,20 +2924,20 @@ def batch_convert_stream(input_glob: str, to_fmt: str, output_dir: str = None, *
     """
     import glob
 
-    show_progress = options.pop("show_progress", True)
+    show_progress = options.pop("show_progress", False)
     recursive = options.pop("recursive", False)
     files = sorted(glob.glob(input_glob, recursive=recursive))
     total = len(files)
 
     if total == 0:
         if show_progress:
-            print(f"[batch] No files matched: {input_glob}")
+            print(f"[batch] No files matched: {input_glob}", file=sys.stderr)
         yield {"_empty": True, "_summary": {"total": 0, "success": 0, "errors": 0}}
         return
 
     if show_progress:
-        print(f"[batch] Converting {total} file(s) matching '{input_glob}' -> {to_fmt}")
-        print(f"[batch] {'─' * 50}")
+        print(f"[batch] Converting {total} file(s) matching '{input_glob}' -> {to_fmt}", file=sys.stderr)
+        print(f"[batch] {'─' * 50}", file=sys.stderr)
 
     success_count = 0
     for idx, fpath in enumerate(files, 1):
@@ -2929,7 +2952,7 @@ def batch_convert_stream(input_glob: str, to_fmt: str, output_dir: str = None, *
             bar_len = 30
             filled = bar_len * idx // total
             bar = '█' * filled + '░' * (bar_len - filled)
-            print(f"\r[batch] |{bar}| {idx}/{total} ({pct}%) {fpath}...   ", end="", flush=True)
+            print(f"\r[batch] |{bar}| {idx}/{total} ({pct}%) {fpath}...   ", end="", flush=True, file=sys.stderr)
 
         result = convert_file(fpath, str(out_path) if out_path else None, to_fmt, **options)
         result["file"] = fpath
@@ -2943,17 +2966,17 @@ def batch_convert_stream(input_glob: str, to_fmt: str, output_dir: str = None, *
             if result["success"]:
                 cw = result.get("comment_loss_warning")
                 if cw:
-                    print(f" ✓ ({result.get('output_size', 0)} bytes) ⚠️ comments lost")
+                    print(f" ✓ ({result.get('output_size', 0)} bytes) ⚠️ comments lost", file=sys.stderr)
                 else:
-                    print(f" ✓ ({result.get('output_size', 0)} bytes)")
+                    print(f" ✓ ({result.get('output_size', 0)} bytes)", file=sys.stderr)
             else:
-                print(f" ✗ {result.get('error', 'unknown error')}")
+                print(f" ✗ {result.get('error', 'unknown error')}", file=sys.stderr)
 
         yield result
 
     if show_progress:
-        print(f"[batch] {'─' * 50}")
-        print(f"[batch] Done: {success_count}/{total} successful")
+        print(f"[batch] {'─' * 50}", file=sys.stderr)
+        print(f"[batch] Done: {success_count}/{total} successful", file=sys.stderr)
 
     # Final summary yield so callers get a completion signal
     yield {
@@ -2972,19 +2995,19 @@ def batch_convert(input_glob: str, to_fmt: str, output_dir: str = None, **option
     results incrementally instead of building an in-memory list.
     """
     import glob
-    show_progress = options.pop("show_progress", True)
+    show_progress = options.pop("show_progress", False)
     recursive = options.pop("recursive", False)
 
     files = sorted(glob.glob(input_glob, recursive=recursive))
     total = len(files)
     if total == 0:
         if show_progress:
-            print(f"[batch] No files matched: {input_glob}")
+            print(f"[batch] No files matched: {input_glob}", file=sys.stderr)
         return []
 
     if show_progress:
-        print(f"[batch] Converting {total} file(s) matching '{input_glob}' -> {to_fmt}")
-        print(f"[batch] {'─' * 50}")
+        print(f"[batch] Converting {total} file(s) matching '{input_glob}' -> {to_fmt}", file=sys.stderr)
+        print(f"[batch] {'─' * 50}", file=sys.stderr)
 
     results = []
     for idx, fpath in enumerate(files, 1):
@@ -2995,7 +3018,7 @@ def batch_convert(input_glob: str, to_fmt: str, output_dir: str = None, **option
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
         if show_progress:
-            print(f"[batch] [{idx}/{total}] {fpath} -> {out_path or to_fmt}...", end="")
+            print(f"[batch] [{idx}/{total}] {fpath} -> {out_path or to_fmt}...", end="", file=sys.stderr)
 
         result = convert_file(fpath, str(out_path) if out_path else None, to_fmt, **options)
         result["file"] = fpath
@@ -3003,14 +3026,14 @@ def batch_convert(input_glob: str, to_fmt: str, output_dir: str = None, **option
 
         if show_progress:
             if result["success"]:
-                print(f" \u2713 ({result.get('output_size', 0)} bytes)")
+                print(f" \u2713 ({result.get('output_size', 0)} bytes)", file=sys.stderr)
             else:
-                print(f" \u2717 {result.get('error', 'unknown error')}")
+                print(f" \u2717 {result.get('error', 'unknown error')}", file=sys.stderr)
 
     success_count = sum(1 for r in results if r["success"])
     if show_progress:
-        print(f"[batch] {'─' * 50}")
-        print(f"[batch] Done: {success_count}/{total} successful")
+        print(f"[batch] {'─' * 50}", file=sys.stderr)
+        print(f"[batch] Done: {success_count}/{total} successful", file=sys.stderr)
     return results
 
 

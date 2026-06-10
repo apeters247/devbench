@@ -1750,6 +1750,12 @@ def test_ini_inline_comment_survives_roundtrip():
     assert "primary host" in out["output"]
 
 
+def test_ini_bang_comment_survives_roundtrip():
+    out = round_trip("[database]\n! primary connection host\nhost = localhost\nport = 5432\n", via="json", fmt="ini")
+    assert out["success"], out.get("error")
+    assert "primary connection host" in out["output"]
+
+
 def test_roundtrip_helper_reports_success_and_detects_yaml():
     out = round_trip("# c\nkey: value\n", via="json", fmt="yaml")
     assert out["success"], out.get("error")
