@@ -1969,6 +1969,11 @@ def _split_path(path: str) -> list:
       items[-1]       → ['items', '-1']
       a[0][1].b       → ['a', '0', '1', 'b']
 
+    Leading dot is silently stripped so yq-style paths work without change:
+      .server.port    → ['server', 'port']
+      .[0]            → ['0']
+      .               → []  (root — caller returns full document)
+
     Escape rules (applied left-to-right):
       \.  → literal dot in key name (not a separator)
       \\  → literal backslash in key name
@@ -1981,6 +1986,11 @@ def _split_path(path: str) -> list:
     'a\.b\.c'       → ['a.b.c']
     'a\\.b'         → ['a\', 'b']   (literal backslash key, dot is separator)
     """
+    # Strip a leading dot so yq-style paths (.foo.bar) work as-is.
+    if path.startswith('.') and (len(path) == 1 or path[1] != '\\'):
+        path = path[1:]
+    if not path:
+        return []
     parts: list = []
     current: list = []
     i = 0

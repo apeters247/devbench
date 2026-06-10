@@ -242,6 +242,28 @@ def _main_dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
             result_str = tools.token_counter(input_text, model_name=args.model)
         elif args.command == "chunk":
             result_str = tools.text_chunker(input_text, chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap)
+        elif args.command == "context":
+            # Build input text from --glob > --files > piped/positional text
+            if getattr(args, "glob", None):
+                ctx_input = args.glob
+            elif getattr(args, "files", None):
+                ctx_input = "\n".join(args.files)
+            else:
+                ctx_input = input_text
+            result_str = tools.context_builder(ctx_input)
+        elif args.command == "prompt":
+            # Inject --var KEY=VALUE pairs into input via the ---vars--- separator
+            if getattr(args, "prompt_vars", None):
+                vars_block = "\n".join(args.prompt_vars)
+                if tools._PROMPT_VARS_MARKER in input_text:
+                    ctx_input = input_text + "\n" + vars_block
+                else:
+                    ctx_input = input_text + "\n" + tools._PROMPT_VARS_MARKER + "\n" + vars_block
+            else:
+                ctx_input = input_text
+            result_str = tools.prompt_renderer(ctx_input)
+        elif args.command == "schema":
+            result_str = tools.schema_infer(input_text)
         else:
             result_str = tools.run_tool(args.command, input_text)
     else:
@@ -658,6 +680,25 @@ def _build_parser() -> argparse.ArgumentParser:
         elif tool_name == "chunk":
             tool_p.add_argument("--chunk-size", type=int, default=500, help="Max tokens per chunk (default: 500)")
             tool_p.add_argument("--chunk-overlap", type=int, default=100, help="Overlap between chunks (default: 100)")
+        elif tool_name == "context":
+            tool_p.add_argument(
+                "--files", nargs="+", metavar="PATH",
+                help="File paths to bundle (alternative to piped newline-separated paths)",
+            )
+            tool_p.add_argument(
+                "--glob", metavar="PATTERN",
+                help="Glob pattern to match files (e.g. 'src/**/*.py'). Overrides --files and text arg.",
+            )
+        elif tool_name == "prompt":
+            tool_p.add_argument(
+                "--var", action="append", metavar="KEY=VALUE", dest="prompt_vars",
+                help="Template variable (repeatable). Example: --var name=Alice --var role=engineer",
+            )
+        elif tool_name == "schema":
+            tool_p.add_argument(
+                "--to", default="json", choices=["json", "yaml"],
+                help="Output format for the generated schema (default: json)",
+            )
         tool_p.add_argument("text", nargs="?", default=None, help="Input text")
         _add_common_args(tool_p)
 

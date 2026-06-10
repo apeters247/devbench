@@ -1,4 +1,4 @@
-"""Devbench core tools — 9 pure-function developer utilities.
+"""Devbench core tools — developer utilities.
 
 Each tool exposes a ``run(input_text: str) -> str`` interface and returns
 clean JSON-ish output suitable for a SwiftUI shell.
@@ -9,10 +9,14 @@ from __future__ import annotations
 import base64
 import datetime
 import difflib
+import glob as _glob_mod
 import hashlib
 import json
+import os
 import re
+import string
 import uuid
+from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, quote, unquote, urlparse, urlunparse
 
@@ -816,11 +820,14 @@ _LLM_TOOLS_REGISTERED = False
 
 
 def _ensure_llm_tools():
-    """Lazily register token/chunk tools once the module is fully loaded."""
+    """Lazily register token/chunk/context/prompt/schema tools once the module is fully loaded."""
     global _LLM_TOOLS_REGISTERED
     if not _LLM_TOOLS_REGISTERED:
         TOOLS["token"] = token_counter
         TOOLS["chunk"] = text_chunker
+        TOOLS["context"] = context_builder
+        TOOLS["prompt"] = prompt_renderer
+        TOOLS["schema"] = schema_infer
         _LLM_TOOLS_REGISTERED = True
 
 TOOL_ALIASES: dict[str, str] = {
@@ -838,6 +845,10 @@ TOOL_ALIASES: dict[str, str] = {
     "cf_tool": "cf",
     "token_counter": "token",
     "text_chunker": "chunk",
+    "context_builder": "context",
+    "prompt_renderer": "prompt",
+    "schema_infer": "schema",
+    "infer": "schema",
 }
 
 TOOL_HELP: dict[str, str] = {
@@ -852,9 +863,12 @@ TOOL_HELP: dict[str, str] = {
     "cf": "Convert config files: JSON/YAML/TOML/XML/CSV/INI/ENV",
     "token": "Count tokens for LLMs (tiktoken) → token_counter(input)",
     "chunk": "Chunk text for RAG (retrieval-augmented generation) → text_chunker(input)",
+    "context": "Bundle files into an LLM context window → context_builder(file_paths)",
+    "prompt": "Render prompt templates with {{var}} substitution → prompt_renderer(input)",
+    "schema": "Infer JSON Schema (Draft 7) from example data → schema_infer(input)",
 }
 
-TOOL_NAMES: list[str] = ["json", "base64", "jwt", "hash", "url", "timestamp", "uuid", "diff", "cf", "token", "chunk"]
+TOOL_NAMES: list[str] = ["json", "base64", "jwt", "hash", "url", "timestamp", "uuid", "diff", "cf", "token", "chunk", "context", "prompt", "schema"]
 
 
 def get_tool(name: str) -> Optional[Callable[[str], str]]:
@@ -1098,6 +1112,272 @@ def text_chunker(input_text: str, chunk_size: int = 500, chunk_overlap: int = 10
         chunk_overlap=chunk_overlap,
         total_chars=len(input_text),
         method="tiktoken" if use_tiktoken else "estimate",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 12. Context Builder (bundle files for LLM context windows)
+# ---------------------------------------------------------------------------
+
+_CONTEXT_VARS_SEP = "\n---vars---\n"
+_MAX_CONTEXT_FILES = 500
+_MAX_CONTEXT_FILE_BYTES = 10 * 1024 * 1024  # 10 MB per file
+
+
+def context_builder(input_text: str) -> str:
+    """Bundle multiple files into an LLM context window.
+
+    Input: newline-separated list of file paths, OR a single glob pattern.
+    Output: XML-tagged file contents ready to paste into an LLM prompt.
+
+    Format:
+        path/to/file1.py
+        path/to/file2.yaml
+    OR a single line glob:
+        src/**/*.py
+    """
+    if not input_text.strip():
+        return _err("context", "Empty input — provide file paths (one per line) or a glob pattern.")
+
+    lines = [l.strip() for l in input_text.strip().splitlines() if l.strip()]
+
+    # Single-line glob detection
+    if len(lines) == 1 and any(c in lines[0] for c in ("*", "?", "[")):
+        pattern = lines[0]
+        matched = sorted(_glob_mod.glob(pattern, recursive=True))
+        if not matched:
+            return _err("context", f"Glob pattern matched no files: {pattern!r}")
+        if len(matched) > _MAX_CONTEXT_FILES:
+            return _err("context", f"Glob matched {len(matched)} files — limit is {_MAX_CONTEXT_FILES}. Narrow the pattern.")
+        paths = matched
+    else:
+        paths = lines
+
+    if len(paths) > _MAX_CONTEXT_FILES:
+        return _err("context", f"Too many paths ({len(paths)}) — limit is {_MAX_CONTEXT_FILES}.")
+
+    parts = []
+    skipped = []
+    total_bytes = 0
+
+    for raw_path in paths:
+        p = Path(raw_path)
+        if not p.exists():
+            skipped.append(f"{raw_path}: not found")
+            continue
+        if not p.is_file():
+            skipped.append(f"{raw_path}: not a regular file")
+            continue
+        size = p.stat().st_size
+        if size > _MAX_CONTEXT_FILE_BYTES:
+            skipped.append(f"{raw_path}: too large ({size // 1024}KB > 10MB)")
+            continue
+        try:
+            content = p.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            skipped.append(f"{raw_path}: {exc}")
+            continue
+        total_bytes += len(content.encode("utf-8"))
+        parts.append(f'<file path="{raw_path}">\n{content}\n</file>')
+
+    if not parts:
+        msgs = "; ".join(skipped) if skipped else "all paths failed"
+        return _err("context", f"No files could be read. {msgs}")
+
+    context_text = "\n\n".join(parts)
+
+    encoding = _try_get_tiktoken_encoding("cl100k_base")
+    if encoding is not None:
+        token_count = len(encoding.encode(context_text))
+        method = "tiktoken"
+    else:
+        token_count = max(1, len(context_text) // _TOKEN_ESTIMATE_RATIO)
+        method = "estimate"
+
+    return _ok(
+        "context",
+        context_text,
+        file_count=len(parts),
+        skipped_count=len(skipped),
+        skipped=skipped,
+        total_bytes=total_bytes,
+        token_count=token_count,
+        token_method=method,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 13. Prompt Renderer (fill template variables, count tokens)
+# ---------------------------------------------------------------------------
+
+_PROMPT_VARS_MARKER = "---vars---"
+
+
+def prompt_renderer(input_text: str, variables: Optional[dict] = None) -> str:
+    """Render a prompt template by substituting {{key}} placeholders.
+
+    Input format (two-part, separated by a line containing only '---vars---'):
+
+        You are a {{role}}. Summarize this: {{text}}
+        ---vars---
+        role=senior engineer
+        text=Hello world
+
+    OR: single-part (no separator) — returns rendered text unchanged with
+    token count. Useful for counting tokens in a finished prompt.
+
+    Supports both ``{{key}}`` (Jinja-style) and ``${key}`` (Python string.Template).
+    """
+    if not input_text.strip():
+        return _err("prompt", "Empty input — provide a prompt template.")
+
+    if _PROMPT_VARS_MARKER in input_text:
+        idx = input_text.index(_PROMPT_VARS_MARKER)
+        template_text = input_text[:idx].rstrip()
+        vars_block = input_text[idx + len(_PROMPT_VARS_MARKER):].lstrip()
+    else:
+        template_text = input_text.strip()
+        vars_block = ""
+
+    # Parse key=value pairs (first '=' splits key from value)
+    merged_vars: dict[str, str] = {}
+    if variables:
+        merged_vars.update({str(k): str(v) for k, v in variables.items()})
+    for raw_line in vars_block.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            return _err("prompt", f"Invalid variable line (expected KEY=VALUE): {line!r}")
+        key, _, val = line.partition("=")
+        merged_vars[key.strip()] = val  # value may contain '='
+
+    # Substitute {{key}} placeholders
+    rendered = template_text
+    if merged_vars:
+        # Braces-style: {{key}}
+        for k, v in merged_vars.items():
+            rendered = rendered.replace("{{" + k + "}}", v)
+        # Also handle ${key} (Python Template style) — only if no braces remain
+        try:
+            tmpl = string.Template(rendered)
+            rendered = tmpl.safe_substitute(merged_vars)
+        except Exception:
+            pass  # fall back to brace-only result
+
+    # Token count
+    encoding = _try_get_tiktoken_encoding("cl100k_base")
+    if encoding is not None:
+        token_count = len(encoding.encode(rendered))
+        method = "tiktoken"
+    else:
+        token_count = max(1, len(rendered) // _TOKEN_ESTIMATE_RATIO)
+        method = "estimate"
+
+    unfilled = re.findall(r"\{\{([^}]+)\}\}", rendered)
+
+    return _ok(
+        "prompt",
+        rendered,
+        token_count=token_count,
+        token_method=method,
+        variables_used=list(merged_vars.keys()),
+        unfilled_placeholders=unfilled,
+        char_count=len(rendered),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 14. Schema Infer (JSON Schema Draft 7 from example data)
+# ---------------------------------------------------------------------------
+
+
+def _infer_schema(value: Any) -> dict:
+    """Recursively infer a JSON Schema Draft 7 from a Python value."""
+    if value is None:
+        return {"type": "null"}
+    if isinstance(value, bool):
+        return {"type": "boolean"}
+    if isinstance(value, int):
+        return {"type": "integer"}
+    if isinstance(value, float):
+        return {"type": "number"}
+    if isinstance(value, str):
+        schema: dict = {"type": "string"}
+        # Annotate common string formats
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            schema["format"] = "date"
+        elif re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*", value):
+            schema["format"] = "date-time"
+        elif re.fullmatch(r"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}", value):
+            schema["format"] = "uuid"
+        elif re.fullmatch(r"https?://.+", value):
+            schema["format"] = "uri"
+        elif re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            schema["format"] = "email"
+        return schema
+    if isinstance(value, list):
+        if not value:
+            return {"type": "array", "items": {}}
+        item_schemas = [_infer_schema(item) for item in value]
+        # Merge: if all items share same type, collapse
+        types = {s.get("type") for s in item_schemas}
+        if len(types) == 1:
+            merged_items = item_schemas[0]
+        else:
+            merged_items = {"oneOf": item_schemas}
+        return {"type": "array", "items": merged_items}
+    if isinstance(value, dict):
+        if not value:
+            return {"type": "object"}
+        properties = {k: _infer_schema(v) for k, v in value.items()}
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": list(value.keys()),
+        }
+    return {}
+
+
+def schema_infer(input_text: str) -> str:
+    """Infer a JSON Schema (Draft 7) from example JSON, YAML, or TOML data.
+
+    Input: JSON object/array, YAML, or TOML.
+    Output: JSON Schema that describes the structure of the input.
+    """
+    if not input_text.strip():
+        return _err("schema", "Empty input — provide JSON, YAML, or TOML data.")
+
+    data = None
+    parse_error = None
+
+    # Try JSON first
+    try:
+        data = json.loads(input_text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Try YAML/TOML via configforge if JSON failed
+    if data is None:
+        try:
+            parsed = _configforge.parse_text(input_text)
+            data = parsed.get("data", parsed)
+        except Exception as exc:
+            parse_error = str(exc)
+
+    if data is None:
+        return _err("schema", f"Could not parse input as JSON, YAML, or TOML. {parse_error or ''}")
+
+    schema = {"$schema": "http://json-schema.org/draft-07/schema#"}
+    schema.update(_infer_schema(data))
+
+    schema_json = json.dumps(schema, indent=2, ensure_ascii=False)
+
+    return _ok(
+        "schema",
+        schema_json,
+        format="json-schema-draft-07",
+        inferred_type=schema.get("type", "unknown"),
     )
 
 

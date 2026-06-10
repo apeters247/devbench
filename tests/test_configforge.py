@@ -546,6 +546,57 @@ def test_get_by_path_missing_key(tmp_path, capsys):
     assert "host" in captured.err
 
 
+def test_get_leading_dot_yq_style(tmp_path, capsys):
+    """--get accepts yq-style leading dot: .server.port works like server.port.
+
+    HN complaint: users coming from yq/jq use .key.subkey syntax and get
+    confusing errors because devbench uses key.subkey (no leading dot)."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("server:\n  host: localhost\n  port: 9200\n")
+    rc = main([str(f), "--get", ".server.port"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.out.strip() == "9200"
+
+
+def test_get_leading_dot_bracket_notation(tmp_path, capsys):
+    """yq-style leading dot works with bracket list index: .items[0].name."""
+    from core.configforge import main
+    f = tmp_path / "data.json"
+    f.write_text('{"items": [{"name": "alpha"}, {"name": "beta"}]}')
+    rc = main([str(f), "--get", ".items[0].name"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.out.strip() == "alpha"
+
+
+def test_get_dot_only_returns_root(tmp_path, capsys):
+    """--get . returns the full document (yq root-document syntax)."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("x: 1\ny: 2\n")
+    rc = main([str(f), "--get", "."])
+    captured = capsys.readouterr()
+    assert rc == 0
+    result = json.loads(captured.out)
+    assert result["x"] == 1
+    assert result["y"] == 2
+
+
+def test_set_leading_dot_yq_style(tmp_path, capsys):
+    """--set accepts yq-style leading dot: .server.port works like server.port."""
+    from core.configforge import main
+    f = tmp_path / "config.yaml"
+    f.write_text("server:\n  port: 8080\n")
+    rc = main([str(f), "--set", ".server.port", "9200"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    import yaml
+    result = yaml.safe_load(captured.out)
+    assert result["server"]["port"] == 9200
+
+
 # -- --set tests --
 
 

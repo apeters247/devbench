@@ -5432,3 +5432,232 @@ def test_detect_format_bare_float_scalar():
     """'3.14' alone is a valid YAML scalar and should detect as yaml."""
     from core.configforge import detect_format
     assert detect_format("3.14") == "yaml"
+
+
+# ── context_builder ──────────────────────────────────────────────────────────
+
+def test_context_builder_single_file(tmp_path):
+    from core.tools import context_builder
+    f = tmp_path / "hello.py"
+    f.write_text("print('hello')\n")
+    result = json.loads(context_builder(str(f)))
+    assert result["error"] is None
+    assert result["metadata"]["file_count"] == 1
+    assert "hello.py" in result["output"]
+    assert "print('hello')" in result["output"]
+
+
+def test_context_builder_multiple_files_newline_sep(tmp_path):
+    from core.tools import context_builder
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("file A content")
+    b.write_text("file B content")
+    result = json.loads(context_builder(f"{a}\n{b}"))
+    assert result["error"] is None
+    assert result["metadata"]["file_count"] == 2
+    assert "file A content" in result["output"]
+    assert "file B content" in result["output"]
+
+
+def test_context_builder_skips_missing_file(tmp_path):
+    from core.tools import context_builder
+    f = tmp_path / "real.txt"
+    f.write_text("exists")
+    missing = tmp_path / "ghost.txt"
+    result = json.loads(context_builder(f"{f}\n{missing}"))
+    assert result["error"] is None
+    assert result["metadata"]["file_count"] == 1
+    assert result["metadata"]["skipped_count"] == 1
+
+
+def test_context_builder_empty_input():
+    from core.tools import context_builder
+    result = json.loads(context_builder(""))
+    assert result["error"] is not None
+
+
+def test_context_cli_with_files_flag(tmp_path, capsys):
+    from core.cli import main
+    f = tmp_path / "code.py"
+    f.write_text("x = 1\n")
+    rc = main(["context", "--files", str(f)])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["metadata"]["file_count"] == 1
+    assert "x = 1" in out["output"]
+
+
+def test_context_cli_piped_paths(tmp_path, capsys, monkeypatch):
+    from core.cli import main
+    import io
+    f = tmp_path / "piped.py"
+    f.write_text("y = 2\n")
+    monkeypatch.setattr("sys.stdin", io.StringIO(str(f)))
+    rc = main(["context"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["metadata"]["file_count"] == 1
+
+
+# ── prompt_renderer ──────────────────────────────────────────────────────────
+
+def test_prompt_renderer_basic_substitution():
+    from core.tools import prompt_renderer
+    template = "Hello {{name}}, you are a {{role}}.\n---vars---\nname=Alice\nrole=engineer"
+    result = json.loads(prompt_renderer(template))
+    assert result["error"] is None
+    assert result["output"] == "Hello Alice, you are a engineer."
+    assert "name" in result["metadata"]["variables_used"]
+    assert result["metadata"]["unfilled_placeholders"] == []
+
+
+def test_prompt_renderer_no_vars():
+    from core.tools import prompt_renderer
+    result = json.loads(prompt_renderer("Just a plain prompt with no placeholders."))
+    assert result["error"] is None
+    assert result["output"] == "Just a plain prompt with no placeholders."
+    assert result["metadata"]["token_count"] >= 1
+
+
+def test_prompt_renderer_unfilled_placeholder():
+    from core.tools import prompt_renderer
+    result = json.loads(prompt_renderer("Hello {{name}} and {{unknown}}\n---vars---\nname=Bob"))
+    assert result["error"] is None
+    assert result["output"] == "Hello Bob and {{unknown}}"
+    assert "unknown" in result["metadata"]["unfilled_placeholders"]
+
+
+def test_prompt_renderer_empty_input():
+    from core.tools import prompt_renderer
+    result = json.loads(prompt_renderer(""))
+    assert result["error"] is not None
+
+
+def test_prompt_renderer_invalid_var_line():
+    from core.tools import prompt_renderer
+    result = json.loads(prompt_renderer("Hello {{x}}\n---vars---\nnot-a-valid-line"))
+    assert result["error"] is not None
+
+
+def test_prompt_cli_var_flag(capsys):
+    from core.cli import main
+    rc = main(["prompt", "--var", "name=World", "Hello {{name}}"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["output"] == "Hello World"
+
+
+def test_prompt_cli_multiple_vars(capsys):
+    from core.cli import main
+    rc = main(["prompt", "--var", "a=X", "--var", "b=Y", "{{a}} and {{b}}"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["output"] == "X and Y"
+
+
+def test_prompt_renderer_value_with_equals():
+    from core.tools import prompt_renderer
+    template = "URL: {{url}}\n---vars---\nurl=https://example.com?a=1&b=2"
+    result = json.loads(prompt_renderer(template))
+    assert result["error"] is None
+    assert "https://example.com?a=1&b=2" in result["output"]
+
+
+# ── schema_infer ─────────────────────────────────────────────────────────────
+
+def test_schema_infer_json_object():
+    from core.tools import schema_infer
+    result = json.loads(schema_infer('{"name": "alice", "age": 30, "active": true}'))
+    assert result["error"] is None
+    schema = json.loads(result["output"])
+    assert schema["type"] == "object"
+    assert schema["properties"]["name"]["type"] == "string"
+    assert schema["properties"]["age"]["type"] == "integer"
+    assert schema["properties"]["active"]["type"] == "boolean"
+    assert set(schema["required"]) == {"name", "age", "active"}
+
+
+def test_schema_infer_json_array():
+    from core.tools import schema_infer
+    result = json.loads(schema_infer('[1, 2, 3]'))
+    assert result["error"] is None
+    schema = json.loads(result["output"])
+    assert schema["type"] == "array"
+    assert schema["items"]["type"] == "integer"
+
+
+def test_schema_infer_nested_object():
+    from core.tools import schema_infer
+    data = '{"user": {"id": 1, "email": "test@example.com"}}'
+    result = json.loads(schema_infer(data))
+    assert result["error"] is None
+    schema = json.loads(result["output"])
+    user_schema = schema["properties"]["user"]
+    assert user_schema["type"] == "object"
+    assert user_schema["properties"]["email"]["format"] == "email"
+
+
+def test_schema_infer_string_formats():
+    from core.tools import schema_infer
+    data = '{"dt": "2024-01-15", "ts": "2024-01-15T10:30:00Z", "url": "https://example.com"}'
+    result = json.loads(schema_infer(data))
+    assert result["error"] is None
+    schema = json.loads(result["output"])
+    assert schema["properties"]["dt"]["format"] == "date"
+    assert schema["properties"]["ts"]["format"] == "date-time"
+    assert schema["properties"]["url"]["format"] == "uri"
+
+
+def test_schema_infer_empty_object():
+    from core.tools import schema_infer
+    result = json.loads(schema_infer('{}'))
+    assert result["error"] is None
+    schema = json.loads(result["output"])
+    assert schema["type"] == "object"
+
+
+def test_schema_infer_empty_input():
+    from core.tools import schema_infer
+    result = json.loads(schema_infer(""))
+    assert result["error"] is not None
+
+
+def test_schema_infer_yaml_input():
+    from core.tools import schema_infer
+    yaml_data = "name: alice\nage: 30\n"
+    result = json.loads(schema_infer(yaml_data))
+    assert result["error"] is None
+    schema = json.loads(result["output"])
+    assert schema["type"] == "object"
+    assert schema["properties"]["name"]["type"] == "string"
+
+
+def test_schema_infer_mixed_array():
+    from core.tools import schema_infer
+    result = json.loads(schema_infer('[1, "two", 3]'))
+    assert result["error"] is None
+    schema = json.loads(result["output"])
+    assert schema["type"] == "array"
+    assert "oneOf" in schema["items"]
+
+
+def test_schema_cli_json_input(capsys):
+    from core.cli import main
+    rc = main(["schema", '{"x": 1}'])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["error"] is None
+    schema = json.loads(out["output"])
+    assert schema["type"] == "object"
+
+
+def test_schema_cli_yaml_output(capsys):
+    from core.cli import main
+    rc = main(["schema", "--to", "yaml", '{"key": "val"}'])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["error"] is None
+    import yaml as _yaml
+    schema = _yaml.safe_load(out["output"])
+    assert schema["type"] == "object"
