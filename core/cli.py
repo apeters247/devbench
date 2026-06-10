@@ -96,6 +96,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "select_expr", None):
         return _run_cf_select(args)
 
+    # cf --sort-by FIELD → sort list by field value (must precede --get so --get + --sort-by composes)
+    if args.command == "cf" and getattr(args, "sort_by", None):
+        return _run_cf_sort_by(args)
+
+    # cf --unique / --unique-by FIELD → deduplicate list items (must precede --get so --get + --unique composes)
+    if args.command == "cf" and (getattr(args, "unique", False) or getattr(args, "unique_by", None)):
+        return _run_cf_unique(args)
+
     # cf CRUD / merge ops — read input themselves (file path or stdin)
     if args.command == "cf" and getattr(args, "get", None):
         return _run_cf_get(args)
@@ -441,8 +449,14 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--shell-export", action="store_true", dest="shell_export",
                                 help="Output shell-safe 'export KEY=\"value\"' statements. "
                                      "Keys are uppercased and dots/dashes replaced with underscores. "
-                                     "Values are shell-quoted. Combine with --flatten for nested configs. "
+                                     "Values are shell-quoted. Lists become indexed vars: SERVERS_0=nginx SERVERS_1=apache SERVERS_COUNT=2. "
+                                     "Use --bash-arrays for bash declare -a syntax. "
+                                     "Combine with --flatten for nested configs. "
                                      "Example: source <(devbench cf config.yaml --flatten --shell-export)")
+            tool_p.add_argument("--bash-arrays", action="store_true", dest="bash_arrays",
+                                help="With --shell-export: output lists as bash arrays using 'declare -a KEY=(item1 item2)' "
+                                     "instead of indexed variables. Requires bash 3.1+. Not compatible with sh/dash. "
+                                     "Example: source <(devbench cf config.yaml --shell-export --bash-arrays)")
             tool_p.add_argument("--compact", "-c", action="store_true", dest="compact",
                                 help="Output compact/minified JSON (no whitespace). "
                                      "Works with --to json or when output is JSON. "
@@ -485,6 +499,25 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Combine with --in-place / --backup to edit files directly. "
                                      "Example: devbench cf deploy.yaml --replace-value nginx:1.19 nginx:1.21 "
                                      "         devbench cf config.yaml --replace-value prod staging --in-place")
+            tool_p.add_argument("--sort-by", metavar="FIELD", default=None, dest="sort_by",
+                                help="Sort a list of objects by a field value. FIELD is a dot-notation path. "
+                                     "Strings sort alphabetically, numbers numerically. Items missing FIELD sort last. "
+                                     "Use --sort-desc to reverse. Combine with --get PATH to navigate to a nested list. "
+                                     "Exit 0 = sorted output written, exit 1 = input is not a list. "
+                                     "Example: devbench cf pods.yaml --sort-by metadata.name "
+                                     "         devbench cf deploy.yaml --sort-by spec.replicas --sort-desc")
+            tool_p.add_argument("--sort-desc", action="store_true", default=False, dest="sort_desc",
+                                help="Reverse the sort order for --sort-by (descending instead of ascending).")
+            tool_p.add_argument("--unique", action="store_true", default=False, dest="unique",
+                                help="Remove duplicate items from a list. Scalars and objects compared by value. "
+                                     "Use --unique-by FIELD to deduplicate object lists by a specific field. "
+                                     "Example: devbench cf tags.yaml --unique "
+                                     "         devbench cf log.json --get items --unique")
+            tool_p.add_argument("--unique-by", metavar="FIELD", default=None, dest="unique_by",
+                                help="Deduplicate a list of objects by a field value (keep first occurrence). "
+                                     "FIELD is a dot-notation path. Items without FIELD are always kept. "
+                                     "Example: devbench cf pods.yaml --unique-by metadata.name "
+                                     "         devbench cf services.yaml --get spec.ports --unique-by port")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -2737,18 +2770,39 @@ def _run_cf_shell_export(args) -> int:
         """Uppercase and replace non-alphanumeric chars with underscores."""
         return re.sub(r"[^A-Z0-9_]", "_", k.upper())
 
+    bash_arrays = getattr(args, "bash_arrays", False)
+
+    def _scalar_str(v) -> str:
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        return str(v)
+
     exports = []
     for k, v in flat.items():
         env_key = _to_env_key(k)
-        # Convert value to string; shlex.quote handles all special chars
-        str_val = str(v) if not isinstance(v, bool) else ("true" if v else "false")
-        exports.append({"key": env_key, "value": str_val})
+        if isinstance(v, list):
+            exports.append({"key": env_key, "value": None, "list": [_scalar_str(i) for i in v]})
+        else:
+            exports.append({"key": env_key, "value": _scalar_str(v), "list": None})
 
     if raw:
-        print(json.dumps({"exports": exports}, indent=2))
+        print(json.dumps({"exports": [
+            {"key": e["key"], "value": e["value"], "items": e["list"]} for e in exports
+        ]}, indent=2))
     else:
         for entry in exports:
-            print(f"export {entry['key']}={shlex.quote(entry['value'])}")
+            if entry["list"] is not None:
+                items = entry["list"]
+                if bash_arrays:
+                    quoted_items = " ".join(shlex.quote(i) for i in items)
+                    print(f"declare -a {entry['key']}=({quoted_items})")
+                    print(f"export {entry['key']}")
+                else:
+                    for idx, item in enumerate(items):
+                        print(f"export {entry['key']}_{idx}={shlex.quote(item)}")
+                    print(f"export {entry['key']}_COUNT={len(items)}")
+            else:
+                print(f"export {entry['key']}={shlex.quote(entry['value'])}")
 
     return EXIT_SUCCESS
 
@@ -3121,6 +3175,163 @@ def _run_cf_wrap_in(args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# cf --sort-by / --unique / --unique-by: list operations
+# ---------------------------------------------------------------------------
+
+def _cf_list_output(data, args, detected_fmt) -> str:
+    """Serialize a list to the requested output format."""
+    from . import configforge as _cf
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    indent = getattr(args, "indent", 2)
+    compact = getattr(args, "compact", False)
+    if to_fmt in ("yaml", "yml"):
+        import yaml as _yaml
+        return _yaml.dump(data, default_flow_style=False, allow_unicode=True, indent=indent)
+    if to_fmt in ("json", "jsonc", "json5"):
+        return (json.dumps(data) if compact else json.dumps(data, indent=indent)) + "\n"
+    try:
+        return _cf.serialize(data, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _run_cf_sort_by(args) -> int:
+    """Sort a list of objects by a field value.
+
+    Examples:
+        devbench cf pods.yaml --sort-by metadata.name
+        devbench cf services.yaml --sort-by spec.replicas --sort-desc
+        devbench cf deploy.yaml --get spec.containers --sort-by name
+    """
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt, **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    detected_fmt = parsed.get("format", "yaml")
+
+    if getattr(args, "get", None):
+        try:
+            data = _cf._get_by_path(data, args.get)
+        except (KeyError, IndexError) as exc:
+            default = getattr(args, "get_default", None)
+            if default is not None:
+                sys.stdout.write(default + "\n")
+                return EXIT_SUCCESS
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
+    if not isinstance(data, list):
+        print("error: --sort-by requires a list; input is not a list (use --get PATH to navigate to one)",
+              file=sys.stderr)
+        return EXIT_ERROR
+
+    field = args.sort_by
+    desc = getattr(args, "sort_desc", False)
+    _MISSING = object()
+
+    def _sort_key(item):
+        try:
+            val = _cf._get_by_path(item, field)
+        except (KeyError, IndexError, TypeError):
+            return (2, "")  # items without the field sort last
+        if isinstance(val, bool):
+            return (1, int(val))
+        if isinstance(val, (int, float)):
+            return (0, val)
+        return (1, str(val))
+
+    sorted_data = sorted(data, key=_sort_key, reverse=desc)
+    try:
+        output_text = _cf_list_output(sorted_data, args, detected_fmt)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+    sys.stdout.write(output_text)
+    return EXIT_SUCCESS
+
+
+def _run_cf_unique(args) -> int:
+    """Remove duplicate items from a list, optionally by a field value.
+
+    Examples:
+        devbench cf tags.yaml --unique
+        devbench cf pods.yaml --unique-by metadata.name
+        devbench cf deploy.yaml --get spec.containers --unique-by image
+    """
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt, **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    detected_fmt = parsed.get("format", "yaml")
+
+    if getattr(args, "get", None):
+        try:
+            data = _cf._get_by_path(data, args.get)
+        except (KeyError, IndexError) as exc:
+            default = getattr(args, "get_default", None)
+            if default is not None:
+                sys.stdout.write(default + "\n")
+                return EXIT_SUCCESS
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
+    if not isinstance(data, list):
+        print("error: --unique/--unique-by requires a list; input is not a list (use --get PATH to navigate to one)",
+              file=sys.stderr)
+        return EXIT_ERROR
+
+    unique_by_field = getattr(args, "unique_by", None)
+
+    if unique_by_field:
+        seen: set = set()
+        result = []
+        for item in data:
+            try:
+                val = _cf._get_by_path(item, unique_by_field)
+                key = repr(val)
+            except (KeyError, IndexError, TypeError):
+                key = None  # items without the field are always kept
+            if key is None or key not in seen:
+                if key is not None:
+                    seen.add(key)
+                result.append(item)
+    else:
+        seen_exact: set = set()
+        result = []
+        for item in data:
+            fingerprint = json.dumps(item, sort_keys=True, default=str)
+            if fingerprint not in seen_exact:
+                seen_exact.add(fingerprint)
+                result.append(item)
+
+    try:
+        output_text = _cf_list_output(result, args, detected_fmt)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
     if not output_text.endswith("\n"):
         output_text += "\n"
     sys.stdout.write(output_text)

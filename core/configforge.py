@@ -1335,13 +1335,16 @@ def detect_format(text: str) -> str:
         if env_count > 0 and env_count >= len(lines) * 0.5:
             return "env"
 
-    # YAML: check for key: value pattern or multi-doc ---
+    # YAML: check for key: value pattern, multi-doc ---, or bare YAML list (- item)
     # Checked BEFORE .properties so Helm values.yaml and similar documented
     # YAML files with "host:port" patterns are not mis-classified as properties.
-    if ":" in text or text.strip().startswith("---"):
+    _is_yaml_list = bool(re.match(r"^- ", text.strip()))
+    if ":" in text or text.strip().startswith("---") or _is_yaml_list:
         for line in text.strip().split("\n"):
             line = line.strip()
-            if re.match(r"^(?:- )?[\w\-\"]+:(?:\s|$)", line) or line == "---":
+            if re.match(r"^(?:- )?[\w\-\"]+:(?:\s|$)", line) or line == "---" or (
+                _is_yaml_list and line.startswith("- ")
+            ):
                 try:
                     if HAS_YAML:
                         # safe_load rejects multi-doc YAML, so try safe_load_all as fallback

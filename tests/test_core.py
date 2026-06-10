@@ -3091,6 +3091,62 @@ def test_shell_export_completion_includes_flag(capsys):
     assert "--shell-export" in capsys.readouterr().out
 
 
+def test_shell_export_list_becomes_indexed_vars(tmp_path, capsys):
+    """--shell-export converts YAML lists to indexed env vars (SERVERS_0=nginx etc.)."""
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("servers:\n  - nginx\n  - apache\nport: 8080\n")
+    result = main(["cf", str(f), "--shell-export"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export SERVERS_0=nginx" in out
+    assert "export SERVERS_1=apache" in out
+    assert "export SERVERS_COUNT=2" in out
+    assert "export PORT=8080" in out
+    # must NOT contain Python repr
+    assert "['nginx'" not in out
+
+
+def test_shell_export_bash_arrays(tmp_path, capsys):
+    """--shell-export --bash-arrays outputs declare -a syntax."""
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("servers:\n  - nginx\n  - apache\nport: 8080\n")
+    result = main(["cf", str(f), "--shell-export", "--bash-arrays"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "declare -a SERVERS=(nginx apache)" in out
+    assert "export SERVERS" in out
+    assert "export PORT=8080" in out
+
+
+def test_shell_export_list_with_spaces(tmp_path, capsys):
+    """--shell-export properly shell-quotes list items containing spaces."""
+    from core.cli import main
+    f = tmp_path / "c.yaml"
+    f.write_text("paths:\n  - /usr/local/bin\n  - /opt/my app\n")
+    result = main(["cf", str(f), "--shell-export"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "export PATHS_0=/usr/local/bin" in out
+    assert "export PATHS_1='/opt/my app'" in out
+    assert "export PATHS_COUNT=2" in out
+
+
+def test_shell_export_raw_with_list(tmp_path, capsys):
+    """--shell-export --raw includes list items in JSON output."""
+    from core.cli import main
+    import json
+    f = tmp_path / "c.yaml"
+    f.write_text("tags:\n  - alpha\n  - beta\n")
+    result = main(["cf", str(f), "--shell-export", "--raw"])
+    assert result == 0
+    data = json.loads(capsys.readouterr().out)
+    tags_entry = next(e for e in data["exports"] if e["key"] == "TAGS")
+    assert tags_entry["items"] == ["alpha", "beta"]
+    assert tags_entry["value"] is None
+
+
 # ---------------------------------------------------------------------------
 # --compact flag tests
 # ---------------------------------------------------------------------------
@@ -3963,3 +4019,168 @@ def test_cf_replace_value_cross_format(tmp_path, capsys):
     out = capsys.readouterr().out.strip()
     data = json.loads(out)
     assert data["server"]["env"] == "staging"
+
+
+# ---------------------------------------------------------------------------
+# --sort-by: sort list of objects by field
+# ---------------------------------------------------------------------------
+
+
+def test_cf_sort_by_field_ascending(tmp_path, capsys):
+    """--sort-by sorts a YAML list of objects by a field, ascending."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "pods.yaml"
+    f.write_text("- name: zebra\n  replicas: 3\n- name: apple\n  replicas: 1\n- name: mango\n  replicas: 2\n")
+    rc = main(["cf", str(f), "--sort-by", "name", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    assert [d["name"] for d in data] == ["apple", "mango", "zebra"]
+
+
+def test_cf_sort_by_field_descending(tmp_path, capsys):
+    """--sort-by --sort-desc reverses the sort order."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "pods.yaml"
+    f.write_text("- name: apple\n- name: zebra\n- name: mango\n")
+    rc = main(["cf", str(f), "--sort-by", "name", "--sort-desc", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    assert [d["name"] for d in data] == ["zebra", "mango", "apple"]
+
+
+def test_cf_sort_by_numeric_field(tmp_path, capsys):
+    """--sort-by sorts numeric fields correctly (not lexicographic)."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "services.yaml"
+    f.write_text("- port: 9\n- port: 100\n- port: 10\n")
+    rc = main(["cf", str(f), "--sort-by", "port", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    assert [d["port"] for d in data] == [9, 10, 100]
+
+
+def test_cf_sort_by_not_a_list_exits_1(tmp_path, capsys):
+    """--sort-by on a dict (not list) exits 1 with an error message."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("key: value\nnested:\n  a: 1\n")
+    rc = main(["cf", str(f), "--sort-by", "key"])
+    assert rc != 0
+
+
+def test_cf_sort_by_with_get(tmp_path, capsys):
+    """--sort-by + --get navigates then sorts the nested list."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text("spec:\n  containers:\n  - name: sidecar\n  - name: app\n  - name: init\n")
+    rc = main(["cf", str(f), "--get", "spec.containers", "--sort-by", "name", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    assert [d["name"] for d in data] == ["app", "init", "sidecar"]
+
+
+def test_cf_sort_by_to_json(tmp_path, capsys):
+    """--sort-by outputs sorted result as JSON when --to json given."""
+    import json
+    from core.cli import main
+    f = tmp_path / "items.yaml"
+    f.write_text("- id: 3\n- id: 1\n- id: 2\n")
+    rc = main(["cf", str(f), "--sort-by", "id", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert [d["id"] for d in data] == [1, 2, 3]
+
+
+# ---------------------------------------------------------------------------
+# --unique / --unique-by: deduplicate list items
+# ---------------------------------------------------------------------------
+
+
+def test_cf_unique_removes_duplicates(tmp_path, capsys):
+    """--unique removes exact duplicate items from the list."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "tags.yaml"
+    f.write_text("- python\n- go\n- python\n- rust\n- go\n")
+    rc = main(["cf", str(f), "--unique", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    assert sorted(data) == ["go", "python", "rust"]
+    assert len(data) == 3
+
+
+def test_cf_unique_no_duplicates_passthrough(tmp_path, capsys):
+    """--unique with no duplicates outputs the list unchanged."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "tags.yaml"
+    f.write_text("- alpha\n- beta\n- gamma\n")
+    rc = main(["cf", str(f), "--unique", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    assert len(data) == 3
+
+
+def test_cf_unique_by_field(tmp_path, capsys):
+    """--unique-by FIELD deduplicates objects by a specific field value."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "pods.yaml"
+    f.write_text("- name: app\n  version: 1\n- name: sidecar\n  version: 1\n- name: app\n  version: 2\n")
+    rc = main(["cf", str(f), "--unique-by", "name", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    names = [d["name"] for d in data]
+    assert names.count("app") == 1
+    assert "sidecar" in names
+    assert len(data) == 2
+
+
+def test_cf_unique_not_a_list_exits_1(tmp_path, capsys):
+    """--unique on a dict exits 1 with an error."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("key: value\n")
+    rc = main(["cf", str(f), "--unique"])
+    assert rc != 0
+
+
+def test_cf_unique_by_with_get(tmp_path, capsys):
+    """--unique-by + --get navigates to nested list before deduplication."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text("spec:\n  images:\n  - tag: v1\n    repo: nginx\n  - tag: v2\n    repo: nginx\n  - tag: v1\n    repo: redis\n")
+    rc = main(["cf", str(f), "--get", "spec.images", "--unique-by", "repo", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    repos = [d["repo"] for d in data]
+    assert repos.count("nginx") == 1
+    assert "redis" in repos
+    assert len(data) == 2
+
+
+def test_cf_unique_object_dedup(tmp_path, capsys):
+    """--unique deduplicates identical dict objects by JSON fingerprint."""
+    import yaml
+    from core.cli import main
+    f = tmp_path / "items.yaml"
+    f.write_text("- a: 1\n  b: 2\n- a: 3\n  b: 4\n- a: 1\n  b: 2\n")
+    rc = main(["cf", str(f), "--unique", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = yaml.safe_load(out)
+    assert len(data) == 2
