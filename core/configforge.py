@@ -2256,6 +2256,25 @@ def _ini_format_value(v) -> str:
     return str(v)
 
 
+def _ini_format_value_quoted(v) -> str:
+    """Like _ini_format_value but wraps string values in double quotes.
+
+    Addresses yq issue #2456: quoted INI values lose their quotes on round-trip
+    (configparser strips them). Using this function when --ini-quote-strings is
+    set preserves the visual convention that string values are quoted, making
+    the output unambiguous for readers and downstream tooling.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    s = str(v)
+    escaped = s.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def _env_format_value(v) -> str:
     """Format a value for a single .env line.
     Newlines (and carriage returns) would otherwise break the file structure
@@ -2375,6 +2394,7 @@ def serialize(data, fmt: str, **options) -> str:
         if not isinstance(data, dict):
             raise ValueError("INI requires a dict of sections")
         cfg = configparser.ConfigParser(interpolation=None)
+        _fmt_val = _ini_format_value_quoted if options.get("ini_quote_strings", False) else _ini_format_value
         # Check if data has section structure (dict of dicts)
         has_sections = any(isinstance(v, dict) for v in data.values())
         if has_sections:
@@ -2391,15 +2411,15 @@ def serialize(data, fmt: str, **options) -> str:
                 for k, v in values.items():
                     if isinstance(v, (dict, list)) and not isinstance(v, str):
                         raise ValueError(f"INI cannot represent nested value '{k}' in section '{section}'")
-                cfg[section] = {str(k): _ini_format_value(v) for k, v in values.items()}
+                cfg[section] = {str(k): _fmt_val(v) for k, v in values.items()}
             if top_scalars:
-                cfg["DEFAULT"] = {str(k): _ini_format_value(v) for k, v in top_scalars.items()}
+                cfg["DEFAULT"] = {str(k): _fmt_val(v) for k, v in top_scalars.items()}
         else:
             # Flat dict → wrap in DEFAULT section
             for k, v in data.items():
                 if isinstance(v, (dict, list)) and not isinstance(v, str):
                     raise ValueError(f"INI cannot represent nested value '{k}'")
-            cfg["DEFAULT"] = {str(k): _ini_format_value(v) for k, v in data.items()}
+            cfg["DEFAULT"] = {str(k): _fmt_val(v) for k, v in data.items()}
         buf = io.StringIO()
         cfg.write(buf)
         return buf.getvalue()

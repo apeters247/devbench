@@ -92,6 +92,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "each_key", None):
         return _run_cf_each(args)
 
+    # cf --join DELIM → join list items with delimiter (check before --get so --get + --join composes)
+    if args.command == "cf" and getattr(args, "join_delim", None) is not None:
+        return _run_cf_join(args)
+
     # cf --select  → filter list items by field condition (check before --get)
     if args.command == "cf" and getattr(args, "select_expr", None):
         return _run_cf_select(args)
@@ -121,6 +125,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_cf_diff(args)
     if args.command == "cf" and getattr(args, "count", None):
         return _run_cf_count(args)
+    if args.command == "cf" and getattr(args, "length_path", None):
+        return _run_cf_length(args)
     if args.command == "cf" and getattr(args, "type_path", None):
         return _run_cf_type(args)
     if args.command == "cf" and getattr(args, "has_path", None):
@@ -139,6 +145,10 @@ def main(argv: list[str] | None = None) -> int:
     # cf --mask  → redact sensitive values
     if args.command == "cf" and getattr(args, "mask_pattern", None):
         return _run_cf_mask(args)
+
+    # cf --hash-field  → replace field values with their hash
+    if args.command == "cf" and getattr(args, "hash_pattern", None):
+        return _run_cf_hash_field(args)
 
     # cf --schema  → validate config against a JSON Schema file
     if args.command == "cf" and getattr(args, "schema_file", None):
@@ -314,6 +324,12 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--sort-keys-reverse", action="store_true", dest="sort_keys_reverse",
                                 help="Sort keys in reverse order (yq#2390 alternative to sort_keys(.) | reverse)")
             tool_p.add_argument("--no-infer-dates", action="store_true", help="Keep ISO-8601 date strings as strings (TOML)")
+            tool_p.add_argument("--ini-quote-strings", action="store_true", dest="ini_quote_strings",
+                                help="Wrap string values in double quotes when writing INI output. "
+                                     "Addresses yq issue #2456: quoted values lose their quotes on round-trip "
+                                     "because configparser strips them when parsing. "
+                                     "Numerics and booleans are never quoted. "
+                                     "Example: devbench cf config.ini -t ini --ini-quote-strings")
             tool_p.add_argument("--null-handling", default="skip", choices=["skip", "comment", "empty", "error"],
                                 help="How to represent null/None in TOML (default: skip)")
             tool_p.add_argument("--get", metavar="PATH", default=None,
@@ -362,6 +378,13 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Use '.' for top-level key count. "
                                      "Outputs a plain integer — ideal for shell scripts. "
                                      "Use --raw for JSON output.")
+            tool_p.add_argument("--length", metavar="PATH", default=None, dest="length_path",
+                                help="Output the length of the value at PATH. "
+                                     "list/dict: item count; string: character count; null: 0; scalar: 1. "
+                                     "Equivalent to jq '.PATH | length'. Exit 0=found, 1=not found. "
+                                     "Use --raw for JSON output: {path, length, type}. "
+                                     "Example: devbench cf config.yaml --length users  # array length\n"
+                                     "         devbench cf config.yaml --length name   # string char count")
             tool_p.add_argument("--type", metavar="PATH", default=None, dest="type_path",
                                 help="Output the JSON Schema type of the value at PATH: string, integer, number, "
                                      "boolean, array, object, or null. Use '.' for the root value. "
@@ -387,13 +410,21 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Missing vars are left unchanged. Works across all 11 formats. "
                                      "Example: APP_PORT=8080 devbench cf config.yaml --env-expand --to json")
             tool_p.add_argument("--select", metavar="FIELD=VALUE", default=None, dest="select_expr",
-                                help="Filter list items by field condition (equality or negation). "
+                                help="Filter list items by field condition. "
                                      "FIELD=VALUE keeps items where item[FIELD] == VALUE. "
                                      "FIELD!=VALUE keeps items where item[FIELD] != VALUE. "
+                                     "FIELD=/pat/ keeps items where item[FIELD] matches regex (case-insensitive). "
+                                     "FIELD!=/pat/ keeps items where item[FIELD] does NOT match regex. "
+                                     "FIELD~VALUE keeps items where item[FIELD] is an array containing VALUE. "
+                                     "FIELD!~VALUE keeps items where item[FIELD] is an array NOT containing VALUE. "
                                      "Values coerced to int/bool/null for comparison. "
                                      "Exit 0=matches found, 1=no matches (grep semantics). "
                                      "Combine with --get to navigate to the list first. "
+                                     "Addresses yq issue #517 and dasel issue #183 (regex filter). "
                                      "Example: devbench cf pods.yaml --select status=Running  "
+                                     "         devbench cf deploy.yaml --get spec.containers --select name=/^prod-/  "
+                                     "         devbench cf config.yaml --select image=/alpine/ --each name  "
+                                     "         devbench cf countries.yaml --select tags~commonwealth  "
                                      "         devbench cf deploy.yaml --get spec.containers --select name=nginx")
             tool_p.add_argument("--each", metavar="KEY", default=None, dest="each_key",
                                 help="Extract KEY from each element of a list and output the resulting list. "
@@ -405,6 +436,16 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Exit 0=ok, 1=input is not a list. "
                                      "Example: devbench cf deploy.yaml --get spec.containers --each name  "
                                      "         devbench cf pods.yaml --select status=Running --each metadata.name")
+            tool_p.add_argument("--join", metavar="DELIM", default=None, dest="join_delim",
+                                help="Join list items into a single string using DELIM as the separator. "
+                                     "Use \\\\n for newline, \\\\t for tab. "
+                                     "Compose with --get to navigate to a nested list first. "
+                                     "Compose with --select/--each to filter/transform before joining. "
+                                     "Equivalent to jq '.list | join(\",\")'. "
+                                     "Exit 0=ok, 1=input is not a list. "
+                                     "Example: devbench cf config.yaml --get services --join ,  # api,worker,db\n"
+                                     "         devbench cf deps.yaml --get packages --join ' '  # space-separated\n"
+                                     "         devbench cf hosts.yaml --select env=prod --each name --join ,")
             tool_p.add_argument("--grep", metavar="PATTERN", default=None,
                                 help="Search config keys and values matching a regex pattern (case-insensitive by default). "
                                      "Flattens the config to dot-notation paths and filters by PATTERN. "
@@ -447,6 +488,15 @@ def _build_parser() -> argparse.ArgumentParser:
             tool_p.add_argument("--mask-value", metavar="TEXT", default="***REDACTED***", dest="mask_value",
                                 help="Replacement text for masked values (default: ***REDACTED***). "
                                      "Example: --mask-value '[REDACTED]'")
+            tool_p.add_argument("--hash-field", metavar="PATTERN", default=None, dest="hash_pattern",
+                                help="Replace values whose key names match PATTERN with their hash. "
+                                     "Case-insensitive regex. Use with --hash-algorithm to choose algorithm. "
+                                     "Addresses yq issue #2283: hash field values for audit logs or safe sharing. "
+                                     "Example: devbench cf prod.yaml --hash-field 'password|secret|token'")
+            tool_p.add_argument("--hash-algorithm", metavar="ALGO", default="sha256", dest="hash_algorithm",
+                                help="Hash algorithm for --hash-field (default: sha256). "
+                                     "Choices: md5, sha1, sha256, sha512, blake2b. "
+                                     "Example: devbench cf prod.yaml --hash-field password --hash-algorithm sha512")
             tool_p.add_argument("--assert", metavar="PATH=VALUE", dest="asserts",
                                 action="append", default=None,
                                 help="Assert that a config key equals the expected value. "
@@ -839,6 +889,8 @@ def _run_cf(input_text: str, args: argparse.Namespace) -> str:
         options["sort_keys_reverse"] = True
     if hasattr(args, "no_infer_dates") and args.no_infer_dates:
         options["infer_dates"] = False
+    if getattr(args, "ini_quote_strings", False):
+        options["ini_quote_strings"] = True
     if hasattr(args, "null_handling"):
         options["null_handling"] = args.null_handling
     if hasattr(args, "env_expand") and args.env_expand:
@@ -934,6 +986,8 @@ def _run_cf_batch(args: argparse.Namespace) -> int:
         options["sort_keys_reverse"] = True
     if hasattr(args, "no_infer_dates") and args.no_infer_dates:
         options["infer_dates"] = False
+    if getattr(args, "ini_quote_strings", False):
+        options["ini_quote_strings"] = True
     if hasattr(args, "null_handling"):
         options["null_handling"] = args.null_handling
     if hasattr(args, "env_expand") and args.env_expand:
@@ -1435,22 +1489,49 @@ def _cf_read_file_or_content(args):
 
 
 def _cf_write_in_place(file_path, output_text: str, backup_suffix) -> bool:
-    """Write output_text to file_path, optionally backing up the original first.
+    """Write output_text to file_path atomically, optionally backing up the original.
+
+    Uses write-to-temp + rename so the file is never left in a truncated state
+    if the write fails mid-way — the same data-loss bug reported against yq's
+    -i flag (yq issue / codegenes.net post: yq truncates before writing, so a
+    failed write destroys the original).
 
     Returns True on success, False on error (error printed to stderr).
     """
+    import tempfile, os, shutil
+
     if backup_suffix:
         bak_path = Path(str(file_path) + backup_suffix)
         try:
-            import shutil
             shutil.copy2(file_path, bak_path)
         except OSError as e:
             print(f"error: could not create backup {bak_path}: {e}", file=sys.stderr)
             return False
+
+    tmp_path = None
     try:
-        file_path.write_text(output_text, encoding="utf-8")
+        # Write to a sibling temp file so rename() is always on the same filesystem.
+        fd, tmp_name = tempfile.mkstemp(dir=file_path.parent, suffix=".devbench.tmp")
+        tmp_path = Path(tmp_name)
+        try:
+            os.write(fd, output_text.encode("utf-8"))
+        finally:
+            os.close(fd)
+        # Preserve original file permissions on the new file.
+        try:
+            os.chmod(tmp_path, file_path.stat().st_mode)
+        except OSError:
+            pass
+        # Atomic replace — original is never truncated before the new content is ready.
+        tmp_path.replace(file_path)
+        tmp_path = None  # rename succeeded; nothing to clean up
     except OSError as e:
         print(f"error: {e}", file=sys.stderr)
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
         return False
     return True
 
@@ -1919,6 +2000,68 @@ def _run_cf_count(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# cf --length PATH: length of value at path (jq `.path | length` equivalent)
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_length(args) -> int:
+    """Output the length of the value at PATH.
+
+    - list/dict: item count (same as --count)
+    - string: character count
+    - null: 0
+    - scalar (int/float/bool): 1
+
+    Exit 0 = path found, exit 1 = path not found.
+    --raw outputs JSON: {path, length, type}.
+    """
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+    path = args.length_path
+    if path == ".":
+        val = data
+    else:
+        try:
+            val = _cf._get_by_path(data, path)
+        except (KeyError, IndexError, TypeError) as exc:
+            msg = f"path not found: {path!r}"
+            if getattr(args, "raw", False):
+                print(json.dumps({"path": path, "error": msg}))
+            else:
+                print(f"error: {msg}", file=sys.stderr)
+            return EXIT_ERROR
+
+    if val is None:
+        length = 0
+        type_name = "null"
+    elif isinstance(val, str):
+        length = len(val)
+        type_name = "string"
+    elif isinstance(val, (list, dict)):
+        length = len(val)
+        type_name = "array" if isinstance(val, list) else "object"
+    else:
+        length = 1
+        type_name = "boolean" if isinstance(val, bool) else "number" if isinstance(val, float) else "integer"
+
+    if getattr(args, "raw", False):
+        print(json.dumps({"path": path, "length": length, "type": type_name}))
+    else:
+        print(length)
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
 # cf --type PATH: report JSON Schema type of a value
 # ---------------------------------------------------------------------------
 
@@ -2231,6 +2374,115 @@ def _run_cf_mask(args) -> int:
             "pattern": pattern,
             "format": out_fmt,
             "redacted_count": redacted_count[0],
+            "output": output_text,
+        }, indent=2))
+    else:
+        print(output_text, end="" if output_text.endswith("\n") else "\n")
+
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# cf --hash-field: replace field values with their hash (yq issue #2283)
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_hash_field(args) -> int:
+    """Hash config field values whose key names match a regex pattern.
+
+    Replaces scalar values with ``algo:hexdigest`` strings so configs can be
+    shared or stored in audit logs without exposing sensitive data.  Unlike
+    --mask (which replaces with a fixed string), hashed values are
+    deterministic and can be compared across environments.
+
+    Example: devbench cf prod.yaml --hash-field 'password|secret|token'
+    """
+    from . import configforge as _cf
+
+    raw = getattr(args, "raw", False)
+    pattern = args.hash_pattern
+    algorithm = getattr(args, "hash_algorithm", "sha256")
+    to_fmt = getattr(args, "to", None)
+    from_fmt = getattr(args, "from_fmt", "auto")
+    parse_opts = _cf_parse_opts(args)
+
+    # Read input
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    label = str(file_path) if file_path else "stdin"
+
+    # Parse
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt, **parse_opts)
+        data = parsed.get("data", parsed)
+        detected_fmt = parsed.get("format") or "yaml"
+    except Exception as exc:
+        msg = f"error: could not parse config: {exc}"
+        if raw:
+            print(json.dumps({"error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+
+    # Validate regex
+    import re as _re
+    try:
+        _re.compile(pattern)
+    except _re.error as exc:
+        msg = f"error: invalid regex pattern '{pattern}': {exc}"
+        if raw:
+            print(json.dumps({"error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+
+    # Hash fields
+    try:
+        hashed = _cf.hash_field_values(data, pattern, algorithm)
+    except ValueError as exc:
+        msg = f"error: {exc}"
+        if raw:
+            print(json.dumps({"error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+
+    # Count hashed fields
+    hashed_count = [0]
+
+    def _count_hashed(original, result):
+        if isinstance(result, dict):
+            for k in result:
+                if isinstance(result[k], str) and result[k] != original.get(k, result[k]) and ":" in result[k]:
+                    hashed_count[0] += 1
+                else:
+                    _count_hashed(original.get(k, {}), result[k])
+        elif isinstance(result, list):
+            for o, r in zip(original if isinstance(original, list) else [], result):
+                _count_hashed(o, r)
+
+    _count_hashed(data, hashed)
+
+    # Serialize output
+    out_fmt = to_fmt or detected_fmt
+    try:
+        output_text = _cf.serialize(hashed, out_fmt)
+    except Exception as exc:
+        msg = f"error: could not serialize as {out_fmt}: {exc}"
+        if raw:
+            print(json.dumps({"error": msg}))
+        else:
+            print(msg, file=sys.stderr)
+        return EXIT_ERROR
+
+    if raw:
+        print(json.dumps({
+            "file": label,
+            "pattern": pattern,
+            "algorithm": algorithm,
+            "format": out_fmt,
+            "hashed_count": hashed_count[0],
             "output": output_text,
         }, indent=2))
     else:
@@ -2882,16 +3134,25 @@ def _run_cf_shell_export(args) -> int:
 
 
 def _run_cf_select(args) -> int:
-    """Filter list items by a field=value or field!=value condition.
+    """Filter list items by a field condition.
 
-    The input (or the value at --get PATH) must be a list. Each item is kept
-    if item[FIELD] matches VALUE (or does not match for !=). Value is coerced
-    to int/bool/null for comparison. Exit 0=matches, 1=no matches.
+    Operators:
+      FIELD=VALUE    keep items where item[FIELD] == VALUE
+      FIELD!=VALUE   keep items where item[FIELD] != VALUE
+      FIELD=/pat/    keep items where item[FIELD] matches regex /pat/ (case-insensitive)
+      FIELD!=/pat/   keep items where item[FIELD] does NOT match regex /pat/
+      FIELD~VALUE    keep items where item[FIELD] is an array containing VALUE
+      FIELD!~VALUE   keep items where item[FIELD] is an array NOT containing VALUE
+
+    Value is coerced to int/bool/null for comparison. Exit 0=matches, 1=no matches.
 
     Examples:
         devbench cf pods.yaml --select status=Running
+        devbench cf countries.yaml --select tags~commonwealth
         devbench cf deploy.yaml --get spec.containers --select name=nginx
+        devbench cf deploy.yaml --get spec.containers --select name=/^prod-/
         devbench cf services.yaml --select enabled!=false --to json
+        devbench cf config.yaml --select image=/alpine/ --each name
     """
     from . import configforge as _cf
     content, _ = _cf_read_file_or_content(args)
@@ -2924,18 +3185,37 @@ def _run_cf_select(args) -> int:
         return EXIT_ERROR
 
     expr = args.select_expr
-    if "!=" in expr:
+    # Parse operator: !~ before != before ~ before = to avoid ambiguity
+    if "!~" in expr:
+        field, raw_val = expr.split("!~", 1)
+        op = "not_contains"
+    elif "!=" in expr:
         field, raw_val = expr.split("!=", 1)
-        negate = True
+        op = "neq"
+    elif "~" in expr:
+        field, raw_val = expr.split("~", 1)
+        op = "contains"
     elif "=" in expr:
         field, raw_val = expr.split("=", 1)
-        negate = False
+        op = "eq"
     else:
-        print(f"error: invalid --select expression {expr!r}; expected FIELD=VALUE or FIELD!=VALUE",
+        print(f"error: invalid --select expression {expr!r}; "
+              "expected FIELD=VALUE, FIELD!=VALUE, FIELD=/regex/, FIELD~VALUE, or FIELD!~VALUE",
               file=sys.stderr)
         return EXIT_ERROR
 
-    coerced_val = _cf._coerce_set_value(raw_val)
+    # Detect /pattern/ regex syntax for eq and neq operators
+    import re as _re
+    regex_pat = None
+    if op in ("eq", "neq") and raw_val.startswith("/") and raw_val.endswith("/") and len(raw_val) >= 2:
+        try:
+            regex_pat = _re.compile(raw_val[1:-1], _re.IGNORECASE)
+            op = "regex_match" if op == "eq" else "regex_not_match"
+        except _re.error as exc:
+            print(f"error: invalid regex {raw_val!r}: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
+    coerced_val = _cf._coerce_set_value(raw_val) if regex_pat is None else None
 
     def _item_matches(item):
         if not isinstance(item, dict):
@@ -2944,8 +3224,19 @@ def _run_cf_select(args) -> int:
             item_val = _cf._get_by_path(item, field)
         except (KeyError, IndexError, TypeError):
             return False
-        match = (item_val == coerced_val)
-        return (not match) if negate else match
+        if op == "regex_match":
+            return bool(regex_pat.search(str(item_val)))
+        if op == "regex_not_match":
+            return not regex_pat.search(str(item_val))
+        if op == "eq":
+            return item_val == coerced_val
+        if op == "neq":
+            return item_val != coerced_val
+        if op == "contains":
+            return isinstance(item_val, list) and coerced_val in item_val
+        if op == "not_contains":
+            return not (isinstance(item_val, list) and coerced_val in item_val)
+        return False
 
     filtered = [item for item in data if _item_matches(item)]
 
@@ -3017,14 +3308,21 @@ def _run_cf_each(args) -> int:
     # Apply --select filter before --each if both are present
     if getattr(args, "select_expr", None):
         expr = args.select_expr
-        if "!=" in expr:
+        if "!~" in expr:
+            field, raw_val = expr.split("!~", 1)
+            op = "not_contains"
+        elif "!=" in expr:
             field, raw_val = expr.split("!=", 1)
-            negate = True
+            op = "neq"
+        elif "~" in expr:
+            field, raw_val = expr.split("~", 1)
+            op = "contains"
         elif "=" in expr:
             field, raw_val = expr.split("=", 1)
-            negate = False
+            op = "eq"
         else:
-            print(f"error: invalid --select expression {expr!r}; expected FIELD=VALUE or FIELD!=VALUE",
+            print(f"error: invalid --select expression {expr!r}; "
+                  "expected FIELD=VALUE, FIELD!=VALUE, FIELD~VALUE, or FIELD!~VALUE",
                   file=sys.stderr)
             return EXIT_ERROR
         coerced_val = _cf._coerce_set_value(raw_val)
@@ -3033,9 +3331,18 @@ def _run_cf_each(args) -> int:
             if not isinstance(item, dict):
                 return False
             try:
-                return (_cf._get_by_path(item, field) == coerced_val) != negate
+                item_val = _cf._get_by_path(item, field)
             except (KeyError, IndexError, TypeError):
                 return False
+            if op == "eq":
+                return item_val == coerced_val
+            if op == "neq":
+                return item_val != coerced_val
+            if op == "contains":
+                return isinstance(item_val, list) and coerced_val in item_val
+            if op == "not_contains":
+                return not (isinstance(item_val, list) and coerced_val in item_val)
+            return False
 
         if isinstance(data, list):
             data = [item for item in data if _item_matches(item)]
@@ -3412,6 +3719,76 @@ def _run_cf_unique(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# cf --join DELIM: join list items with a delimiter
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_join(args) -> int:
+    """Join list items into a single string using DELIM as separator.
+
+    Composes with --get PATH (navigate to list), --select FIELD=VALUE (filter),
+    and --each KEY (extract field) before joining.
+
+    Examples:
+        devbench cf config.yaml --get services --join ,
+        devbench cf deps.yaml --get packages --join ' '
+        devbench cf hosts.yaml --select env=prod --each name --join ,
+    """
+    from . import configforge as _cf
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    data = parsed.get("data", parsed)
+
+    if getattr(args, "get", None):
+        try:
+            data = _cf._get_by_path(data, args.get)
+        except (KeyError, IndexError) as exc:
+            default = getattr(args, "get_default", None)
+            if default is not None:
+                sys.stdout.write(default + "\n")
+                return EXIT_SUCCESS
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
+    if not isinstance(data, list):
+        print("error: --join requires a list; input is not a list "
+              "(use --get PATH to navigate to one)", file=sys.stderr)
+        return EXIT_ERROR
+
+    # Expand escape sequences in delimiter
+    delim_raw = args.join_delim
+    delim = delim_raw.replace("\\n", "\n").replace("\\t", "\t")
+
+    # Convert each item to a string
+    parts = []
+    for item in data:
+        if isinstance(item, bool):
+            parts.append("true" if item else "false")
+        elif item is None:
+            parts.append("null")
+        elif isinstance(item, (dict, list)):
+            parts.append(json.dumps(item, ensure_ascii=False))
+        else:
+            parts.append(str(item))
+
+    result = delim.join(parts)
+
+    if getattr(args, "raw", False):
+        print(json.dumps({"join": result, "count": len(data), "delimiter": delim_raw}))
+    else:
+        sys.stdout.write(result + "\n")
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
 # cf --schema-gen: generate JSON Schema Draft 7 from config
 # ---------------------------------------------------------------------------
 
@@ -3627,13 +4004,13 @@ def _run_cf_replace_value(args) -> int:
 
 _CF_FLAGS = (
     "--to --from --get --default --set --append --delete --rename --merge --list-merge "
-    "--in-place -i --backup --diff --validate --count --type --has --keys "
-    "--recursive -R --pick --select --each --grep --grep-case-sensitive "
+    "--in-place -i --backup --diff --validate --count --length --type --has --keys "
+    "--recursive -R --pick --select --each --join --grep --grep-case-sensitive "
     "--flatten --unflatten --sep --env-expand "
     "--batch --stream --output-dir --sort-keys --sort-keys-reverse --indent "
     "--sort-by --sort-desc --unique --unique-by "
     "--flatten-xml --no-comments --yaml12 --template-safe --block-scalars "
-    "--null-handling --list-formats --check-env --schema --mask --mask-value --assert "
+    "--null-handling --list-formats --check-env --schema --mask --mask-value --hash-field --hash-algorithm --assert "
     "--path-exists --shell-export --bash-arrays --compact -c --template --wrap-in "
     "--csv-delimiter --tsv --schema-gen --replace-value "
     "--serve --port --host --api --api-port "
@@ -3785,6 +4162,7 @@ _devbench() {{
                         '--default=[Fallback when --get path is missing]:value:' \\
                         '--select=[Filter list by FIELD=VALUE or FIELD!=VALUE condition]:expr:' \\
                         '--each=[Extract KEY from each list element]:key:' \\
+                        '--join=[Join list items with DELIM separator]:delim:' \\
                         '--set=[Set value: --set PATH VALUE]:path value:' \\
                         '--append=[Append value: --append PATH VALUE]:path value:' \\
                         '--delete=[Delete value at path]:path:' \\
@@ -3825,6 +4203,8 @@ _devbench() {{
                         '--schema=[JSON Schema file for validation]:schema:_files' \\
                         '--mask=[Regex pattern to redact matching key values]:pattern:' \\
                         '--mask-value=[Replacement text for masked values]:text:' \\
+                        '--hash-field=[Regex pattern to hash matching key values]:pattern:' \\
+                        '--hash-algorithm=[Hash algorithm for --hash-field]:algo:(md5 sha1 sha256 sha512 blake2b)' \\
                         '--assert=[Assert PATH=VALUE (exit 0=pass, 1=fail)]:assertion:' \\
                         '--path-exists=[Check if a path exists in the config]:path:' \\
                         '--has=[Check if a key path exists (exit 0=found, 1=missing)]:path:' \\
@@ -3923,6 +4303,7 @@ complete -c devbench -n __devbench_seen_cf -s R                    -d 'Recursive
 complete -c devbench -n __devbench_seen_cf -l pick                 -d 'Project specific fields'         -r
 complete -c devbench -n __devbench_seen_cf -l select               -d 'Filter list by FIELD=VALUE or FIELD!=VALUE'  -r
 complete -c devbench -n __devbench_seen_cf -l each                 -d 'Extract KEY from each list element'  -r
+complete -c devbench -n __devbench_seen_cf -l join                 -d 'Join list items with DELIM separator' -r
 complete -c devbench -n __devbench_seen_cf -l grep                 -d 'Search keys/values by regex'     -r
 complete -c devbench -n __devbench_seen_cf -l grep-case-sensitive  -d 'Case-sensitive --grep'
 
@@ -3965,6 +4346,8 @@ complete -c devbench -n __devbench_seen_cf -l check-env    -d 'Show environment 
 complete -c devbench -n __devbench_seen_cf -l schema       -d 'JSON Schema file for validation'  -r
 complete -c devbench -n __devbench_seen_cf -l mask         -d 'Redact values for matching key names (regex)'  -r
 complete -c devbench -n __devbench_seen_cf -l mask-value   -d 'Replacement text for masked values'  -r
+complete -c devbench -n __devbench_seen_cf -l hash-field   -d 'Hash values for matching key names (regex)'  -r
+complete -c devbench -n __devbench_seen_cf -l hash-algorithm -d 'Hash algorithm for --hash-field (sha256/md5/sha512/blake2b)'  -r
 complete -c devbench -n __devbench_seen_cf -l assert       -d 'Assert PATH=VALUE (exit 0=pass, 1=fail)'  -r
 complete -c devbench -n __devbench_seen_cf -l path-exists  -d 'Check if path exists in config (exit 0/1)'  -r
 complete -c devbench -n __devbench_seen_cf -l shell-export -d 'Output as shell export KEY=VALUE statements'

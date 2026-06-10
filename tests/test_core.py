@@ -3728,6 +3728,179 @@ def test_cf_select_completion_includes_flag(capsys):
     assert "--select" in capsys.readouterr().out
 
 
+def test_cf_select_array_contains(tmp_path, capsys):
+    """--select FIELD~VALUE keeps items where the field is an array containing VALUE.
+
+    Addresses yq issue #517: filter objects by array member value without piping to jq.
+    """
+    from core.cli import main
+    yaml_text = """\
+- country: Australia
+  tags: [oceania, commonwealth]
+- country: Canada
+  tags: [north america, commonwealth]
+- country: Philippines
+  tags: [oceania, republic]
+"""
+    f = tmp_path / "countries.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "tags~commonwealth"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Australia" in out
+    assert "Canada" in out
+    assert "Philippines" not in out
+
+
+def test_cf_select_array_not_contains(tmp_path, capsys):
+    """--select FIELD!~VALUE keeps items where the field array does NOT contain VALUE."""
+    from core.cli import main
+    yaml_text = """\
+- country: Australia
+  tags: [oceania, commonwealth]
+- country: Philippines
+  tags: [oceania, republic]
+"""
+    f = tmp_path / "countries.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "tags!~commonwealth"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Philippines" in out
+    assert "Australia" not in out
+
+
+def test_cf_select_array_contains_no_match(tmp_path):
+    """--select FIELD~VALUE returns exit 1 when no items match (grep semantics)."""
+    from core.cli import main
+    yaml_text = """\
+- country: Australia
+  tags: [oceania, commonwealth]
+"""
+    f = tmp_path / "countries.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "tags~republic"])
+    assert rc == 1
+
+
+def test_cf_select_array_contains_each(tmp_path, capsys):
+    """--select FIELD~VALUE combined with --each to extract a sub-field."""
+    from core.cli import main
+    yaml_text = """\
+- country: Australia
+  tags: [oceania, commonwealth]
+- country: Canada
+  tags: [north america, commonwealth]
+- country: Philippines
+  tags: [oceania, republic]
+"""
+    f = tmp_path / "countries.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "tags~commonwealth", "--each", "country"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Australia" in out
+    assert "Canada" in out
+    assert "Philippines" not in out
+
+
+def test_cf_select_array_contains_non_array_field_no_match(tmp_path):
+    """--select FIELD~VALUE on a non-array field returns no matches (exit 1)."""
+    from core.cli import main
+    yaml_text = """\
+- name: Alice
+  role: admin
+- name: Bob
+  role: user
+"""
+    f = tmp_path / "users.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "role~admin"])
+    assert rc == 1
+
+
+def test_cf_select_regex_match(tmp_path, capsys):
+    """--select FIELD=/pattern/ filters list items by regex match (dasel #183)."""
+    from core.cli import main
+    yaml_text = """\
+- name: prod-api
+  image: nginx:1.21
+- name: prod-worker
+  image: alpine:3.18
+- name: dev-api
+  image: nginx:1.21
+"""
+    f = tmp_path / "containers.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "name=/^prod-/"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "prod-api" in out
+    assert "prod-worker" in out
+    assert "dev-api" not in out
+
+
+def test_cf_select_regex_match_case_insensitive(tmp_path, capsys):
+    """--select FIELD=/pattern/ is case-insensitive by default."""
+    from core.cli import main
+    yaml_text = """\
+- name: NGINX-prod
+  env: production
+- name: apache-dev
+  env: development
+"""
+    f = tmp_path / "services.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "name=/nginx/"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "NGINX-prod" in out
+    assert "apache-dev" not in out
+
+
+def test_cf_select_regex_not_match(tmp_path, capsys):
+    """--select FIELD!=/pattern/ keeps items that do NOT match regex."""
+    from core.cli import main
+    yaml_text = """\
+- name: prod-api
+  env: production
+- name: dev-worker
+  env: development
+- name: staging-db
+  env: staging
+"""
+    f = tmp_path / "envs.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "name!=/^prod/"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "prod-api" not in out
+    assert "dev-worker" in out
+    assert "staging-db" in out
+
+
+def test_cf_select_regex_no_match_exits_1(tmp_path):
+    """--select FIELD=/pattern/ exits 1 when no items match."""
+    from core.cli import main
+    yaml_text = "- name: foo\n- name: bar\n"
+    f = tmp_path / "items.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "name=/^zzz/"])
+    assert rc == 1
+
+
+def test_cf_select_invalid_regex_errors(tmp_path, capsys):
+    """--select FIELD=/[invalid/ with broken regex prints an error."""
+    from core.cli import main
+    yaml_text = "- name: foo\n"
+    f = tmp_path / "items.yaml"
+    f.write_text(yaml_text)
+    rc = main(["cf", str(f), "--select", "name=/[invalid/"])
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert "invalid regex" in err or "error" in err.lower()
+
+
 def test_yaml11_implicit_booleans_with_yaml12_flag(tmp_path):
     """YAML 1.1 implicit booleans (yes/no/on/off) should NOT be parsed as booleans in YAML 1.2 mode.
 
