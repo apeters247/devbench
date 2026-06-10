@@ -3203,6 +3203,11 @@ Compared to yq/jq:
                              "Use \\t for TSV, | for pipe-separated, ; for semicolon-separated.")
     parser.add_argument("--tsv", action="store_true", default=False, dest="tsv",
                         help="Treat input as tab-separated (TSV). Shorthand for --csv-delimiter TAB.")
+    parser.add_argument("--schema-gen", action="store_true", dest="schema_gen",
+                        help="Generate a JSON Schema Draft 7 document from the config structure.")
+    parser.add_argument("--replace-value", metavar=("OLD", "NEW"), nargs=2, dest="replace_value",
+                        help="Find and replace all matching leaf values across the config. "
+                             "OLD compared as string; NEW is JSON-coerced.")
     args = parser.parse_args(argv)
 
     _csv_delim = None
@@ -3648,6 +3653,52 @@ Compared to yq/jq:
             print("error: serialization failed", file=sys.stderr)
             return 1
         sys.stdout.write(result if result.endswith("\n") else result + "\n")
+        return 0
+
+    if getattr(args, "schema_gen", False):
+        from core.cli import _infer_json_schema
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        schema = {"$schema": "http://json-schema.org/draft-07/schema#"}
+        schema.update(_infer_json_schema(data))
+        to_fmt = getattr(args, "to", None)
+        if to_fmt in ("yaml", "yml"):
+            import yaml as _yaml
+            out = _yaml.dump(schema, default_flow_style=False, allow_unicode=True)
+        else:
+            out = json.dumps(schema, indent=2) + "\n"
+        sys.stdout.write(out)
+        return 0
+
+    if getattr(args, "replace_value", None):
+        from core.cli import _replace_values_recursive, _count_value_matches
+        text = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+        try:
+            parsed = parse_text(text, fmt=args.from_fmt if args.from_fmt != "auto" else None,
+                                **parse_opts)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        data = parsed.get("data", parsed)
+        old_str, new_raw = args.replace_value
+        new_val = _coerce_set_value(new_raw)
+        match_count = _count_value_matches(data, old_str)
+        if match_count == 0:
+            print(f"no matches found for {old_str!r}", file=sys.stderr)
+            return 1
+        updated = _replace_values_recursive(data, old_str, new_val)
+        to_fmt = args.to or (args.from_fmt if args.from_fmt != "auto" else None) or "yaml"
+        result_text = serialize(updated, to_fmt, **options)
+        if not result_text:
+            print("error: serialization failed", file=sys.stderr)
+            return 1
+        sys.stdout.write(result_text if result_text.endswith("\n") else result_text + "\n")
         return 0
 
     to_fmt = args.to

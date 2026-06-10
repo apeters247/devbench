@@ -3685,3 +3685,281 @@ def test_cf_csv_delimiter_backslash_t(tmp_path, capsys):
     out = capsys.readouterr().out.strip()
     data = __import__("json").loads(out)
     assert data[0]["a"] == "c"
+
+
+# ---------------------------------------------------------------------------
+# --schema-gen: generate JSON Schema from config
+# ---------------------------------------------------------------------------
+
+
+def test_cf_schema_gen_simple_dict(tmp_path, capsys):
+    """Basic dict config produces valid JSON Schema object with required and properties."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("host: localhost\nport: 5432\ndebug: true\n")
+    rc = main(["cf", str(f), "--schema-gen"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    schema = json.loads(out)
+    assert schema["$schema"] == "http://json-schema.org/draft-07/schema#"
+    assert schema["type"] == "object"
+    props = schema["properties"]
+    assert props["host"]["type"] == "string"
+    assert props["port"]["type"] == "integer"
+    assert props["debug"]["type"] == "boolean"
+    assert set(schema["required"]) == {"host", "port", "debug"}
+
+
+def test_cf_schema_gen_nested(tmp_path, capsys):
+    """Nested dicts produce nested Schema object definitions."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"database": {"host": "db", "port": 5432}, "workers": 4}')
+    rc = main(["cf", str(f), "--schema-gen"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    schema = json.loads(out)
+    db_schema = schema["properties"]["database"]
+    assert db_schema["type"] == "object"
+    assert db_schema["properties"]["host"]["type"] == "string"
+    assert db_schema["properties"]["port"]["type"] == "integer"
+    assert schema["properties"]["workers"]["type"] == "integer"
+
+
+def test_cf_schema_gen_list_uniform(tmp_path, capsys):
+    """Uniform list of objects produces array schema with merged item schema."""
+    import json
+    from core.cli import main
+    f = tmp_path / "pods.json"
+    f.write_text('[{"name": "web", "replicas": 3}, {"name": "db", "replicas": 1}]')
+    rc = main(["cf", str(f), "--schema-gen"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    schema = json.loads(out)
+    assert schema["type"] == "array"
+    items = schema["items"]
+    assert items["type"] == "object"
+    assert "name" in items["properties"]
+    assert "replicas" in items["properties"]
+
+
+def test_cf_schema_gen_null_value(tmp_path, capsys):
+    """Null values in config produce type:null in schema."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"key": null, "value": "present"}')
+    rc = main(["cf", str(f), "--schema-gen"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    schema = json.loads(out)
+    assert schema["properties"]["key"]["type"] == "null"
+
+
+def test_cf_schema_gen_yaml_output(tmp_path, capsys):
+    """--schema-gen --to yaml outputs schema as YAML."""
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"host": "localhost", "port": 8080}')
+    rc = main(["cf", str(f), "--schema-gen", "--to", "yaml"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert "type: object" in out
+    assert "properties:" in out
+    assert "host:" in out
+
+
+def test_cf_schema_gen_raw_compact(tmp_path, capsys):
+    """--schema-gen --raw outputs compact single-line JSON."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"x": 1}')
+    rc = main(["cf", str(f), "--schema-gen", "--raw"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    schema = json.loads(out)
+    assert schema["type"] == "object"
+    assert "\n" not in out  # compact, no newlines in JSON body
+
+
+def test_cf_schema_gen_empty_list(tmp_path, capsys):
+    """Empty list produces array schema with empty items."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"tags": []}')
+    rc = main(["cf", str(f), "--schema-gen"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    schema = json.loads(out)
+    assert schema["properties"]["tags"]["type"] == "array"
+    assert schema["properties"]["tags"]["items"] == {}
+
+
+def test_cf_schema_gen_float(tmp_path, capsys):
+    """Float values produce type:number in schema."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"ratio": 0.75, "count": 3}')
+    rc = main(["cf", str(f), "--schema-gen"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    schema = json.loads(out)
+    assert schema["properties"]["ratio"]["type"] == "number"
+    assert schema["properties"]["count"]["type"] == "integer"
+
+
+def test_cf_schema_gen_toml_input(tmp_path, capsys):
+    """TOML config produces correct schema (format detection parity)."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.toml"
+    f.write_text('[server]\nhost = "0.0.0.0"\nport = 8080\n')
+    rc = main(["cf", str(f), "--schema-gen"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    schema = json.loads(out)
+    assert schema["type"] == "object"
+    server_schema = schema["properties"]["server"]
+    assert server_schema["type"] == "object"
+    assert server_schema["properties"]["port"]["type"] == "integer"
+
+
+# ---------------------------------------------------------------------------
+# --replace-value OLD NEW: find-and-replace values recursively
+# ---------------------------------------------------------------------------
+
+
+def test_cf_replace_value_simple_string(tmp_path, capsys):
+    """Replace a string value across YAML config."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("image: nginx:1.19\nenv: prod\n")
+    rc = main(["cf", str(f), "--replace-value", "nginx:1.19", "nginx:1.21"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "nginx:1.21" in out
+    assert "nginx:1.19" not in out
+
+
+def test_cf_replace_value_no_match_exits_1(tmp_path, capsys):
+    """No matching value returns exit code 1."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("image: nginx:1.19\n")
+    rc = main(["cf", str(f), "--replace-value", "does-not-exist", "new"])
+    assert rc == 1
+
+
+def test_cf_replace_value_integer(tmp_path, capsys):
+    """Replacing integer value by string representation works correctly."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"replicas": 3, "maxSurge": 3}')
+    rc = main(["cf", str(f), "--replace-value", "3", "5", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert data["replicas"] == 5
+    assert data["maxSurge"] == 5
+
+
+def test_cf_replace_value_multiple_occurrences(tmp_path, capsys):
+    """Multiple occurrences of the same value are all replaced."""
+    from core.cli import main
+    f = tmp_path / "config.yaml"
+    f.write_text("a: prod\nb: prod\nc: dev\n")
+    rc = main(["cf", str(f), "--replace-value", "prod", "staging"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    import yaml
+    data = yaml.safe_load(out)
+    assert data["a"] == "staging"
+    assert data["b"] == "staging"
+    assert data["c"] == "dev"
+
+
+def test_cf_replace_value_nested(tmp_path, capsys):
+    """Replace value in nested structure."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"server": {"env": "prod"}, "worker": {"env": "prod"}}')
+    rc = main(["cf", str(f), "--replace-value", "prod", "staging", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert data["server"]["env"] == "staging"
+    assert data["worker"]["env"] == "staging"
+
+
+def test_cf_replace_value_in_list(tmp_path, capsys):
+    """Replace value inside list elements."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"envs": ["prod", "staging", "prod"]}')
+    rc = main(["cf", str(f), "--replace-value", "prod", "production", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert data["envs"].count("production") == 2
+    assert "prod" not in data["envs"]
+
+
+def test_cf_replace_value_raw_output(tmp_path, capsys):
+    """--replace-value --raw outputs JSON with replacement count."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"a": "old", "b": "old", "c": "keep"}')
+    rc = main(["cf", str(f), "--replace-value", "old", "new", "--raw"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    result = json.loads(out)
+    assert result["replaced"] == 2
+    assert result["old"] == "old"
+    assert result["new"] == "new"
+
+
+def test_cf_replace_value_json_coercion(tmp_path, capsys):
+    """NEW value is JSON-coerced: 'true' → bool True, '42' → int."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.json"
+    f.write_text('{"debug": "false", "port": "8080"}')
+    rc = main(["cf", str(f), "--replace-value", "false", "true", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert data["debug"] is True
+
+
+def test_cf_replace_value_in_place(tmp_path, capsys):
+    """--replace-value --in-place modifies the file."""
+    from core.cli import main
+    f = tmp_path / "deploy.yaml"
+    f.write_text("image: nginx:1.19\nbackend: nginx:1.19\n")
+    rc = main(["cf", str(f), "--replace-value", "nginx:1.19", "nginx:1.21", "--in-place"])
+    assert rc == 0
+    content = f.read_text()
+    assert "nginx:1.21" in content
+    assert "nginx:1.19" not in content
+
+
+def test_cf_replace_value_cross_format(tmp_path, capsys):
+    """Replace value in TOML and output as JSON."""
+    import json
+    from core.cli import main
+    f = tmp_path / "config.toml"
+    f.write_text('[server]\nenv = "production"\n')
+    rc = main(["cf", str(f), "--replace-value", "production", "staging", "--to", "json"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    data = json.loads(out)
+    assert data["server"]["env"] == "staging"

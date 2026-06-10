@@ -150,6 +150,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "cf" and getattr(args, "wrap_in", None):
         return _run_cf_wrap_in(args)
 
+    # cf --schema-gen  → generate JSON Schema from config structure
+    if args.command == "cf" and getattr(args, "schema_gen", False):
+        return _run_cf_schema_gen(args)
+
+    # cf --replace-value OLD NEW  → find-and-replace values recursively
+    if args.command == "cf" and getattr(args, "replace_value", None):
+        return _run_cf_replace_value(args)
+
     # cf --check-env  → show environment info (no stdin needed)
     if args.command == "cf" and getattr(args, "check_env", False):
         return _run_cf_check_env(args)
@@ -462,6 +470,21 @@ def _build_parser() -> argparse.ArgumentParser:
                                      "Dot-paths become underscores: database.host → ${database_host}. "
                                      "Uppercase variants also available: ${DATABASE_HOST}. "
                                      "Example: devbench cf app.yaml --template deploy.tmpl > deploy.sh")
+            tool_p.add_argument("--schema-gen", action="store_true", dest="schema_gen",
+                                help="Generate a JSON Schema (Draft 7) from the config structure. "
+                                     "Infers types, required fields, and array item shapes automatically. "
+                                     "Use --to yaml for YAML schema output. "
+                                     "No competitor (yq/dasel/jq) has this as a built-in flag. "
+                                     "Example: devbench cf config.yaml --schema-gen > config-schema.json "
+                                     "         devbench cf deploy.yaml --schema-gen --to yaml")
+            tool_p.add_argument("--replace-value", metavar=("OLD", "NEW"), nargs=2, dest="replace_value",
+                                help="Find and replace all matching leaf values across the entire config. "
+                                     "OLD is compared as a string (so 'nginx:1.19' matches string values). "
+                                     "NEW is JSON-coerced (so '3' → integer 3, 'true' → bool True). "
+                                     "Exit 0 = at least one replacement made, exit 1 = no matches. "
+                                     "Combine with --in-place / --backup to edit files directly. "
+                                     "Example: devbench cf deploy.yaml --replace-value nginx:1.19 nginx:1.21 "
+                                     "         devbench cf config.yaml --replace-value prod staging --in-place")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -3105,6 +3128,216 @@ def _run_cf_wrap_in(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# cf --schema-gen: generate JSON Schema Draft 7 from config
+# ---------------------------------------------------------------------------
+
+
+def _infer_json_schema(value) -> dict:
+    """Recursively infer a JSON Schema Draft 7 definition from a Python value."""
+    if value is None:
+        return {"type": "null"}
+    if isinstance(value, bool):
+        return {"type": "boolean"}
+    if isinstance(value, int):
+        return {"type": "integer"}
+    if isinstance(value, float):
+        return {"type": "number"}
+    if isinstance(value, str):
+        return {"type": "string"}
+    if isinstance(value, list):
+        if not value:
+            return {"type": "array", "items": {}}
+        item_schemas = [_infer_json_schema(item) for item in value]
+        # Unify: if all items share one type, merge them
+        types = {s.get("type") for s in item_schemas}
+        if len(types) == 1:
+            single_type = list(types)[0]
+            if single_type == "object":
+                return {"type": "array", "items": _merge_object_schemas(item_schemas)}
+            return {"type": "array", "items": item_schemas[0]}
+        # Mixed types: deduplicate and use anyOf
+        seen_keys: list[str] = []
+        unique: list[dict] = []
+        for s in item_schemas:
+            key = json.dumps(s, sort_keys=True)
+            if key not in seen_keys:
+                seen_keys.append(key)
+                unique.append(s)
+        return {"type": "array", "items": (unique[0] if len(unique) == 1 else {"anyOf": unique})}
+    if isinstance(value, dict):
+        props = {k: _infer_json_schema(v) for k, v in value.items()}
+        schema: dict = {"type": "object", "properties": props}
+        if props:
+            schema["required"] = list(value.keys())
+        return schema
+    return {"type": "string"}
+
+
+def _merge_object_schemas(schemas: list) -> dict:
+    """Merge object schemas: union properties, keep only fields required in ALL."""
+    all_props: dict = {}
+    for s in schemas:
+        for k, v in s.get("properties", {}).items():
+            if k not in all_props:
+                all_props[k] = v
+    required_sets = [set(s.get("required", [])) for s in schemas]
+    common = set.intersection(*required_sets) if required_sets else set()
+    result: dict = {"type": "object", "properties": all_props}
+    if common:
+        result["required"] = sorted(common)
+    return result
+
+
+def _run_cf_schema_gen(args) -> int:
+    """Generate a JSON Schema Draft 7 document from any config file.
+
+    Infers types, required fields, and array item shapes from the parsed data.
+    Useful for validation setup, API documentation, and OpenAPI integration.
+
+    Exit 0 on success.
+    --to yaml outputs the schema as YAML.
+    --raw outputs compact JSON.
+
+    Examples:
+        devbench cf config.yaml --schema-gen > config-schema.json
+        devbench cf deploy.yaml --schema-gen --to yaml
+        devbench cf app.toml --schema-gen --raw | jq .properties
+    """
+    from . import configforge as _cf
+
+    content, _ = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+    schema = {"$schema": "http://json-schema.org/draft-07/schema#"}
+    schema.update(_infer_json_schema(data))
+
+    to_fmt = getattr(args, "to", None)
+    raw = getattr(args, "raw", False)
+
+    if to_fmt in ("yaml", "yml"):
+        import yaml as _yaml
+        output = _yaml.dump(schema, default_flow_style=False, allow_unicode=True)
+        sys.stdout.write(output)
+        if not output.endswith("\n"):
+            sys.stdout.write("\n")
+    else:
+        indent = None if raw else 2
+        print(json.dumps(schema, indent=indent))
+
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# cf --replace-value OLD NEW: find-and-replace values recursively
+# ---------------------------------------------------------------------------
+
+
+def _replace_values_recursive(obj, old_str: str, new_val):
+    """Recursively replace all leaf values that match old_str with new_val."""
+    if isinstance(obj, dict):
+        return {k: _replace_values_recursive(v, old_str, new_val) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_replace_values_recursive(item, old_str, new_val) for item in obj]
+    # Leaf: compare as string or direct equality
+    if obj == old_str or str(obj) == old_str:
+        return new_val
+    return obj
+
+
+def _count_value_matches(obj, old_str: str) -> int:
+    """Count how many leaf values match old_str."""
+    if isinstance(obj, dict):
+        return sum(_count_value_matches(v, old_str) for v in obj.values())
+    if isinstance(obj, list):
+        return sum(_count_value_matches(item, old_str) for item in obj)
+    return 1 if (obj == old_str or str(obj) == old_str) else 0
+
+
+def _run_cf_replace_value(args) -> int:
+    """Find and replace all matching leaf values across the entire config.
+
+    Traverses every dict value and list element recursively.  A leaf matches
+    when its string representation equals OLD.  NEW is JSON-coerced so you
+    can replace strings with numbers or booleans.
+
+    Exit 0 = at least one replacement made.
+    Exit 1 = no matches found.
+    Combine with --in-place / --backup to edit files in-place.
+    --raw outputs {replaced, old, new} instead of the converted config.
+
+    Examples:
+        devbench cf deploy.yaml --replace-value nginx:1.19 nginx:1.21
+        devbench cf config.yaml --replace-value prod staging --in-place
+        devbench cf manifest.yaml --replace-value false true --to json
+    """
+    from . import configforge as _cf
+
+    content, file_path = _cf_read_file_or_content(args)
+    if content is None:
+        return EXIT_ERROR
+
+    old_str, new_raw = args.replace_value
+    new_val = _cf._coerce_set_value(new_raw)
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    try:
+        parsed = _cf.parse_text(content, fmt=None if from_fmt == "auto" else from_fmt,
+                                **_cf_parse_opts(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    data = parsed.get("data", parsed)
+    detected_fmt = parsed.get("format", "yaml")
+    match_count = _count_value_matches(data, old_str)
+
+    if match_count == 0:
+        raw = getattr(args, "raw", False)
+        if raw:
+            print(json.dumps({"replaced": 0, "old": old_str, "new": new_val}))
+        else:
+            print(f"no matches found for {old_str!r}", file=sys.stderr)
+        return EXIT_ERROR
+
+    updated = _replace_values_recursive(data, old_str, new_val)
+
+    raw = getattr(args, "raw", False)
+    if raw:
+        print(json.dumps({"replaced": match_count, "old": old_str, "new": new_val}))
+        return EXIT_SUCCESS
+
+    to_fmt = getattr(args, "to", None) or detected_fmt
+    try:
+        output_text = _cf.serialize(updated, to_fmt, **_cf_serialize_options(args))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if not output_text.endswith("\n"):
+        output_text += "\n"
+
+    in_place = getattr(args, "in_place", False)
+    backup_suffix = getattr(args, "backup_suffix", None)
+    if in_place and file_path:
+        _cf_write_in_place(file_path, output_text, backup_suffix)
+        print(f"replaced {match_count} value(s): {old_str!r} → {new_raw!r}")
+    else:
+        sys.stdout.write(output_text)
+
+    return EXIT_SUCCESS
+
+
+# ---------------------------------------------------------------------------
 # Shell completion
 # ---------------------------------------------------------------------------
 
@@ -3117,7 +3350,7 @@ _CF_FLAGS = (
     "--flatten-xml --no-comments --yaml12 --template-safe "
     "--null-handling --list-formats --check-env --schema --mask --mask-value --assert "
     "--path-exists --shell-export --compact -c --template --wrap-in "
-    "--csv-delimiter --tsv "
+    "--csv-delimiter --tsv --schema-gen --replace-value "
     "--serve --port --host --api --api-port "
     "--raw -r --pretty -p --help"
 )
@@ -3188,7 +3421,7 @@ _devbench_complete() {{
                     return 0 ;;
                 --port|--api-port|--get|--set|--delete|--count|--type|--pick|--grep|--append|\
                 --each|--select|--default|--rename|--assert|--mask|--mask-value|--path-exists|\
-                --backup|--sep|--indent)
+                --backup|--sep|--indent|--replace-value|--wrap-in|--template|--csv-delimiter)
                     return 0 ;;
             esac
             if [[ "$cur" == -* ]]; then
@@ -3314,6 +3547,8 @@ _devbench() {{
                         '--wrap-in=[Wrap entire config under a dotted key path]:key:' \\
                         '--csv-delimiter=[Override CSV field delimiter (tab, pipe, semicolon)]:char:' \\
                         '--tsv[Treat input as tab-separated (TSV). Shorthand for --csv-delimiter TAB]' \\
+                        '--schema-gen[Generate JSON Schema Draft 7 from config structure]' \\
+                        '--replace-value=[Find and replace all matching values (OLD NEW)]:old new:' \\
                         '--serve[Launch the web UI]' \\
                         '--port=[Web UI port (default 8080)]:port:' \\
                         '--api[Launch JSON HTTP API]' \\
