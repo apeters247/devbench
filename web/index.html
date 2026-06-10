@@ -153,6 +153,8 @@
           <span role="listitem" style="display:inline-flex;align-items:center;gap:0.4rem;background:rgba(78,205,196,0.12);border:1px solid rgba(78,205,196,0.3);color:#4ecdc4;border-radius:6px;padding:0.35rem 0.8rem;font-size:0.82rem;font-weight:600;">&#10003; Comments survive — dasel drops them</span>
           <span role="listitem" style="display:inline-flex;align-items:center;gap:0.4rem;background:rgba(78,205,196,0.12);border:1px solid rgba(78,205,196,0.3);color:#4ecdc4;border-radius:6px;padding:0.35rem 0.8rem;font-size:0.82rem;font-weight:600;">&#10003; 100% offline — secrets stay local</span>
           <span role="listitem" style="display:inline-flex;align-items:center;gap:0.4rem;background:rgba(108,140,255,0.12);border:1px solid rgba(108,140,255,0.3);color:#6c8cff;border-radius:6px;padding:0.35rem 0.8rem;font-size:0.82rem;font-weight:600;">&#10003; One-time purchase — no subscriptions ever</span>
+          <span role="listitem" style="display:inline-flex;align-items:center;gap:0.4rem;background:rgba(255,193,7,0.12);border:1px solid rgba(255,193,7,0.3);color:#ffc107;border-radius:6px;padding:0.35rem 0.8rem;font-size:0.82rem;font-weight:600;">&#10003; No DSL — just --flags, no filter language</span>
+          <span role="listitem" style="display:inline-flex;align-items:center;gap:0.4rem;background:rgba(255,193,7,0.12);border:1px solid rgba(255,193,7,0.3);color:#ffc107;border-radius:6px;padding:0.35rem 0.8rem;font-size:0.82rem;font-weight:600;">&#10003; Zero dependencies — pip install, self-contained</span>
         </div>
 
         <div class="hero-actions" style="justify-content: center;">
@@ -545,6 +547,20 @@
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
                 <td style="padding:10px 8px;text-align:center;color:#888;">❌</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>No filter language (DSL)</strong><br><span style="font-size:0.78rem;color:#888;">Simple --flags, no jq expressions to learn</span></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Flags only</td>
+                <td style="padding:10px 8px;text-align:center;color:#e74c3c;font-size:0.82rem;">❌ jq-style<br>filter expressions</td>
+                <td style="padding:10px 8px;text-align:center;color:#e74c3c;font-size:0.82rem;">❌ DSL<br>required</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">N/A</td>
+              </tr>
+              <tr style="border-bottom:1px solid #333;">
+                <td style="padding:10px 8px;"><strong>Zero external dependencies</strong><br><span style="font-size:0.78rem;color:#888;">kislyuk/yq requires jq pre-installed</span></td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅ Self-contained</td>
+                <td style="padding:10px 8px;text-align:center;color:#e74c3c;font-size:0.82rem;">⚠️ Needs jq<br>(kislyuk/yq)</td>
+                <td style="padding:10px 8px;text-align:center;color:#4ecdc4;">✅</td>
+                <td style="padding:10px 8px;text-align:center;color:#888;">N/A</td>
               </tr>
               <tr>
                 <td style="padding:10px 8px;"><strong>Install</strong></td>
