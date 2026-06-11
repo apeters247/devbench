@@ -28,6 +28,7 @@ Features:
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import threading
 import time
@@ -41,6 +42,8 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from core import configforge as cf  # noqa: E402
+
+log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8081
 API_VERSION = "0.1.0"
@@ -207,8 +210,9 @@ class ConfigForgeAPIHandler(BaseHTTPRequestHandler):
                 self._handle_formats()
             else:
                 self._send_json({"success": False, "error": "Not found: %s" % path}, status=404)
-        except Exception as e:  # defensive — never leak a stack trace as HTML
-            self._send_json({"success": False, "error": "Internal error: %s" % e}, status=500)
+        except Exception as e:
+            log.debug("500 on %s: %s", path, e)
+            self._send_json({"success": False, "error": "Internal error"}, status=500)
 
     def do_POST(self) -> None:  # noqa: N802
         if self._rate_limited():
@@ -219,8 +223,9 @@ class ConfigForgeAPIHandler(BaseHTTPRequestHandler):
                 self._handle_convert()
             else:
                 self._send_json({"success": False, "error": "Not found: %s" % path}, status=404)
-        except Exception as e:  # defensive catch-all -> 500
-            self._send_json({"success": False, "error": "Internal error: %s" % e}, status=500)
+        except Exception as e:
+            log.debug("500 on %s: %s", path, e)
+            self._send_json({"success": False, "error": "Internal error"}, status=500)
 
     # -- handlers ---------------------------------------------------------
 
