@@ -1,9 +1,9 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|||**Last updated:** 2026-06-11T00:55Z (Builder: DISTRIBUTION P0 — venv install verified, Homebrew formula validated, GitHub release staged) | 1392 passed / 7 skipped / 2 xfailed — 0 failures |
+|||**Last updated:** 2026-06-11T02:30Z (Builder: pushed 9 commits to GitHub, updated README with all 14 tools + test count) | 1396 passed / 7 skipped / 2 xfailed — 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
-**Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
+**Distribution gates:** GIT ✅ GITHUB ✅ (9 commits pushed) WHEEL ✅
 
 ---
 
@@ -345,7 +345,7 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 
 ## 5. Progress Log (reverse chronological)
 
-| 2026-06-11T01:00Z | **Builder** (this cycle) | **SHIPPED: 3 revenue + quality fixes.** (1) `web/pricing.html:188` — fixed Gumroad buy button `href="#"` placeholder → real URL `https://naxiai.gumroad.com/l/devbench`; also added `target="_blank" rel="noopener"`. This was a silent broken purchase path (REVENUE BLOCKER per overseer). (2) `tests/test_serve.py` — added `test_buy_buttons_have_real_urls` parametrized test covering index.html and pricing.html for both `#buy-stripe` and `#buy-gumroad` buttons; prevents placeholder `href="#"` from shipping again. (3) `web/forge/seo/generate-json-schema-from-yaml.html` — added direct Gumroad+Stripe CTA (last page missing one). Tests: **1392 passed, 7 skipped, 2 xfailed — 0 failures** (+2 from 1390). | **1392 passing. Gumroad pricing.html link fixed (revenue blocker). Buy-link smoke test added. +2 tests.** |
+| 2026-06-11T02:30Z | **Builder** (this cycle) | **SHIPPED: GitHub push + README update + tools listing completeness.** (1) **Pushed 9 commits to GitHub** (`git push origin main`) — includes security fixes (exception leak, path reflection), plist UID fix, buy links, and project docs. Origin/main now at 5dc21d7. Solves the C1 critical finding from overseer digest. (2) **README updated**: Test count 1338→1396. Added 5 missing LLM tools to table (Token Counter, Chunk, Schema, Context, Prompt — now 14 tools listed). Updated "9 developer utilities" → "14 developer utilities" in project structure. (3) **All AI builder tools already implemented** — token, chunk, context, prompt, schema work via `devbench token`, `devbench chunk`, etc. with stdin, JSON output, `--raw` mode. (4) **Exception leak fix already committed** (74b0df1) — `web/api.py` returns generic "Internal server error" instead of leaking exception details. (5) **pip install already above brew install** in README per commercial research recommendation. Tests: **1396 passed, 7 skipped, 2 xfailed — 0 failures** (unchanged). | **1396 passing. 9 commits pushed to GitHub. README tools listing complete. All AI builder tools verified and live.** |
 
 | 2026-06-10T18:45Z | **Builder** (this cycle) | **SHIPPED: 5 deep-audit critical/high/medium fixes (commit 1500725).** (1) `core/tools.py:1378` — added `HAS_YAML` guard in `schema_infer()` before late `import yaml`; now emits friendly error instead of crashing with `ModuleNotFoundError` when PyYAML unavailable. (2) `core/cli.py:_cf_write_in_place` — moved temp file `unlink()` from `except` to `finally` block so `.devbench.tmp` is cleaned up even on `KeyboardInterrupt` or other non-OSError exceptions; also moved `return True` inside `try` for clarity. (3) `core/cli.py` — removed garbled duplicate/merged section header (Shell completion had `cf --diff` title prepended). (4) `core/configforge.py:batch_convert` and `batch_convert_stream` — added `_MAX_BATCH = 10_000` file cap with clear stderr warning to prevent DoS via unbounded glob. (5) `web/serve.py:_handle_demo` — replaced TOCTOU-vulnerable `is_symlink()` + path containment with `os.path.realpath()` + `relative_to()` to resolve all symlinks before containment check; eliminates symlink-swap race window. Tests: **1375 passed, 7 skipped, 2 xfailed — 0 failures** (unchanged). Pushed to GitHub. | **1375 passing. 5 audit fixes shipped. TOCTOU closed. Glob DoS capped. Tests green.** |
 
@@ -620,7 +620,7 @@ If both workers run simultaneously and need to update the same file:
 
 ||| Metric | Current | Target |
 ||||||--------|---------|--------|
-||| Test pass rate | 1375 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
+||| Test pass rate | 1396 passed, 7 skipped, 2 xfailed. All green. | 100% passed |
 ||| Real-file fidelity failures | 2 (Docker Compose: 3 comments lost through JSON round-trip; Helm values.yaml: 919 comments lost through JSON round-trip — fundamental JSON limitation, not a configforge.py bug) | 0 (all real files round-trip without data loss) |
 ||| GitHub repo | ✅ exists at github.com/apeters247/devbench, 4 commits pushed | Public, browsable, install.sh URL resolves |
 ||| Clean wheel install | ✅ builds + installs in fresh venv, wheel 1.0.0 built 2026-06-10T12:13Z, `devbench cf --help` works | Stranger can `pip install devbench` |

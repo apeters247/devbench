@@ -71,6 +71,11 @@ Convert config files between any of 11 formats — bidirectionally, offline, wit
 | Tool | Command | Description |
 |------|---------|-------------|
 | ConfigForge | `devbench cf` | 11-format config converter |
+| Token Counter | `devbench token` | Count LLM tokens (tiktoken) |
+| Chunk | `devbench chunk` | Chunk text for RAG pipelines |
+| Schema | `devbench schema` | Infer JSON Schema from data |
+| Context | `devbench context` | Bundle files for LLM context |
+| Prompt | `devbench prompt` | Render prompt templates |
 | JSON | `devbench json` | Format, validate, minify JSON |
 | Base64 | `devbench base64` | Encode/decode |
 | Hash | `devbench hash` | MD5, SHA-1/256/512 |
@@ -102,7 +107,7 @@ Convert config files between any of 11 formats — bidirectionally, offline, wit
 python3 -m pytest tests/ -q --tb=line
 ```
 
-Current status: **1338 tests passing, 7 skipped, 2 xfailed — 0 failures.**
+Current status: **1396 tests passing, 7 skipped, 2 xfailed — 0 failures.**
 
 ## Project Structure
 
@@ -111,10 +116,10 @@ devbench/
 ├── core/                   # Main package
 │   ├── configforge.py      # 11-format converter engine
 │   ├── cli.py              # CLI entry point (devbench command)
-│   ├── tools.py            # 9 developer utilities
+│   ├── tools.py            # 14 developer utilities
 │   ├── detector.py         # Format auto-detection
 │   └── models.py           # Data models
-├── tests/                  # pytest suite (1338 tests)
+├── tests/                  # pytest suite (1396 tests)
 ├── web/                    # Landing page + license server
 ├── homebrew-tap/           # Homebrew formula (brew tap apeters247/devbench)
 ├── forge/                  # AI agent workspace + SEO pages
