@@ -173,3 +173,31 @@ def test_concurrent_convert_requests(server):
     for status, data in results:
         assert status == 200
         assert data["success"] is True
+
+
+# -- static HTML buy-link smoke tests -------------------------------------
+
+_WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+_BUY_BUTTON_IDS = ["buy-stripe", "buy-gumroad"]
+
+
+@pytest.mark.parametrize("html_file", ["index.html", "pricing.html"])
+def test_buy_buttons_have_real_urls(html_file):
+    """Buy buttons must not use href='#' placeholder — broken links lose revenue."""
+    import re
+
+    text = (_WEB_DIR / html_file).read_text(encoding="utf-8")
+    for btn_id in _BUY_BUTTON_IDS:
+        # Find the anchor with this id
+        pattern = rf'<a[^>]*id="{btn_id}"[^>]*href="([^"]*)"'
+        alt_pattern = rf'<a[^>]*href="([^"]*)"[^>]*id="{btn_id}"'
+        m = re.search(pattern, text) or re.search(alt_pattern, text)
+        if m is None:
+            # Button not present in this file — skip
+            continue
+        href = m.group(1)
+        assert href != "#", (
+            f"{html_file}: buy button #{btn_id} has placeholder href='#'. "
+            f"Set the real URL before shipping."
+        )

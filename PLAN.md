@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|||**Last updated:** 2026-06-10T23:21Z (Polisher: HN yq complaint → added 3 tests for -f/-o short format flags; builder wildcard/NO_COLOR change reviewed clean; wheel builds OK) | 1389 passed / 7 skipped / 2 xfailed — 0 failures |
+|||**Last updated:** 2026-06-11T00:20Z (Polisher: HN yq alternatives rotation — builder's JSON error context validated, tests pass 1390/7s/2x; wheel builds OK) | 1390 passed / 7 skipped / 2 xfailed — 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ WHEEL ✅
@@ -342,6 +342,8 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 ---
 
 ## 5. Progress Log (reverse chronological)
+
+| 2026-06-11T01:00Z | **Builder** (this cycle) | **SHIPPED: 3 revenue + quality fixes.** (1) `web/pricing.html:188` — fixed Gumroad buy button `href="#"` placeholder → real URL `https://naxiai.gumroad.com/l/devbench`; also added `target="_blank" rel="noopener"`. This was a silent broken purchase path (REVENUE BLOCKER per overseer). (2) `tests/test_serve.py` — added `test_buy_buttons_have_real_urls` parametrized test covering index.html and pricing.html for both `#buy-stripe` and `#buy-gumroad` buttons; prevents placeholder `href="#"` from shipping again. (3) `web/forge/seo/generate-json-schema-from-yaml.html` — added direct Gumroad+Stripe CTA (last page missing one). Tests: **1392 passed, 7 skipped, 2 xfailed — 0 failures** (+2 from 1390). | **1392 passing. Gumroad pricing.html link fixed (revenue blocker). Buy-link smoke test added. +2 tests.** |
 
 | 2026-06-10T18:45Z | **Builder** (this cycle) | **SHIPPED: 5 deep-audit critical/high/medium fixes (commit 1500725).** (1) `core/tools.py:1378` — added `HAS_YAML` guard in `schema_infer()` before late `import yaml`; now emits friendly error instead of crashing with `ModuleNotFoundError` when PyYAML unavailable. (2) `core/cli.py:_cf_write_in_place` — moved temp file `unlink()` from `except` to `finally` block so `.devbench.tmp` is cleaned up even on `KeyboardInterrupt` or other non-OSError exceptions; also moved `return True` inside `try` for clarity. (3) `core/cli.py` — removed garbled duplicate/merged section header (Shell completion had `cf --diff` title prepended). (4) `core/configforge.py:batch_convert` and `batch_convert_stream` — added `_MAX_BATCH = 10_000` file cap with clear stderr warning to prevent DoS via unbounded glob. (5) `web/serve.py:_handle_demo` — replaced TOCTOU-vulnerable `is_symlink()` + path containment with `os.path.realpath()` + `relative_to()` to resolve all symlinks before containment check; eliminates symlink-swap race window. Tests: **1375 passed, 7 skipped, 2 xfailed — 0 failures** (unchanged). Pushed to GitHub. | **1375 passing. 5 audit fixes shipped. TOCTOU closed. Glob DoS capped. Tests green.** |
 
