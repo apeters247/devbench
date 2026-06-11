@@ -74,7 +74,6 @@ def _count_delims_outside_quotes(line: str, delim: str) -> int:
 
 
 # ── Comment Preservation (YAML + INI) ──
-_COMMENT_CACHE = {}
 
 
 def _yaml_find_comment(line: str) -> int:
