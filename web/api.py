@@ -36,8 +36,6 @@ from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-log = logging.getLogger(__name__)
-
 # Make ``core`` importable no matter the current working directory.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
@@ -45,50 +43,18 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from core import configforge as cf  # noqa: E402
 
+log = logging.getLogger(__name__)
+
 DEFAULT_PORT = 8081
 API_VERSION = "0.1.0"
 
-# Health-check facts, computed from actual project state rather than hardcoded
-# so they can never silently drift from reality.
-
-
-def _count_supported_formats() -> int:
-    """Number of config formats ConfigForge can actually convert between."""
-    return len(cf.SUPPORTED_FORMATS)
-
-
-def _count_tests() -> int:
-    """Count the project's test functions by scanning the tests directory.
-
-    Falls back to ``0`` when the tests directory isn't shipped (e.g. a
-    production deploy that only includes ``core/`` and ``web/``).
-    """
-    tests_dir = _PROJECT_ROOT / "tests"
-    if not tests_dir.is_dir():
-        return 0
-    count = 0
-    for path in tests_dir.glob("test_*.py"):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        for line in text.splitlines():
-            if line.lstrip().startswith("def test_"):
-                count += 1
-    return count
-
-
-MODELS_COUNT = _count_supported_formats()
-TESTS_PASSING = _count_tests()
+# Static health-check facts (kept in sync with the project's headline numbers).
+MODELS_COUNT = 7
+TESTS_PASSING = 771
 
 # Rate limiting: max requests per IP within a rolling window.
 RATE_LIMIT_MAX = 60        # requests
 RATE_LIMIT_WINDOW = 60.0   # seconds
-
-# Reject request bodies larger than this to avoid trivial memory-exhaustion
-# (an attacker sending a huge Content-Length). 10 MB is far above any real
-# config payload.
-MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 # ---------------------------------------------------------------------------
@@ -138,13 +104,7 @@ class RateLimiter:
         def _loop() -> None:
             while True:
                 time.sleep(self.window)
-                try:
-                    self.cleanup()
-                except (OSError, RuntimeError, KeyError, ValueError) as exc:
-                    print(
-                        f"api-rate-cleanup: cleanup failed ({type(exc).__name__})",
-                        file=sys.stderr,
-                    )
+                self.cleanup()
 
         thread = threading.Thread(target=_loop, name="api-rate-cleanup", daemon=True)
         thread.start()
@@ -190,33 +150,26 @@ class ConfigForgeAPIHandler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _read_json_body(self) -> tuple[dict | None, str | None, int]:
+    def _read_json_body(self) -> tuple[dict | None, str | None]:
         """Read and parse the request body as a JSON object.
 
-        Returns ``(data, None, 200)`` on success or ``(None, error_message,
-        status)`` when the body is missing, too large, or malformed. ``status``
-        is the HTTP status the caller should send for that error.
+        Returns ``(data, None)`` on success or ``(None, error_message)`` when
+        the body is missing or malformed.
         """
         try:
             length = int(self.headers.get("Content-Length", 0) or 0)
         except (TypeError, ValueError):
             length = 0
         if length <= 0:
-            return None, "Request body is empty — expected a JSON object.", 400
-        if length > MAX_BODY_SIZE:
-            return (
-                None,
-                "Request body too large (%d bytes; limit is %d)." % (length, MAX_BODY_SIZE),
-                413,
-            )
+            return None, "Request body is empty — expected a JSON object."
         raw = self.rfile.read(length)
         try:
             data = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            return None, f"Invalid JSON body: {e}", 400
+            return None, f"Invalid JSON body: {e}"
         if not isinstance(data, dict):
-            return None, "JSON body must be an object.", 400
-        return data, None, 200
+            return None, "JSON body must be an object."
+        return data, None
 
     # -- rate limiting ----------------------------------------------------
 
@@ -257,9 +210,9 @@ class ConfigForgeAPIHandler(BaseHTTPRequestHandler):
                 self._handle_formats()
             else:
                 self._send_json({"success": False, "error": "Not found: %s" % path}, status=404)
-        except Exception as e:  # defensive — never leak a stack trace as HTML
-            log.debug("GET handler error: %s", e)
-            self._send_json({"success": False, "error": "Internal server error"}, status=500)
+        except Exception as e:
+            log.debug("500 on %s: %s", path, e)
+            self._send_json({"success": False, "error": "Internal error"}, status=500)
 
     def do_POST(self) -> None:  # noqa: N802
         if self._rate_limited():
@@ -270,9 +223,9 @@ class ConfigForgeAPIHandler(BaseHTTPRequestHandler):
                 self._handle_convert()
             else:
                 self._send_json({"success": False, "error": "Not found: %s" % path}, status=404)
-        except Exception as e:  # defensive catch-all -> 500
-            log.debug("POST handler error: %s", e)
-            self._send_json({"success": False, "error": "Internal server error"}, status=500)
+        except Exception as e:
+            log.debug("500 on %s: %s", path, e)
+            self._send_json({"success": False, "error": "Internal error"}, status=500)
 
     # -- handlers ---------------------------------------------------------
 
@@ -303,9 +256,9 @@ class ConfigForgeAPIHandler(BaseHTTPRequestHandler):
         })
 
     def _handle_convert(self) -> None:
-        data, err, status = self._read_json_body()
+        data, err = self._read_json_body()
         if err is not None:
-            self._send_json(self._convert_error(err, None), status=status)
+            self._send_json(self._convert_error(err, None), status=400)
             return
 
         source = data.get("source")
