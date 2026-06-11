@@ -22,6 +22,7 @@ Or as a systemd service (see ``forge/post-purchase-flow.md``).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import time
@@ -35,6 +36,8 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from web.license import LicenseManager, LicenseError, InvalidKey, ActivationLimit
+
+log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 9001
 LICENSE_DB = _PROJECT_ROOT / "var" / "licenses.db"
@@ -230,7 +233,8 @@ class LicenseHandler(BaseHTTPRequestHandler):
             self._handle_revoke(body_text)
 
         else:
-            self._respond(*_error(404, f"Unknown path: {path}"))
+            log.debug("Unknown path: %s", path)
+            self._respond(*_error(404, "Resource not found"))
 
     # ── Endpoint Handlers ───────────────────────────────────────────────────
 
