@@ -3414,7 +3414,7 @@ def test_batch_glob_progress_output_shows_file_count(tmp_path, capsys):
     """Batch conversion with show_progress=True prints file count."""
     (tmp_path / "a.yaml").write_text("k: v\n")
     (tmp_path / "b.yaml").write_text("k: v\n")
-    batch_convert(str(tmp_path / "*.yaml"), "json")
+    batch_convert(str(tmp_path / "*.yaml"), "json", show_progress=True)
     captured = capsys.readouterr()
     assert "[batch]" in captured.out, f"No [batch] output: {captured.out}"
     assert "2 file(s)" in captured.out or "2/" in captured.out

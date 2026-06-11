@@ -215,7 +215,7 @@ def test_batch_convert_progress(tmp_path, capsys):
     """Batch convert with show_progress prints progress lines."""
     for i in range(2):
         (tmp_path / f"cfg{i}.json").write_text(f'{{"id": {i}}}')
-    results = batch_convert(str(tmp_path / "*.json"), "yaml", str(tmp_path / "yaml_out"))
+    results = batch_convert(str(tmp_path / "*.json"), "yaml", str(tmp_path / "yaml_out"), show_progress=True)
     captured = capsys.readouterr()
     assert "[batch]" in captured.out
     assert "[1/2]" in captured.out

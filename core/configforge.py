@@ -1566,7 +1566,7 @@ def batch_convert_stream(input_glob: str, to_fmt: str, output_dir: str = None, *
     """
     import glob
 
-    show_progress = options.pop("show_progress", True)
+    show_progress = options.pop("show_progress", False)
     files = sorted(glob.glob(input_glob))
     total = len(files)
 
@@ -1632,7 +1632,7 @@ def batch_convert(input_glob: str, to_fmt: str, output_dir: str = None, **option
     results incrementally instead of building an in-memory list.
     """
     import glob
-    show_progress = options.pop("show_progress", True)
+    show_progress = options.pop("show_progress", False)
 
     files = sorted(glob.glob(input_glob))
     total = len(files)
