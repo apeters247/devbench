@@ -417,5 +417,4 @@ def test_run_tool_all_names():
 def test_imports():
     from core import cli, models, tools, detector
     assert hasattr(cli, "main")
-    assert hasattr(models, "ToolResult")
     assert hasattr(detector, "detect")

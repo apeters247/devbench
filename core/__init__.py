@@ -20,7 +20,6 @@ from . import models
 from . import tools
 
 from .detector import detect, detect_and_run
-from .models import ToolResult
 from .tools import (
     TOOLS,
     TOOL_HELP,
@@ -42,7 +41,6 @@ __all__ = [
     # Submodules
     "cli",
     "detector",
-    "models",
     "tools",
     # Tools
     "json_formatter",
@@ -62,8 +60,6 @@ __all__ = [
     # Detector
     "detect",
     "detect_and_run",
-    # Models
-    "ToolResult",
 ]
 
 __version__ = "0.1.0"
