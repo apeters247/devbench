@@ -2461,12 +2461,18 @@ def _env_format_value(v) -> str:
 
 def _plist_normalize(data):
     """Normalize parsed plist data for cross-format use.
-    bytes → base64 string; datetime/date → ISO-8601 string."""
+    bytes → base64 string; datetime/date → ISO-8601 string;
+    plistlib.UID (NSKeyedArchiver) → {"$UID": int}."""
     import base64
+    import plistlib as _pl
     if isinstance(data, bytes):
         return base64.b64encode(data).decode("ascii")
     elif isinstance(data, (datetime, date)):
         return data.isoformat()
+    elif isinstance(data, _pl.UID):
+        # NSKeyedArchiver UID — preserve as a tagged dict so YAML/JSON consumers
+        # can identify and optionally round-trip these values.
+        return {"$UID": data.data}
     elif isinstance(data, dict):
         return {str(k): _plist_normalize(v) for k, v in data.items()}
     elif isinstance(data, list):

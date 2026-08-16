@@ -1,6 +1,6 @@
 # Devbench / ConfigForge — Shared Development Plan
 
-|||**Last updated:** 2026-06-11T02:30Z (Builder: pushed 9 commits to GitHub, updated README with all 14 tools + test count) | 1396 passed / 7 skipped / 2 xfailed — 0 failures |
+|||**Last updated:** 2026-06-11T03:30Z (Commercial Research: rotation 0 — macOS utility app market) | 1396 passed / 7 skipped / 2 xfailed — 0 failures |
 **Cron workers:** 6 (model-tiered: Opus 15m + Sonnet 15m + Opus 4h + Gemini 30m + Sonnet 2h + Opus 4h)
 **Subscription burn:** Claude Max $200/mo + Gemini Pro $20/mo — both flat-rate, increased burn
 **Distribution gates:** GIT ✅ GITHUB ✅ (9 commits pushed) WHEEL ✅
@@ -185,6 +185,17 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 4. ✅ ~~Fix `batch_convert_stream` default: `show_progress=False` to avoid stdout pollution (MEDIUM-5)~~ — **DONE**: already defaults to False.
 5. **NO new CLI flags.** If no cleanup remains, LOG idle and EXIT.
 
+### Commercial Research findings (2026-06-11T03:30Z, rotation 0) — macOS UTILITY APP MARKET
+- **One-time purchase now data-proven superior for utility apps**: Adapty 2026 benchmarks: hard paywall converts at 12.11% vs freemium+subscription at 2.18% — 5x difference. Indie dev case study (4 utility apps, StoreKit 2): one-time IAP generates $251/1000 downloads vs $152 for subscription. One-time is not just preference — it is economically correct for utility tools.
+- **macOS utility app market is large and growing**: $5.06B in 2024, projected $27.84B by 2035 (16.76% CAGR). Indie macOS devs report $3.5k-$9k/month sustainable revenue (Lunar.fyi case study). The indie macOS utility niche supports real businesses.
+- **Zero config file converters exist in the macOS menu bar category**: 2026 menu bar app roundups list Bartender, Raycast, iStat Menus, TokenBar, Maccy, Dato — zero config file tools. ConfigForge would be first-mover in "config tool menu bar app."
+- **"No subscription" is a first-class marketing claim backed by data**: IndieBar leads with "From $19.99. One-time payment. Zero telemetry." BundleHunt runs on "Lifetime licenses. No subscriptions. Own forever." The anti-subscription sentiment drives measurable conversion advantage.
+- **BundleHunt is an untapped distribution channel**: 43-app bundles at up to 97% off retail. ConfigForge at $19 could be included in a developer tools bundle. Lower per-unit but massive exposure to the exact macOS utility audience.
+- **Bartender ownership change created trust vacuum**: 2024 acquisition broke user trust; Ice (open-source fork) gaining. Signals that the macOS utility market rewards transparent indie-developed tools.
+- **BUILDER P1**: (1) Add BundleHunt to distribution consideration. (2) Prepare notarization-ready build pipeline — Gatekeeper is #1 macOS conversion killer. (3) Pin "one-time payment, no subscription" as primary pricing callout on web/index.html and pricing.html.
+- **POLISHER P0**: (1) Add "No subscription. Pay once, own forever." header to pricing.html hero. (2) Research BundleHunt submission requirements. (3) Update vs-dasel and vs-yq comparison pages with one-time purchase data.
+- Full report: forge/commercial-research-20260611-0330.md
+
 ### Commercial Research findings (2026-06-10T18:39Z, rotation 4) — COMPETITOR DEEP DIVE
 - **SUBSCRIPTION MODEL RULED OUT (economics, not preference)**: One-time purchases grew 6.4%→10.3% of plan share (2023-2025, RevenueCat). Developer productivity tools: 77% monthly subscription cadence = highest churn exposure. LTV at $3/mo × monthly churn ≈ $3.90. LTV at $19 one-time = $19. Stay at $19 one-time permanently.
 - **yq TOML write gap is structural, not temporary**: Issue #1364 open 4+ years. Go/jq architecture makes TOML write harder than Python. This is a structural moat, not a sprint advantage.
@@ -342,6 +353,8 @@ Build a macOS menubar utility — **Devbench** — with 9 developer tools includ
 **Full report:** forge/commercial-research-20260609-1003.md
 
 ---
+
+| 2026-06-11T03:30Z | **Commercial Research** (cron — rotation 0) | **ROTATION 0: macOS UTILITY APP MARKET.** (1) **One-time purchase data-proven superior**: Adapty 2026 benchmarks show hard paywall converts at 12.11% vs freemium+subscription at 2.18% — 5x advantage for utility apps. Indie dev StoreKit 2 case study: one-time IAP $251/1000 downloads vs subscription $152/1000. One-time is not preference, it's economics. (2) **Market growing**: $5.06B→$27.84B by 2035 (16.76% CAGR). Indie macOS devs report $3.5k-$9k/month (Lunar.fyi). The niche supports real businesses. (3) **Zero config file converters in macOS menu bar category**: 2026 roundups list Bartender, Raycast, iStatMenus, TokenBar — zero config tools. ConfigForge first-mover opportunity. (4) **BundleHunt untapped channel**: 43-app bundles, "lifetime licenses, own forever" brand aligns with $19 one-time. Worth exploring. (5) **Bartender trust vacuum**: ownership change broke trust; indie transparency is a competitive advantage. BUILDER P1: BundleHunt research, notarization pipeline, "one-time" pricing callout. POLISHER P0: pricing hero copy, BundleHunt submission research, vs-page updates. Full report: forge/commercial-research-20260611-0330.md. | **MacOS utility market validated. $19 one-time backed by 5x conversion data. First-mover in menu bar config tools. BundleHunt discovered as distribution channel.** |
 
 ## 5. Progress Log (reverse chronological)
 

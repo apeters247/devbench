@@ -2026,3 +2026,167 @@ def test_comment_loss_warning_does_not_mention_json():
     assert "json" not in warning.lower(), (
         f"Warning incorrectly suggests JSON as a comment-preserving format: {warning!r}"
     )
+
+
+def test_plist_uid_to_json():
+    """plistlib.UID (NSKeyedArchiver) objects must serialize to JSON without crashing.
+
+    macOS plists from Xcode workspaces and preference files use NSKeyedArchiver,
+    which encodes object references as UID values. Without explicit handling these
+    raise 'Object of type UID is not JSON serializable'.
+    """
+    import plistlib
+    from core.configforge import _plist_normalize
+    uid = plistlib.UID(99)
+    result = _plist_normalize({"ref": uid, "count": 3})
+    import json
+    serialized = json.dumps(result)
+    data = json.loads(serialized)
+    assert data["ref"] == {"$UID": 99}, f"UID not normalized correctly: {data['ref']!r}"
+    assert data["count"] == 3
+
+
+def test_plist_uid_nested():
+    """Nested plistlib.UID objects are normalized recursively."""
+    import plistlib
+    from core.configforge import _plist_normalize
+    data = {
+        "objects": [plistlib.UID(0), plistlib.UID(1), {"child": plistlib.UID(42)}],
+    }
+    result = _plist_normalize(data)
+    assert result["objects"][0] == {"$UID": 0}
+    assert result["objects"][1] == {"$UID": 1}
+    assert result["objects"][2]["child"] == {"$UID": 42}
+
+
+def test_cf_jq_filter_basic():
+    """--jq-filter pipes JSON through jq for simple key extraction."""
+    from core.cli import _run_cf_jq
+    import argparse
+
+    args = argparse.Namespace(
+        jq_filter=".name",
+        to="json",
+        from_fmt="auto",
+        indent=2,
+        raw=False,
+        quiet=False,
+        colors=False,
+        no_colors=False,
+        compact=False,
+        no_comments=False,
+        flatten_xml=False,
+        yaml12=False,
+        template_safe=False,
+        block_scalars=False,
+        explicit_start=False,
+        explicit_end=False,
+        yaml_width=None,
+        sort_keys=False,
+        sort_keys_reverse=False,
+        no_infer_dates=False,
+        ini_quote_strings=False,
+        ini_strip_quotes=False,
+        null_handling="skip",
+        env_expand=False,
+        csv_delimiter=None,
+        tsv=False,
+        text='{"name": "test-app", "version": "1.0"}',
+    )
+    import io
+    import sys
+    _stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        rc = _run_cf_jq(args)
+    finally:
+        captured = sys.stdout.getvalue()
+        sys.stdout = _stdout
+    assert rc == 0, f"_run_cf_jq returned {rc}"
+    assert captured.strip() == '"test-app"', f"Unexpected output: {captured!r}"
+
+
+def test_cf_jq_filter_nested():
+    """--jq-filter with nested dot-path access via our code path."""
+    from core.cli import _run_cf_jq
+    import argparse
+
+    args = argparse.Namespace(
+        jq_filter=".users[].name",
+        to="json",
+        from_fmt="auto",
+        indent=2,
+        raw=False,
+        quiet=False,
+        colors=False,
+        no_colors=False,
+        compact=False,
+        no_comments=False,
+        flatten_xml=False,
+        yaml12=False,
+        template_safe=False,
+        block_scalars=False,
+        explicit_start=False,
+        explicit_end=False,
+        yaml_width=None,
+        sort_keys=False,
+        sort_keys_reverse=False,
+        no_infer_dates=False,
+        ini_quote_strings=False,
+        ini_strip_quotes=False,
+        null_handling="skip",
+        env_expand=False,
+        csv_delimiter=None,
+        tsv=False,
+        text='{"users": [{"name": "alice"}, {"name": "bob"}]}',
+    )
+    import io
+    import sys
+    _stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        rc = _run_cf_jq(args)
+    finally:
+        captured = sys.stdout.getvalue()
+        sys.stdout = _stdout
+    assert rc == 0, f"_run_cf_jq returned {rc}"
+    assert "alice" in captured
+    assert "bob" in captured
+
+
+def test_cf_jq_filter_invalid_expr():
+    """Invalid jq filter produces an error."""
+    from core.cli import _run_cf_jq
+    import argparse
+
+    args = argparse.Namespace(
+        jq_filter="[invalid syntax!!!",
+        to="json",
+        from_fmt="auto",
+        indent=2,
+        raw=False,
+        quiet=False,
+        colors=False,
+        no_colors=False,
+        compact=False,
+        no_comments=False,
+        flatten_xml=False,
+        yaml12=False,
+        template_safe=False,
+        block_scalars=False,
+        explicit_start=False,
+        explicit_end=False,
+        yaml_width=None,
+        sort_keys=False,
+        sort_keys_reverse=False,
+        no_infer_dates=False,
+        ini_quote_strings=False,
+        ini_strip_quotes=False,
+        null_handling="skip",
+        env_expand=False,
+        csv_delimiter=None,
+        tsv=False,
+        text='{"name": "test"}',
+    )
+    rc = _run_cf_jq(args)
+    assert rc != 0, "Expected non-zero exit for invalid jq filter"

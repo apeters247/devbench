@@ -217,6 +217,10 @@ def _main_dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     if args.command == "cf" and getattr(args, "check_env", False):
         return _run_cf_check_env(args)
 
+    # cf --jq-filter  → pipe JSON output through jq (requires jq binary)
+    if args.command == "cf" and getattr(args, "jq_filter", None):
+        return _run_cf_jq(args)
+
     # completion — emit shell completion script
     if args.command == "completion":
         return _run_completion(args.shell)
@@ -708,6 +712,11 @@ def _build_parser() -> argparse.ArgumentParser:
                                 help="Print all flags grouped by category (quick reference). "
                                      "Use devbench cf --help for full documentation. "
                                      "Example: devbench cf --flags")
+            tool_p.add_argument("--jq-filter", "--jq", metavar="FILTER", default=None, dest="jq_filter",
+                                help="Pipe the converted JSON output through jq with the given jq filter expression. "
+                                     "Requires jq (https://jqlang.github.io/jq/) to be installed. "
+                                     "Fixes HN complaint: yq alternatives lack full jq syntax support. "
+                                     "Example: devbench cf config.yaml --to json --jq '.users[] | {name, role}'")
         elif tool_name == "token":
             tool_p.add_argument("--model", default="cl100k_base", help="tiktoken model to use (default: cl100k_base)")
         elif tool_name == "chunk":
@@ -1608,6 +1617,99 @@ def _run_cf_check_env(args: argparse.Namespace) -> int:
 
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# cf --jq-filter: pipe JSON output through jq
+# ---------------------------------------------------------------------------
+
+
+def _run_cf_jq(args: argparse.Namespace) -> int:
+    """Implement devbench cf --jq-filter FILTER.
+
+    Parses input, converts to JSON, then pipes through jq(1) with the
+    given filter expression.  Addresses the HN complaint that yq
+    alternatives lack full jq syntax support.
+    """
+    from . import configforge as _cf
+    import subprocess
+
+    filter_expr = args.jq_filter
+    input_text = _get_input(args)
+    to_fmt = getattr(args, "to", None) or "json"
+
+    if not input_text:
+        print("error: Empty input — pipe or provide config content.", file=sys.stderr)
+        return EXIT_ERROR
+
+    # Collect options the same way _run_cf does
+    options = {}
+    for opt in ("indent", "flatten_xml", "yaml12", "template_safe",
+                "block_scalars", "sort_keys", "sort_keys_reverse",
+                "no_infer_dates", "ini_quote_strings", "ini_strip_quotes",
+                "null_handling", "env_expand"):
+        val = getattr(args, opt, None)
+        if val is not None:
+            options[opt] = val
+    if getattr(args, "no_comments", False):
+        options["preserve_comments"] = False
+    if getattr(args, "explicit_start", False):
+        options["explicit_start"] = True
+    if getattr(args, "explicit_end", False):
+        options["explicit_end"] = True
+    if getattr(args, "yaml_width", None) is not None:
+        options["yaml_width"] = args.yaml_width
+    if getattr(args, "csv_delimiter", None):
+        d = args.csv_delimiter
+        if d in ("\\t", "TAB", "tab"):
+            d = "\t"
+        options["csv_delimiter"] = d
+    elif getattr(args, "tsv", False):
+        options["csv_delimiter"] = "\t"
+
+    from_fmt = getattr(args, "from_fmt", "auto")
+    raw = _cf.convert(input_text, "json", from_fmt, **options)
+    if not raw.get("success", False):
+        err = raw.get("error", "Unknown error")
+        print(f"error: {err}", file=sys.stderr)
+        return EXIT_ERROR
+
+    output_text = raw.get("output", "")
+    if not output_text:
+        print("error: No output from conversion", file=sys.stderr)
+        return EXIT_ERROR
+
+    # Check jq is available
+    try:
+        subprocess.run(["jq", "--version"], capture_output=True, timeout=5)
+    except (FileNotFoundError, PermissionError):
+        print("error: jq is not installed. Install from https://jqlang.github.io/jq/",
+              file=sys.stderr)
+        return EXIT_ERROR
+    except subprocess.TimeoutExpired:
+        print("error: jq --version timed out", file=sys.stderr)
+        return EXIT_ERROR
+
+    # Pipe through jq
+    try:
+        proc = subprocess.run(
+            ["jq", filter_expr],
+            input=output_text,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        print("error: jq filter timed out", file=sys.stderr)
+        return EXIT_ERROR
+
+    if proc.returncode != 0:
+        err = proc.stderr.strip()
+        print(f"error: jq filter failed: {err}", file=sys.stderr)
+        return EXIT_ERROR
+
+    print(proc.stdout, end="")
+    return EXIT_SUCCESS
+
+
 # cf --flags: grouped quick-reference
 # ---------------------------------------------------------------------------
 

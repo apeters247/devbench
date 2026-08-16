@@ -901,8 +901,8 @@ def _extract_toml_comments(text: str) -> list:
     comments attach to the NEXT key/header line. Anchoring by section+key (not
     line number) is what lets a comment survive a structure-preserving round
     trip through JSON, since the serializer re-emits the same keys. Comments
-    BETWEEN elements of a multi-line array are not representable here because
-    the serializer renders arrays on a single line — a documented limitation."""
+    BETWEEN elements of a multi-line array are anchored to the array key so
+    they round-trip as block comments before the key rather than being lost."""
     lines = text.split("\n")
     info = _toml_line_map(lines)
     sorted_keys = sorted(info)
@@ -921,6 +921,14 @@ def _extract_toml_comments(text: str) -> list:
                 if j > i:
                     anchor = info[j]
                     break
+            # If forward search found nothing (e.g., comment after the last mapped
+            # line, inside a multi-line array), fall back to the last known
+            # section/key so comments in arrays round-trip (yq#2592).
+            if not anchor.get("section") and not anchor.get("key"):
+                for j in reversed(sorted_keys):
+                    if j < i:
+                        anchor = info[j]
+                        break
         comments.append({
             "section": anchor.get("section", ""),
             "key": anchor.get("key"),
@@ -2461,12 +2469,18 @@ def _env_format_value(v) -> str:
 
 def _plist_normalize(data):
     """Normalize parsed plist data for cross-format use.
-    bytes → base64 string; datetime/date → ISO-8601 string."""
+    bytes → base64 string; datetime/date → ISO-8601 string;
+    plistlib.UID (NSKeyedArchiver) → {"$UID": int}."""
     import base64
+    import plistlib as _pl
     if isinstance(data, bytes):
         return base64.b64encode(data).decode("ascii")
     elif isinstance(data, (datetime, date)):
         return data.isoformat()
+    elif isinstance(data, _pl.UID):
+        # NSKeyedArchiver UID — preserve as a tagged dict so YAML/JSON consumers
+        # can identify and optionally round-trip these values.
+        return {"$UID": data.data}
     elif isinstance(data, dict):
         return {str(k): _plist_normalize(v) for k, v in data.items()}
     elif isinstance(data, list):
